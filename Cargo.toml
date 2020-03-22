@@ -1,0 +1,21 @@
+[package]
+name = "hudhook"
+version = "0.1.0"
+authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
+edition = "2018"
+build = "build.rs"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+winapi = { version = "0.3.8", features = [ "std", "d3d11", "dxgi", "d3dcompiler", "ntdef", "minwindef", "windef", "psapi", "memoryapi", "synchapi", "winuser" ] }
+user32-sys = "0.1"
+imgui = "0.2.1"
+log = "0.4.8"
+simplelog = "0.7.4"
+lazy_static = "1.4.0"
+itertools = "0.8.1"
+
+[build-dependencies]
+cc = "1.0.45"
