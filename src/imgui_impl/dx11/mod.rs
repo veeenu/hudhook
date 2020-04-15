@@ -3,6 +3,7 @@ use log::*;
 use imgui;
 use imgui::internal::RawWrapper;
 
+use std::marker::PhantomData;
 use std::ptr::{null, null_mut, NonNull};
 
 use winapi::um::d3d11::*;
@@ -229,12 +230,12 @@ struct RenderBufferData {
   index_buffer_size: usize,
 }
 
-struct MappedSubresource<'a, T>(*mut T, &'a ID3D11DeviceContext);
+struct MappedSubresource<'a, T, S>(D3D11_MAPPED_SUBRESOURCE, *mut S, &'a ID3D11DeviceContext, PhantomData<T>);
 
-impl<'a, T> MappedSubresource<'a, T> {
-  fn map<Source>(
-    ptr: *mut Source, device_ctx: &ID3D11DeviceContext
-  ) -> Result<MappedSubresource<T>> {
+impl<'a, T, S> MappedSubresource<'a, T, S> {
+  fn map(
+    ptr: *mut S, device_ctx: &ID3D11DeviceContext
+  ) -> Result<MappedSubresource<T, S>> {
     let mut res: D3D11_MAPPED_SUBRESOURCE = unsafe { std::mem::zeroed() };
     match unsafe {
       device_ctx.Map(
@@ -247,15 +248,18 @@ impl<'a, T> MappedSubresource<'a, T> {
       i => Err(Error(format!("ID3D11DeviceContext::Map error: {}", i)))
     }?;
 
-    let mut output: *mut T = unsafe { std::mem::transmute(res.pData) };
 
-    Ok(MappedSubresource(output, device_ctx))
+    Ok(MappedSubresource(res, ptr, device_ctx, PhantomData))
+  }
+
+  fn get_ptr(&self) -> *mut T {
+    self.0.pData as *mut T
   }
 }
 
-impl<'a, T> Drop for MappedSubresource<'a, T> {
+impl<'a, T, S> Drop for MappedSubresource<'a, T, S> {
   fn drop(&mut self) {
-    unsafe { self.1.Unmap(std::mem::transmute(self.0), 0) };
+    unsafe { self.2.Unmap(self.1 as *mut _, 0) };
   }
 }
 
@@ -292,7 +296,11 @@ impl RenderBufferData {
 
   fn map_resources<'a>(
     &'a self, device_ctx: &'a ID3D11DeviceContext
-  ) -> Result<(MappedSubresource<imgui::DrawVert>, MappedSubresource<imgui::DrawIdx>)> {
+  ) -> 
+      Result<(
+        MappedSubresource<imgui::DrawVert, ID3D11Buffer>, 
+        MappedSubresource<imgui::DrawIdx, ID3D11Buffer>
+      )> {
     let msr_vert = MappedSubresource::map(self.vertex_buffer, device_ctx)?;
     let msr_idx = MappedSubresource::map(self.index_buffer, device_ctx)?;
     Ok((msr_vert, msr_idx))
@@ -436,12 +444,12 @@ impl Renderer {
       unsafe {
         std::ptr::copy_nonoverlapping(
           vertex_buffer.as_ptr(),
-          vertex_pdata.0.offset(offset as _),
+          vertex_pdata.get_ptr().offset(offset as _),
           vertex_buffer.len()
         );
         std::ptr::copy_nonoverlapping(
           index_buffer.as_ptr(),
-          index_pdata.0.offset(offset as _),
+          index_pdata.get_ptr().offset(offset as _),
           index_buffer.len()
         );
       }
@@ -450,14 +458,12 @@ impl Renderer {
     drop(vertex_pdata);
     drop(index_pdata);
 
-    let context_pdata = MappedSubresource(
+    let context_pdata = MappedSubresource::<VERTEX_CONSTANT_BUFFER, ID3D11Buffer>::map(
       self.device_objects.vertex_shader.constant_buffer,
-      unsafe { self.device_ctx.as_ref() } 
-    );
+      unsafe { self.device_ctx.as_ref() },
+    )?;
 
-    let cbpdata: *mut VERTEX_CONSTANT_BUFFER = unsafe {
-      std::mem::transmute(context_pdata.0)
-    };
+    let cbpdata = context_pdata.get_ptr();
     let l = draw_data.display_pos[0];
     let r = draw_data.display_pos[0] + draw_data.display_size[0];
     let t = draw_data.display_pos[1];

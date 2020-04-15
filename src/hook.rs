@@ -61,6 +61,7 @@ impl DxgiHook {
     present_trampoline: IDXGISwapChainPresent,
     p_this: *mut IDXGISwapChain
   ) -> Result<DxgiHook> {
+    info!("Initializing");
     let this = unsafe { p_this.as_ref() }
       .ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
     let mut ui: UINT = 0;
@@ -148,6 +149,7 @@ impl DxgiHook {
         null_mut()
       );
     }
+
     let mut io = self.imgui_ctx.io_mut();
 
     io.display_size = [640f32, 480f32];

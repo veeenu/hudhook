@@ -1,8 +1,0 @@
-12:56:21 [ INFO] DllMain()
-12:56:21 [ INFO] Started thread, enabling hook...
-12:56:21 [ INFO] Starting hook
-12:56:21 [ INFO] Initializing MH
-12:56:21 [ INFO] MH_Initialize status: MH_OK
-12:56:21 [ INFO] MH_CreateHook status: MH_OK
-12:56:21 [ INFO] MH_EnableHook status: MH_OK
-12:56:21 [ INFO] Hook enabled
