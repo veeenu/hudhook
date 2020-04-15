@@ -3,7 +3,6 @@ use std::env;
 use std::path::Path;
 
 fn main() {
-
   let root_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
   let target = env::var("TARGET").unwrap();
 
@@ -32,5 +31,5 @@ fn main() {
 
   println!("cargo:rerun-if-changed=lib/minhook/src/");
   println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
-  println!("cargo:rustc-link-lib=static=imgui_impl");
+  // println!("cargo:rustc-link-lib=static=minhook");
 }

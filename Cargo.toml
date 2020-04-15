@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 edition = "2018"
 build = "build.rs"
+links = "minhook"
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -16,6 +17,7 @@ log = "0.4.8"
 simplelog = "0.7.4"
 lazy_static = "1.4.0"
 itertools = "0.8.1"
+log-panics = "2.0.0"
 
 [build-dependencies]
 cc = "1.0.45"
