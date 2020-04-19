@@ -2,3 +2,5 @@
 **/*.rs.bk
 /reference_code
 /hudhook.log
+/lib/test_sample/*.exe
+/lib/test_sample/*.obj
