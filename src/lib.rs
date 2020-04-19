@@ -10,6 +10,7 @@ pub mod util;
 pub mod imgui_impl {
   pub mod dx11;
 }
+pub mod memory;
 
 use log::*;
 use simplelog::*;

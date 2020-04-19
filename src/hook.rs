@@ -19,6 +19,7 @@ use std::cell::Cell;
 use crate::util::Error;
 use crate::imgui_impl;
 use crate::mh;
+use crate::memory::{get_base_address, PointerChain};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -27,7 +28,7 @@ type IDXGISwapChainPresent =
     This: *mut IDXGISwapChain, SyncInterval: UINT, Flags: UINT
   ) -> HRESULT;
 type WndProc =
-  extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM);
+  unsafe extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize;
 
 pub struct DxgiHook {
   present_trampoline: IDXGISwapChainPresent,
@@ -170,7 +171,6 @@ impl DxgiHook {
         ));
       });
 
-    // ImGui_ImplDX11_RenderDrawData(ui.render() as _);
     let dd = ui.render();
     match self.renderer.render(dd) {
       Ok(_) => {},
@@ -181,15 +181,11 @@ impl DxgiHook {
   }
 }
 
-extern "system" fn wnd_proc(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) {
-  /*let default_wndproc: WndProc = unsafe {
-    std::mem::transmute(
-      GetWindowLongPtrA(hwnd, GWLP_USERDATA)
-    )
-  };
-  default_wndproc(hwnd, umsg, wparam, lparam);*/
-  if let DxgiHookState::Ok(hook) = unsafe { DXGI_HOOK_STATE.get_mut() } {
-    (hook.default_wnd_proc)(hwnd, umsg, wparam, lparam);
+unsafe extern "system" fn wnd_proc(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize {
+  if let DxgiHookState::Ok(hook) = DXGI_HOOK_STATE.get_mut() {
+    CallWindowProcW(Some(hook.default_wnd_proc), hwnd, umsg, wparam, lparam)
+  } else {
+    0
   }
 }
 
@@ -204,6 +200,22 @@ extern "system" fn present_impl(
         unreachable!("DXGI Hook State uninitialized in present_impl -- this should never happen!")
       },
       DxgiHookState::Hooked(present_trampoline) => {
+        // Stuff like this should be put in a callback and passed to hook().
+        /*
+        // Base: 7ff7762a0000
+        // (Base + 0x0001BAF0, 0x10) float a
+        // (Base + 0x0001BAF0, 0x18) double b
+        // (Base + 0x0001BAF0, 0x20) uint64 c
+        let pc_u32 = PointerChain::<u32>::new(vec![
+          // 0x7ff7762a0000 + 0x1BAF0,
+          get_base_address::<u8>() as usize as isize + 0x1baf0,
+          0x20
+        ]);
+        info!("Read value {:?}", pc_u32.read());
+        pc_u32.write(31337);
+        info!("Read value {:?} after writing", pc_u32.read());
+        */
+
         match DxgiHook::initialize_dx(present_trampoline, this) {
           Ok(dh) => DxgiHookState::Ok(dh),
           Err(e) => {

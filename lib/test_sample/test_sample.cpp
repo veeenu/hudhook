@@ -63,7 +63,11 @@ class MyData {
       g_pSurface1->ReleaseDC(nullptr);
     }
 };
-
+// Base: 7ff7762a0000
+// (Base + 0x0001BAF0, 0x10) float a
+// (Base + 0x0001BAF0, 0x18) double b
+// (Base + 0x0001BAF0, 0x20) uint64 c
+MyData* data = nullptr;
 
 //--------------------------------------------------------------------------------------
 // Forward declarations
@@ -84,7 +88,7 @@ int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
     UNREFERENCED_PARAMETER( hPrevInstance );
     UNREFERENCED_PARAMETER( lpCmdLine );
 
-    MyData data(100., 100., 100);
+    data = new MyData(100., 100., 100);
 
     if( FAILED( InitWindow( hInstance, nCmdShow ) ) )
         return 0;
@@ -109,7 +113,7 @@ int WINAPI wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
             /*data.render(g_hWnd);
             Render();*/
             g_pImmediateContext->ClearRenderTargetView( g_pRenderTargetView, Colors::MidnightBlue );
-            data.render(g_hWnd);
+            data->render(g_hWnd);
             g_pSwapChain->Present( 0, 0 );
         }
     }
