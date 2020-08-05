@@ -1,32 +1,30 @@
 use log::*;
 
-use winapi::um::d3d11::*;
-use winapi::um::d3dcommon::*;
 use winapi::shared::dxgi::*;
 use winapi::shared::dxgiformat::*;
 use winapi::shared::dxgitype::*;
-use winapi::um::winuser::*;
 use winapi::shared::minwindef::*;
-use winapi::shared::windef::HWND;
+use winapi::shared::windef::{HWND, RECT};
+use winapi::um::d3d11::*;
+use winapi::um::d3dcommon::*;
 use winapi::um::winnt::*;
+use winapi::um::winuser::*;
 use winapi::Interface;
 
 use core::mem::MaybeUninit;
 
-use std::ptr::null_mut;
 use std::cell::Cell;
+use std::ptr::null_mut;
 
-use crate::util::Error;
 use crate::imgui_impl;
-use crate::mh;
 use crate::memory::{get_base_address, PointerChain};
+use crate::mh;
+use crate::util::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
 type IDXGISwapChainPresent =
-  unsafe extern "system" fn(
-    This: *mut IDXGISwapChain, SyncInterval: UINT, Flags: UINT
-  ) -> HRESULT;
+  unsafe extern "system" fn(This: *mut IDXGISwapChain, SyncInterval: UINT, Flags: UINT) -> HRESULT;
 type WndProc =
   unsafe extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize;
 
@@ -37,14 +35,15 @@ pub struct DxgiHook {
   p_device_context: *mut ID3D11DeviceContext,
   render_target_view: *mut ID3D11RenderTargetView,
   imgui_ctx: imgui::Context,
-  renderer: imgui_impl::dx11::Renderer
+  renderer: imgui_impl::dx11::Renderer,
+  render_loop: Box<dyn RenderLoop>,
 }
 
 enum DxgiHookState {
   Uninitialized,
-  Hooked(IDXGISwapChainPresent),
+  Hooked(IDXGISwapChainPresent, Box<dyn RenderLoop>),
   Errored(IDXGISwapChainPresent),
-  Ok(DxgiHook)
+  Ok(DxgiHook),
 }
 
 impl Default for DxgiHookState {
@@ -56,15 +55,15 @@ impl Default for DxgiHookState {
 static mut DXGI_HOOK_STATE: Cell<DxgiHookState> = Cell::new(DxgiHookState::Uninitialized);
 
 impl DxgiHook {
-
   // TODO URGENT if Result is Err, caller must call present_trampoline
   fn initialize_dx(
     present_trampoline: IDXGISwapChainPresent,
-    p_this: *mut IDXGISwapChain
+    p_this: *mut IDXGISwapChain,
+    render_loop: Box<dyn RenderLoop>,
   ) -> Result<DxgiHook> {
     info!("Initializing");
-    let this = unsafe { p_this.as_ref() }
-      .ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
+    let this =
+      unsafe { p_this.as_ref() }.ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
     let mut ui: UINT = 0;
     unsafe { this.GetLastPresentCount(&mut ui) };
 
@@ -72,47 +71,39 @@ impl DxgiHook {
     let mut p_device_context = null_mut();
     let dev = unsafe { this.GetDevice(&ID3D11Device::uuidof(), &mut p_device) };
     if dev < 0 {
-      /*error!("Get device + ctx from swap chain failed: {:?} {:?}", dev, p_this);
-      unsafe { (present_trampoline)(p_this, sync_interval, flags) };*/
-      return Err(Error(
-        format!("Get device + ctx from swap chain failed: {:?} {:?}", dev, p_this)
-      ));
+      return Err(Error(format!(
+        "Get device + ctx from swap chain failed: {:?} {:?}",
+        dev, p_this
+      )));
     };
 
     let p_device = p_device as *mut ID3D11Device;
     unsafe { (*p_device).GetImmediateContext(&mut p_device_context) };
 
     let p_device_context = p_device_context as *mut ID3D11DeviceContext;
-    
+
     let mut sd: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
     unsafe { this.GetDesc(&mut sd as _) };
 
     let default_wnd_proc = unsafe {
-      std::mem::transmute(
-        SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, wnd_proc as WndProc as isize)
-      )
-    };
-    /*unsafe {
-      SetWindowLongPtrA(
+      std::mem::transmute(SetWindowLongPtrA(
         sd.OutputWindow,
-        GWLP_USERDATA,
-        default_wnd_proc as WndProc as isize
-      );
-    }*/
+        GWLP_WNDPROC,
+        wnd_proc as WndProc as isize,
+      ))
+    };
 
     let mut imgui_ctx = imgui::Context::create();
     imgui_ctx.set_ini_filename(None);
-    imgui_ctx.fonts().add_font(&[
-      imgui::FontSource::DefaultFontData {
+    imgui_ctx
+      .fonts()
+      .add_font(&[imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
           ..imgui::FontConfig::default()
-        })
-      }
-    ]);
+        }),
+      }]);
 
-    let renderer = imgui_impl::dx11::Renderer::new(
-      p_device, p_device_context, &mut imgui_ctx
-    )?;
+    let renderer = imgui_impl::dx11::Renderer::new(p_device, p_device_context, &mut imgui_ctx)?;
 
     let mut back_buf: *mut ID3D11Texture2D = null_mut();
     let mut render_target_view: *mut ID3D11RenderTargetView = null_mut();
@@ -120,10 +111,12 @@ impl DxgiHook {
       this.GetBuffer(
         0,
         &ID3D11Texture2D::uuidof(),
-        &mut back_buf as *mut *mut _ as _
+        &mut back_buf as *mut *mut _ as _,
       );
       (*p_device).CreateRenderTargetView(
-        back_buf as _, null_mut(), &mut render_target_view as *mut *mut _ as _
+        back_buf as _,
+        null_mut(),
+        &mut render_target_view as *mut *mut _ as _,
       );
       (*back_buf).Release();
     }
@@ -135,27 +128,38 @@ impl DxgiHook {
       p_device_context,
       render_target_view,
       imgui_ctx,
-      renderer
+      renderer,
+      render_loop,
     })
   }
 
-  fn render(
-    &mut self,
-    this: *mut IDXGISwapChain, sync_interval: UINT, flags: UINT
-  ) -> HRESULT {
+  fn render(&mut self, this: *mut IDXGISwapChain, sync_interval: UINT, flags: UINT) -> HRESULT {
     unsafe {
       self.p_device_context.as_ref().unwrap().OMSetRenderTargets(
-        1, 
+        1,
         &mut self.render_target_view as *mut *mut _,
-        null_mut()
+        null_mut(),
       );
     }
+    // No reason this.as_ref() should error at this point, and probably it's a
+    // good idea to crash and burn if it does. TODO check
+    let mut sd: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
+    unsafe { this.as_ref().unwrap().GetDesc(&mut sd as _) };
+
+    let mut rect: RECT = unsafe { std::mem::zeroed() };
+    unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _) };
 
     let mut io = self.imgui_ctx.io_mut();
 
-    io.display_size = [640f32, 480f32];
+    io.display_size = [
+      (rect.right - rect.left) as f32,
+      (rect.bottom - rect.top) as f32,
+    ];
 
     let ui = self.imgui_ctx.frame();
+
+    //////// snip ////////
+    // this should be returned by a user supplied function
 
     imgui::Window::new(im_str!("Hello"))
       .size([320.0, 256.0], imgui::Condition::FirstUseEver)
@@ -170,18 +174,28 @@ impl DxgiHook {
           mouse_pos[0], mouse_pos[1]
         ));
       });
+    //////// snip ////////
 
     let dd = ui.render();
     match self.renderer.render(dd) {
-      Ok(_) => {},
-      Err(e) => error!("Renderer errored: {:?}", e)
+      Ok(_) => {}
+      Err(e) => error!("Renderer errored: {:?}", e),
     };
 
     unsafe { (self.present_trampoline)(this, sync_interval, flags) }
   }
 }
 
-unsafe extern "system" fn wnd_proc(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize {
+pub trait RenderLoop {
+  fn render(&mut self, ui: imgui::Ui);
+}
+
+unsafe extern "system" fn wnd_proc(
+  hwnd: HWND,
+  umsg: UINT,
+  wparam: WPARAM,
+  lparam: LPARAM,
+) -> isize {
   if let DxgiHookState::Ok(hook) = DXGI_HOOK_STATE.get_mut() {
     CallWindowProcW(Some(hook.default_wnd_proc), hwnd, umsg, wparam, lparam)
   } else {
@@ -190,16 +204,17 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, umsg: UINT, wparam: WPARAM, lpara
 }
 
 extern "system" fn present_impl(
-  this: *mut IDXGISwapChain, sync_interval: UINT, flags: UINT
+  this: *mut IDXGISwapChain,
+  sync_interval: UINT,
+  flags: UINT,
 ) -> HRESULT {
-
   // State transition the dxgi hook struct
   unsafe {
     DXGI_HOOK_STATE.replace(match DXGI_HOOK_STATE.take() {
       DxgiHookState::Uninitialized => {
         unreachable!("DXGI Hook State uninitialized in present_impl -- this should never happen!")
-      },
-      DxgiHookState::Hooked(present_trampoline) => {
+      }
+      DxgiHookState::Hooked(present_trampoline, render_loop) => {
         // Stuff like this should be put in a callback and passed to hook().
         /*
         // Base: 7ff7762a0000
@@ -216,31 +231,27 @@ extern "system" fn present_impl(
         info!("Read value {:?} after writing", pc_u32.read());
         */
 
-        match DxgiHook::initialize_dx(present_trampoline, this) {
+        match DxgiHook::initialize_dx(present_trampoline, this, render_loop) {
           Ok(dh) => DxgiHookState::Ok(dh),
           Err(e) => {
             error!("DXGI Hook initialization failed: {:?}", e);
             DxgiHookState::Errored(present_trampoline)
           }
         }
-      },
+      }
       DxgiHookState::Errored(present_trampoline) => DxgiHookState::Errored(present_trampoline),
-      DxgiHookState::Ok(dh) => DxgiHookState::Ok(dh)
+      DxgiHookState::Ok(dh) => DxgiHookState::Ok(dh),
     })
   };
 
   match unsafe { DXGI_HOOK_STATE.get_mut() } {
     DxgiHookState::Uninitialized => unreachable!(),
-    DxgiHookState::Hooked(_) => unreachable!(),
-    DxgiHookState::Errored(present_trampoline) => {
-      unsafe { present_trampoline(this, sync_interval, flags) }
+    DxgiHookState::Hooked(_, _) => unreachable!(),
+    DxgiHookState::Errored(present_trampoline) => unsafe {
+      present_trampoline(this, sync_interval, flags)
     },
-    DxgiHookState::Ok(dxgi_hook) => {
-      dxgi_hook.render(this, sync_interval, flags)
-      //unsafe { (dxgi_hook.present_trampoline)(this, sync_interval, flags) }
-    }
+    DxgiHookState::Ok(dxgi_hook) => dxgi_hook.render(this, sync_interval, flags),
   }
-
 }
 
 fn get_present_address() -> Result<IDXGISwapChainPresent> {
@@ -267,19 +278,21 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
       0 as HMODULE,
       0 as UINT,
       &mut feature_level as *mut D3D_FEATURE_LEVEL,
-      1, D3D11_SDK_VERSION,
+      1,
+      D3D11_SDK_VERSION,
       &mut swap_chain_desc as *mut DXGI_SWAP_CHAIN_DESC,
-      &mut p_swap_chain as *mut*mut IDXGISwapChain,
-      &mut p_device as *mut*mut ID3D11Device,
+      &mut p_swap_chain as *mut *mut IDXGISwapChain,
+      &mut p_device as *mut *mut ID3D11Device,
       null_mut(),
-      &mut p_context as *mut*mut ID3D11DeviceContext,
+      &mut p_context as *mut *mut ID3D11DeviceContext,
     )
   };
 
   if result < 0 {
-    return Err(Error(
-      format!("D3D11CreateDeviceAndSwapChain failed {:?}", result)
-    ));
+    return Err(Error(format!(
+      "D3D11CreateDeviceAndSwapChain failed {:?}",
+      result
+    )));
   }
 
   let ret = unsafe { (*(&*p_swap_chain).lpVtbl).Present };
@@ -293,7 +306,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 }
 
 // Entry point
-pub fn hook() -> Result<IDXGISwapChainPresent> {
+pub fn hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
   info!("Starting hook");
   let present_original = get_present_address()?;
   let mut present_trampoline: MaybeUninit<IDXGISwapChainPresent> = MaybeUninit::uninit();
@@ -304,14 +317,12 @@ pub fn hook() -> Result<IDXGISwapChainPresent> {
     mh::MH_CreateHook(
       present_original as LPVOID,
       present_impl as LPVOID,
-      &mut present_trampoline as *mut _ as _
+      &mut present_trampoline as *mut _ as _,
     )
   };
-  let present_trampoline = unsafe {
-    present_trampoline.assume_init()
-  };
+  let present_trampoline = unsafe { present_trampoline.assume_init() };
   unsafe {
-    DXGI_HOOK_STATE.replace(DxgiHookState::Hooked(present_trampoline));
+    DXGI_HOOK_STATE.replace(DxgiHookState::Hooked(present_trampoline, render_loop));
   }
   info!("MH_CreateHook status: {:?}", status);
   status = unsafe { mh::MH_EnableHook(present_original as LPVOID) };
@@ -319,3 +330,4 @@ pub fn hook() -> Result<IDXGISwapChainPresent> {
 
   Ok(present_trampoline)
 }
+

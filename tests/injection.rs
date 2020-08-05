@@ -1,5 +1,5 @@
-use std::process::Command;
 use hudhook::inject;
+use std::process::Command;
 
 #[test]
 fn test_run_against_sample() {
@@ -9,7 +9,8 @@ fn test_run_against_sample() {
   std::thread::sleep(std::time::Duration::from_millis(250));
 
   // let pid = inject::find_process("sample.exe").expect("Process not found");
-  inject::inject(child.id(), "target/release/hudhook.dll");
+  inject::inject("sample.exe", "target/release/hudhook.dll");
 
   child.wait().expect("Child process error");
 }
+

@@ -14,7 +14,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct VERTEX_CONSTANT_BUFFER(pub [[f32; 4]; 4]);
 
 //
-// A reckless implementation of a conversion from 
+// A reckless implementation of a conversion from
 // a string to raw C char data. Pls only use with
 // static const strings.
 //
@@ -30,6 +30,7 @@ pub unsafe fn reckless_string(s: &str) -> CString {
 pub fn ptr_as_ref<'a, T>(ptr: *const T) -> Result<&'a T> {
   match unsafe { ptr.as_ref() } {
     Some(t) => Ok(t),
-    None => Err(format!("Null pointer").into())
+    None => Err(format!("Null pointer").into()),
   }
 }
+
