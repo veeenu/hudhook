@@ -1,16 +1,26 @@
 use hudhook::inject;
+use simplelog::*;
 use std::process::Command;
 
-#[test]
-fn test_run_against_sample() {
+fn example_hello_world() {
   let mut child = Command::new("tests/test_sample.exe")
     .spawn()
     .expect("Failed to run child process");
   std::thread::sleep(std::time::Duration::from_millis(250));
 
   // let pid = inject::find_process("sample.exe").expect("Process not found");
-  inject::inject("sample.exe", "target/release/hudhook.dll").ok();
+  inject::inject("test_sample.exe", "target/release/examples/hello_world.dll").unwrap();
 
   child.wait().expect("Child process error");
 }
 
+fn main() {
+  CombinedLogger::init(vec![TermLogger::new(
+    LevelFilter::Trace,
+    Config::default(),
+    TerminalMode::Mixed,
+  )
+  .unwrap()])
+  .unwrap();
+  example_hello_world();
+}

@@ -61,7 +61,7 @@ impl DxgiHook {
     p_this: *mut IDXGISwapChain,
     render_loop: Box<dyn RenderLoop>,
   ) -> Result<DxgiHook> {
-    info!("Initializing");
+    debug!("Initializing DXGI hook");
     let this =
       unsafe { p_this.as_ref() }.ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
     let mut ui: UINT = 0;
@@ -121,6 +121,7 @@ impl DxgiHook {
       (*back_buf).Release();
     }
 
+    debug!("Initialization completed");
     Ok(DxgiHook {
       present_trampoline,
       default_wnd_proc,
@@ -156,38 +157,23 @@ impl DxgiHook {
       (rect.bottom - rect.top) as f32,
     ];
 
-    let ui = self.imgui_ctx.frame();
+    let mut ui = self.imgui_ctx.frame();
 
-    //////// snip ////////
-    // this should be returned by a user supplied function
-
-    imgui::Window::new(im_str!("Hello"))
-      .size([320.0, 256.0], imgui::Condition::FirstUseEver)
-      .build(&ui, || {
-        ui.text(im_str!("Hello world!"));
-        ui.text(im_str!("こんにちは世界！"));
-        ui.text(im_str!("This...is...imgui-rs!"));
-        ui.separator();
-        let mouse_pos = ui.io().mouse_pos;
-        ui.text(format!(
-          "Mouse Position: ({:.1},{:.1})",
-          mouse_pos[0], mouse_pos[1]
-        ));
-      });
-    //////// snip ////////
-
+    self.render_loop.render(&mut ui);
     let dd = ui.render();
+
     match self.renderer.render(dd) {
       Ok(_) => {}
       Err(e) => error!("Renderer errored: {:?}", e),
     };
+    //let dd = ui.render();
 
     unsafe { (self.present_trampoline)(this, sync_interval, flags) }
   }
 }
 
 pub trait RenderLoop {
-  fn render(&mut self, ui: imgui::Ui);
+  fn render(&mut self, ui: &mut imgui::Ui);
 }
 
 unsafe extern "system" fn wnd_proc(
@@ -226,9 +212,9 @@ extern "system" fn present_impl(
           get_base_address::<u8>() as usize as isize + 0x1baf0,
           0x20
         ]);
-        info!("Read value {:?}", pc_u32.read());
+        debug!("Read value {:?}", pc_u32.read());
         pc_u32.write(31337);
-        info!("Read value {:?} after writing", pc_u32.read());
+        debug!("Read value {:?} after writing", pc_u32.read());
         */
 
         match DxgiHook::initialize_dx(present_trampoline, this, render_loop) {
@@ -307,12 +293,12 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 
 // Entry point
 pub fn hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
-  info!("Starting hook");
+  debug!("Starting hook");
   let present_original = get_present_address()?;
   let mut present_trampoline: MaybeUninit<IDXGISwapChainPresent> = MaybeUninit::uninit();
-  info!("Initializing MH");
+  debug!("Initializing MH");
   let mut status: mh::MH_STATUS = unsafe { mh::MH_Initialize() };
-  info!("MH_Initialize status: {:?}", status);
+  debug!("MH_Initialize status: {:?}", status);
   status = unsafe {
     mh::MH_CreateHook(
       present_original as LPVOID,
@@ -324,9 +310,9 @@ pub fn hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
   unsafe {
     DXGI_HOOK_STATE.replace(DxgiHookState::Hooked(present_trampoline, render_loop));
   }
-  info!("MH_CreateHook status: {:?}", status);
+  debug!("MH_CreateHook status: {:?}", status);
   status = unsafe { mh::MH_EnableHook(present_original as LPVOID) };
-  info!("MH_EnableHook status: {:?}", status);
+  debug!("MH_EnableHook status: {:?}", status);
 
   Ok(present_trampoline)
 }

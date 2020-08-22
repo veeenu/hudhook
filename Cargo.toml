@@ -19,5 +19,9 @@ lazy_static = "1.4.0"
 itertools = "0.8.1"
 log-panics = "2.0.0"
 
+[[example]]
+name = "hello_world"
+crate-type = ["dylib"]
+
 [build-dependencies]
 cc = "1.0.45"

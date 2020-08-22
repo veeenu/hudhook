@@ -3,6 +3,7 @@ use crate::Error;
 use std::ffi::{CStr, CString};
 use std::mem;
 
+use log::*;
 use winapi::ctypes::*;
 use winapi::shared::minwindef::*;
 use winapi::um::handleapi::*;
@@ -16,7 +17,7 @@ use winapi::um::winbase::INFINITE;
 use winapi::um::winnt::*;
 
 fn find_process(s: &str) -> Option<DWORD> {
-  let mut lpid_process = [0 as DWORD; 2560];
+  let mut lpid_process = [0 as DWORD; 5120];
   let mut cb_needed = 0 as DWORD;
   let mut ret = 0;
 
@@ -55,11 +56,10 @@ fn find_process(s: &str) -> Option<DWORD> {
         mem::size_of_val(&modname) as DWORD,
       );
     }
-    let mn = unsafe { CStr::from_ptr(modname.as_ptr()) }
-      .to_string_lossy()
-      .to_lowercase();
+    let mn = unsafe { CStr::from_ptr(modname.as_ptr()) }.to_string_lossy();
+    debug!("{} -> {}", mn, s);
 
-    if mn == s.to_lowercase() {
+    if mn == s {
       let mut mi = psapi::MODULEINFO {
         lpBaseOfDll: 0 as LPVOID,
         SizeOfImage: 0 as DWORD,

@@ -2,7 +2,7 @@
 extern crate imgui;
 extern crate simplelog;
 
-pub mod common;
+// pub mod common;
 pub mod hook;
 pub mod inject;
 pub mod mh;
@@ -66,12 +66,12 @@ macro_rules! hook {
         ])
         .unwrap();
 
-        info!("DllMain()");
+        debug!("DllMain()");
         thread::spawn(|| {
-          info!("Started thread, enabling hook...");
+          debug!("Started thread, enabling hook...");
           match hook::hook($e) {
             Ok(_) => {
-              info!("Hook enabled");
+              debug!("Hook enabled");
             }
             Err(e) => {
               error!("Hook errored: {:?}", e);
