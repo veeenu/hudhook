@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use hudhook::memory::{get_base_address, PointerChain};
-use hudhook::{hook, RenderLoop};
+use hudhook::memory::*;
+use hudhook::prelude::*;
 use imgui::im_str;
 
 pub struct HelloWorld {
@@ -13,8 +13,8 @@ impl RenderLoop for HelloWorld {
   fn render(&mut self, ui: &mut imgui::Ui) {
     self.counter += 0.001;
 
-    let baddr: isize = unsafe { std::mem::transmute(get_base_address::<std::ffi::c_void>()) };
-    let ptr = PointerChain::<f64>::new(vec![baddr + 0x1BAF0, 0x18]);
+    let baddr: isize = base_address();
+    let ptr = PointerChain::<f64>::new(&[baddr + 0x1BAF0, 0x18]);
     ptr.write(self.counter);
 
     imgui::Window::new(im_str!("Hello"))

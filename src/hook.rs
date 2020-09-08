@@ -17,7 +17,6 @@ use std::cell::Cell;
 use std::ptr::null_mut;
 
 use crate::imgui_impl;
-use crate::memory::{get_base_address, PointerChain};
 use crate::mh;
 use crate::util::Error;
 
@@ -28,16 +27,20 @@ type IDXGISwapChainPresent =
 type WndProc =
   unsafe extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize;
 
-pub struct DxgiHook {
+/// Data structure to hold all info we need at frame render time.
+
+pub(crate) struct DxgiHook {
   present_trampoline: IDXGISwapChainPresent,
   default_wnd_proc: WndProc,
-  p_device: *mut ID3D11Device,
   p_device_context: *mut ID3D11DeviceContext,
   render_target_view: *mut ID3D11RenderTargetView,
   imgui_ctx: imgui::Context,
   renderer: imgui_impl::dx11::Renderer,
   render_loop: Box<dyn RenderLoop>,
+  // p_device: *mut ID3D11Device,
 }
+
+/// State machine for the initialization status of the DXGI hook.
 
 enum DxgiHookState {
   Uninitialized,
@@ -52,9 +55,12 @@ impl Default for DxgiHookState {
   }
 }
 
+// why does it have to be static FeelsBadMan
 static mut DXGI_HOOK_STATE: Cell<DxgiHookState> = Cell::new(DxgiHookState::Uninitialized);
 
 impl DxgiHook {
+  /// Initialize the DXGI hook.
+
   // TODO URGENT if Result is Err, caller must call present_trampoline
   fn initialize_dx(
     present_trampoline: IDXGISwapChainPresent,
@@ -125,7 +131,7 @@ impl DxgiHook {
     Ok(DxgiHook {
       present_trampoline,
       default_wnd_proc,
-      p_device,
+      // p_device,
       p_device_context,
       render_target_view,
       imgui_ctx,
@@ -134,7 +140,15 @@ impl DxgiHook {
     })
   }
 
+  /// Render loop function.
+  ///
+  /// This function is called in place of the regular `IDXGISwapChain::Present`
+  /// function and is responsible for finally calling the trampoline and
+  /// letting the game run its own code.
+
   fn render(&mut self, this: *mut IDXGISwapChain, sync_interval: UINT, flags: UINT) -> HRESULT {
+    // SAFETY
+    // idk lmao
     unsafe {
       self.p_device_context.as_ref().unwrap().OMSetRenderTargets(
         1,
@@ -142,6 +156,7 @@ impl DxgiHook {
         null_mut(),
       );
     }
+    // SAFETY
     // No reason this.as_ref() should error at this point, and probably it's a
     // good idea to crash and burn if it does. TODO check
     let mut sd: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
@@ -157,24 +172,50 @@ impl DxgiHook {
       (rect.bottom - rect.top) as f32,
     ];
 
-    let mut ui = self.imgui_ctx.frame();
+    let io = self.imgui_ctx.io();
+    let keys_down = io
+      .keys_down
+      .iter()
+      .enumerate()
+      .filter_map(|(idx, &val)| if val { Some(idx) } else { None })
+      .collect::<Vec<_>>();
+    let imgui::Io {
+      key_ctrl,
+      key_shift,
+      key_alt,
+      key_super,
+      display_size,
+      ..
+    } = *io;
 
-    self.render_loop.render(&mut ui);
+    debug!("Calling render loop");
+    let ui = self.imgui_ctx.frame();
+    self.render_loop.render(RenderContext {
+      frame: &ui,
+      key_ctrl,
+      key_shift,
+      key_alt,
+      key_super,
+      keys_down,
+      display_size,
+    });
+
+    debug!("Rendering frame data");
     let dd = ui.render();
 
+    debug!("Displaying image data");
     match self.renderer.render(dd) {
       Ok(_) => {}
       Err(e) => error!("Renderer errored: {:?}", e),
     };
-    //let dd = ui.render();
 
     unsafe { (self.present_trampoline)(this, sync_interval, flags) }
   }
 }
 
-pub trait RenderLoop {
-  fn render(&mut self, ui: &mut imgui::Ui);
-}
+/// Placeholder `WndProc`.
+///
+/// Currently processes keydown and keyup events.
 
 unsafe extern "system" fn wnd_proc(
   hwnd: HWND,
@@ -183,11 +224,34 @@ unsafe extern "system" fn wnd_proc(
   lparam: LPARAM,
 ) -> isize {
   if let DxgiHookState::Ok(hook) = DXGI_HOOK_STATE.get_mut() {
+    match umsg {
+      WM_KEYDOWN | WM_SYSKEYDOWN => {
+        if wparam < 256 {
+          hook.imgui_ctx.io_mut().keys_down[wparam] = true;
+        }
+      }
+      WM_KEYUP | WM_SYSKEYUP => {
+        if wparam < 256 {
+          hook.imgui_ctx.io_mut().keys_down[wparam] = false;
+        }
+      }
+      WM_CHAR => hook
+        .imgui_ctx
+        .io_mut()
+        .add_input_character(wparam as u8 as char),
+      _ => {}
+    }
+
     CallWindowProcW(Some(hook.default_wnd_proc), hwnd, umsg, wparam, lparam)
   } else {
     0
   }
 }
+
+/// Implementation of the hooked `Present` function.
+///
+/// Implements a state machine to move the hook from uninitialized, to
+/// hooked, to rendering or errored.
 
 extern "system" fn present_impl(
   this: *mut IDXGISwapChain,
@@ -240,6 +304,11 @@ extern "system" fn present_impl(
   }
 }
 
+/// Get the `IDXGISwapChain::Present` function address.
+///
+/// Creates a swap chain + device instance and looks up its
+/// vtable to find the address.
+
 fn get_present_address() -> Result<IDXGISwapChainPresent> {
   let mut feature_level = D3D_FEATURE_LEVEL_11_0;
   let mut swap_chain_desc: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
@@ -291,8 +360,45 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
   Ok(ret)
 }
 
-// Entry point
-pub fn hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
+// ==================
+// === PUBLIC API ===
+// ==================
+
+/// Interface for implementing the "game loop".
+///
+/// The `render` method of this trait will be invoked once per frame. Memory
+/// management and UI visualization (via the current frame's `imgui::Ui`
+/// instance) should be made inside of it.
+
+pub trait RenderLoop {
+  fn render<'a>(&mut self, ctx: RenderContext);
+}
+
+/// Information context made available to the RenderLoop
+///
+/// For now, it is a subset of the `imgui` context crafted in such a way that
+/// it is difficult to break the (limited) intended way of operating the library.
+
+pub struct RenderContext<'a> {
+  pub frame: &'a imgui::Ui<'a>,
+  pub key_ctrl: bool,
+  pub key_shift: bool,
+  pub key_alt: bool,
+  pub key_super: bool,
+  pub keys_down: Vec<usize>,
+  pub display_size: [f32; 2],
+}
+
+/// Inner entry point for the library.
+///
+/// Should not be invoked directly, but via the `hook!` macro which will
+/// also provide the `WinMain` entry point.
+///
+/// This function finds the `IDXGISwapChain::Present` function address,
+/// creates and enables the hook via `MinHook`. Returns the callback to the
+/// trampoline function, if successful.
+
+pub fn apply_hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
   debug!("Starting hook");
   let present_original = get_present_address()?;
   let mut present_trampoline: MaybeUninit<IDXGISwapChainPresent> = MaybeUninit::uninit();
@@ -316,4 +422,3 @@ pub fn hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
 
   Ok(present_trampoline)
 }
-

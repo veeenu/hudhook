@@ -1,4 +1,4 @@
-use crate::Error;
+use crate::util::Error;
 
 use std::ffi::{CStr, CString};
 use std::mem;
@@ -87,16 +87,23 @@ fn find_process(s: &str) -> Option<DWORD> {
   }
 }
 
-/// To be used in a bin target's "main".
+/// Inject `dll` inside the `process_name` process.
+///
+/// Create a bin target for your mod and use this function to build an
+/// executable which launches your mod's dll.
+///
 /// Example:
 /// ```
+/// use hudhook::prelude::inject;
+///
 /// pub fn main() {
-///   hudhook::inject("DarkSoulsIII.exe", "darksoulsiii-practice-tool.dll");
+///   inject("DarkSoulsIII.exe", "darksoulsiii-practice-tool.dll");
 /// }
+/// ```
 pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
   let pid: DWORD = find_process(process_name)
     .ok_or_else(|| Error(format!("Couldn't find process: {}", process_name)))?;
-  let pathstr = std::fs::canonicalize(dll).unwrap();
+  let pathstr = std::fs::canonicalize(dll).map_err(|e| Error::from(format!("{:?}", e)))?;
   let mut path = [0 as CHAR; MAX_PATH];
   for (dest, src) in path.iter_mut().zip(
     CString::new(pathstr.to_str().unwrap())

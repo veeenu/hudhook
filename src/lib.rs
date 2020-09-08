@@ -1,47 +1,49 @@
-#[macro_use]
-extern crate imgui;
-extern crate simplelog;
-
 // pub mod common;
-pub mod hook;
-pub mod inject;
-pub mod mh;
-pub mod util;
-pub mod imgui_impl {
+mod hook;
+mod inject;
+pub mod memory;
+mod mh;
+mod util;
+mod imgui_impl {
   pub mod dx11;
 }
-pub mod memory;
 
-//
-// Reexports
-//
-pub use hook::RenderLoop;
-pub use inject::inject;
-pub use util::Error;
+pub mod prelude {
+  //
+  // Reexports
+  //
+  pub use crate::hook::{apply_hook, RenderContext, RenderLoop};
+  pub use crate::inject::inject;
+  pub use crate::memory;
+  pub use crate::util::{get_dll_path, Error};
+
+  //
+  // Library reexports
+  //
+  pub use imgui;
+  pub use winapi;
+
+  pub use crate::hook;
+}
 
 /// Entry point for the library.
 ///
 /// Example usage:
 /// ```
 /// pub struct MyRenderLoop;
-/// impl MyRenderLoop {
-///   fn new() -> MyRenderLoop { ... }
-/// }
 /// impl RenderLoop for MyRenderLoop {
 ///   fn render(&self, frame: imgui::Ui) { ... }
 /// }
 ///
-/// hook!(MyRenderLoop::new())
+/// hook!(Box::new(MyRenderLoop::new(...)))
 /// ```
-///
 #[macro_export]
 macro_rules! hook {
   ($e:expr) => {
-    use log::*;
     use log_panics;
-    use simplelog::*;
     use std::thread;
 
+    /// Entry point created by the `hudhook` library.
     #[no_mangle]
     pub extern "stdcall" fn DllMain(
       _: winapi::shared::minwindef::HINSTANCE,
@@ -57,7 +59,7 @@ macro_rules! hook {
 
         // TODO leave this for the client
         CombinedLogger::init(vec![
-          TermLogger::new(LevelFilter::Trace, Config::default(), TerminalMode::Mixed).unwrap(),
+          TermLogger::new(LevelFilter::Trace, Config::default(), TerminalMode::Mixed),
           WriteLogger::new(
             LevelFilter::Trace,
             Config::default(),
@@ -69,7 +71,7 @@ macro_rules! hook {
         debug!("DllMain()");
         thread::spawn(|| {
           debug!("Started thread, enabling hook...");
-          match hook::hook($e) {
+          match apply_hook($e) {
             Ok(_) => {
               debug!("Hook enabled");
             }
