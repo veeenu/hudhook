@@ -14,12 +14,12 @@ pub(crate) fn get_base_address<S>() -> *const S {
 }
 
 // To be used with PointerChain
-pub fn base_address() -> isize {
+pub fn base_address() -> usize {
   return unsafe { std::mem::transmute(get_base_address::<c_void>()) };
 }
 
 /// Boyer-Moore implementation
-pub fn aob_scan(pattern: &str, start: isize, length: usize) -> Option<usize> {
+pub fn aob_scan(pattern: &str, start: usize, length: usize) -> Option<usize> {
   let mut buffer = vec![0u8; length];
   let mut n = length;
   unsafe {
@@ -35,7 +35,7 @@ pub fn aob_scan(pattern: &str, start: isize, length: usize) -> Option<usize> {
   bmh::bmh(&buffer[0..n], &bmh::into_needle(pattern))
 }
 
-pub fn create_thread(func_ptr: isize) {
+pub fn create_thread(func_ptr: usize) {
   // let proc = unsafe { GetCurrentProcess() };
   log::info!("CreateThread @ {:x}", func_ptr);
 
