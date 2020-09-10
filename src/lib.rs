@@ -51,13 +51,13 @@ macro_rules! hook {
       _: *mut winapi::ctypes::c_void,
     ) {
       if reason == 1 {
-        log_panics::init();
+        // TODO leave this for the client
+        /*log_panics::init();
 
         unsafe {
           winapi::um::consoleapi::AllocConsole();
         }
 
-        // TODO leave this for the client
         CombinedLogger::init(vec![
           TermLogger::new(LevelFilter::Trace, Config::default(), TerminalMode::Mixed),
           WriteLogger::new(
@@ -66,9 +66,9 @@ macro_rules! hook {
             std::fs::File::create("hudhook.log").unwrap(),
           ),
         ])
-        .unwrap();
+        .unwrap();*/
 
-        debug!("DllMain()");
+        trace!("DllMain()");
         thread::spawn(|| {
           debug!("Started thread, enabling hook...");
           match apply_hook($e) {

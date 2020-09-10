@@ -251,7 +251,7 @@ struct MappedSubresource<T, S>(
 impl<T, S> MappedSubresource<T, S> {
   fn map(ptr: *mut S, device_ctx: NonNull<ID3D11DeviceContext>) -> Result<MappedSubresource<T, S>> {
     let mut res: Box<D3D11_MAPPED_SUBRESOURCE> = Box::new(unsafe { std::mem::zeroed() });
-    debug!("Mapping {:p} onto {:p}", ptr, res.as_ref());
+    trace!("Mapping {:p} onto {:p}", ptr, res.as_ref());
     match unsafe {
       device_ctx
         .as_ref()
@@ -304,7 +304,7 @@ impl RenderBufferData {
       };
       self.vertex_buffer_size = vertex_buffer_size + 5000;
       self.vertex_buffer = RenderBufferData::create_vertex_buffer(device, self.vertex_buffer_size)?;
-      debug!("Created vertex buffer {:p}", self.vertex_buffer);
+      trace!("Created vertex buffer {:p}", self.vertex_buffer);
     }
 
     if self.index_buffer_size < index_buffer_size
@@ -313,7 +313,7 @@ impl RenderBufferData {
       unsafe { self.index_buffer.as_ref().map(|e| e.Release()).unwrap_or(0) };
       self.index_buffer_size = index_buffer_size + 5000;
       self.index_buffer = RenderBufferData::create_index_buffer(device, self.index_buffer_size)?;
-      debug!("Created index buffer {:p}", self.index_buffer);
+      trace!("Created index buffer {:p}", self.index_buffer);
     }
 
     Ok(())
@@ -467,7 +467,7 @@ impl Renderer {
   }
 
   pub fn render(&mut self, draw_data: &imgui::DrawData) -> Result<()> {
-    debug!("Rendering draw data");
+    trace!("Rendering draw data");
     if draw_data.display_size[0] <= 0. && draw_data.display_size[1] <= 0. {
       return Err(
         format!(
@@ -478,17 +478,17 @@ impl Renderer {
       );
     }
 
-    debug!("Checking sizes");
+    trace!("Checking sizes");
     self.render_buffer_data.check_sizes(
       unsafe { self.device.as_mut() },
       draw_data.total_vtx_count as _,
       draw_data.total_idx_count as _,
     )?;
 
-    debug!("Mapping subresources for vertex and index buffers");
+    trace!("Mapping subresources for vertex and index buffers");
     let (vertex_pdata, index_pdata) = self.render_buffer_data.map_resources(self.device_ctx)?;
 
-    debug!("Copying buffers");
+    trace!("Copying buffers");
     for (offset, cl) in draw_data.draw_lists().enumerate() {
       let vertex_buffer = cl.vtx_buffer();
       let index_buffer = cl.idx_buffer();
@@ -506,11 +506,11 @@ impl Renderer {
       }
     }
 
-    debug!("Dropping buffers");
+    trace!("Dropping buffers");
     drop(vertex_pdata);
     drop(index_pdata);
 
-    debug!("Mapping subresource");
+    trace!("Mapping subresource");
     let context_pdata = MappedSubresource::<VERTEX_CONSTANT_BUFFER, ID3D11Buffer>::map(
       self.device_objects.vertex_shader.constant_buffer,
       self.device_ctx,
@@ -528,14 +528,14 @@ impl Renderer {
       [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
     ]);
 
-    debug!("Copying context");
+    trace!("Copying context");
     unsafe {
       std::ptr::copy_nonoverlapping(&mvp.0 as *const _, &mut (*cbpdata).0 as *mut _, 1);
     }
 
     drop(context_pdata);
 
-    debug!("Backing up state");
+    trace!("Backing up state");
     let state_backup = StateBackup::backup(unsafe { self.device_ctx.as_ref() });
 
     let mut goffs_idx = 0;
@@ -543,7 +543,7 @@ impl Renderer {
 
     self.setup_render_state(draw_data);
 
-    debug!("Drawing");
+    trace!("Drawing");
     for cl in draw_data.draw_lists() {
       for cmd in cl.commands() {
         match cmd {
@@ -589,7 +589,7 @@ impl Renderer {
       goffs_vtx += cl.vtx_buffer().len();
     }
 
-    debug!("Restoring backup");
+    trace!("Restoring backup");
     state_backup.restore(unsafe { self.device_ctx.as_ref() });
 
     Ok(())

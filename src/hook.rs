@@ -67,7 +67,7 @@ impl DxgiHook {
     p_this: *mut IDXGISwapChain,
     render_loop: Box<dyn RenderLoop>,
   ) -> Result<DxgiHook> {
-    debug!("Initializing DXGI hook");
+    trace!("Initializing DXGI hook");
     let this =
       unsafe { p_this.as_ref() }.ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
     let mut ui: UINT = 0;
@@ -127,7 +127,7 @@ impl DxgiHook {
       (*back_buf).Release();
     }
 
-    debug!("Initialization completed");
+    trace!("Initialization completed");
     Ok(DxgiHook {
       present_trampoline,
       default_wnd_proc,
@@ -163,51 +163,53 @@ impl DxgiHook {
     unsafe { this.as_ref().unwrap().GetDesc(&mut sd as _) };
 
     let mut rect: RECT = unsafe { std::mem::zeroed() };
-    unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _) };
+    if unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _) } != 0 {
+      let mut io = self.imgui_ctx.io_mut();
 
-    let mut io = self.imgui_ctx.io_mut();
+      io.display_size = [
+        (rect.right - rect.left) as f32,
+        (rect.bottom - rect.top) as f32,
+      ];
 
-    io.display_size = [
-      (rect.right - rect.left) as f32,
-      (rect.bottom - rect.top) as f32,
-    ];
+      let io = self.imgui_ctx.io();
+      let keys_down = io
+        .keys_down
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, &val)| if val { Some(idx) } else { None })
+        .collect::<Vec<_>>();
+      let imgui::Io {
+        key_ctrl,
+        key_shift,
+        key_alt,
+        key_super,
+        display_size,
+        ..
+      } = *io;
 
-    let io = self.imgui_ctx.io();
-    let keys_down = io
-      .keys_down
-      .iter()
-      .enumerate()
-      .filter_map(|(idx, &val)| if val { Some(idx) } else { None })
-      .collect::<Vec<_>>();
-    let imgui::Io {
-      key_ctrl,
-      key_shift,
-      key_alt,
-      key_super,
-      display_size,
-      ..
-    } = *io;
+      trace!("Calling render loop");
+      let ui = self.imgui_ctx.frame();
+      self.render_loop.render(RenderContext {
+        frame: &ui,
+        key_ctrl,
+        key_shift,
+        key_alt,
+        key_super,
+        keys_down,
+        display_size,
+      });
 
-    debug!("Calling render loop");
-    let ui = self.imgui_ctx.frame();
-    self.render_loop.render(RenderContext {
-      frame: &ui,
-      key_ctrl,
-      key_shift,
-      key_alt,
-      key_super,
-      keys_down,
-      display_size,
-    });
+      if self.render_loop.is_visible() {
+        trace!("Rendering frame data");
+        let dd = ui.render();
 
-    debug!("Rendering frame data");
-    let dd = ui.render();
-
-    debug!("Displaying image data");
-    match self.renderer.render(dd) {
-      Ok(_) => {}
-      Err(e) => error!("Renderer errored: {:?}", e),
-    };
+        trace!("Displaying image data");
+        match self.renderer.render(dd) {
+          Ok(_) => {}
+          Err(e) => error!("Renderer errored: {:?}", e),
+        };
+      }
+    }
 
     unsafe { (self.present_trampoline)(this, sync_interval, flags) }
   }
@@ -242,6 +244,10 @@ unsafe extern "system" fn wnd_proc(
       _ => {}
     }
 
+    //if !hook.render_loop.is_capturing() {
+    //} else {
+    //  0
+    //}
     CallWindowProcW(Some(hook.default_wnd_proc), hwnd, umsg, wparam, lparam)
   } else {
     0
@@ -265,22 +271,6 @@ extern "system" fn present_impl(
         unreachable!("DXGI Hook State uninitialized in present_impl -- this should never happen!")
       }
       DxgiHookState::Hooked(present_trampoline, render_loop) => {
-        // Stuff like this should be put in a callback and passed to hook().
-        /*
-        // Base: 7ff7762a0000
-        // (Base + 0x0001BAF0, 0x10) float a
-        // (Base + 0x0001BAF0, 0x18) double b
-        // (Base + 0x0001BAF0, 0x20) uint64 c
-        let pc_u32 = PointerChain::<u32>::new(vec![
-          // 0x7ff7762a0000 + 0x1BAF0,
-          get_base_address::<u8>() as usize as isize + 0x1baf0,
-          0x20
-        ]);
-        debug!("Read value {:?}", pc_u32.read());
-        pc_u32.write(31337);
-        debug!("Read value {:?} after writing", pc_u32.read());
-        */
-
         match DxgiHook::initialize_dx(present_trampoline, this, render_loop) {
           Ok(dh) => DxgiHookState::Ok(dh),
           Err(e) => {
@@ -372,6 +362,8 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 
 pub trait RenderLoop {
   fn render<'a>(&mut self, ctx: RenderContext);
+  fn is_visible(&self) -> bool;
+  fn is_capturing(&self) -> bool;
 }
 
 /// Information context made available to the RenderLoop
@@ -399,12 +391,12 @@ pub struct RenderContext<'a> {
 /// trampoline function, if successful.
 
 pub fn apply_hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPresent> {
-  debug!("Starting hook");
+  trace!("Starting hook");
   let present_original = get_present_address()?;
   let mut present_trampoline: MaybeUninit<IDXGISwapChainPresent> = MaybeUninit::uninit();
-  debug!("Initializing MH");
+  trace!("Initializing MH");
   let mut status: mh::MH_STATUS = unsafe { mh::MH_Initialize() };
-  debug!("MH_Initialize status: {:?}", status);
+  trace!("MH_Initialize status: {:?}", status);
   status = unsafe {
     mh::MH_CreateHook(
       present_original as LPVOID,
@@ -416,9 +408,9 @@ pub fn apply_hook(render_loop: Box<dyn RenderLoop>) -> Result<IDXGISwapChainPres
   unsafe {
     DXGI_HOOK_STATE.replace(DxgiHookState::Hooked(present_trampoline, render_loop));
   }
-  debug!("MH_CreateHook status: {:?}", status);
+  trace!("MH_CreateHook status: {:?}", status);
   status = unsafe { mh::MH_EnableHook(present_original as LPVOID) };
-  debug!("MH_EnableHook status: {:?}", status);
+  trace!("MH_EnableHook status: {:?}", status);
 
   Ok(present_trampoline)
 }

@@ -57,7 +57,7 @@ fn find_process(s: &str) -> Option<DWORD> {
       );
     }
     let mn = unsafe { CStr::from_ptr(modname.as_ptr()) }.to_string_lossy();
-    debug!("{} -> {}", mn, s);
+    trace!("find_process: {} -> {}", mn, s);
 
     if mn == s {
       let mut mi = psapi::MODULEINFO {

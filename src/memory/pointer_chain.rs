@@ -28,8 +28,8 @@ impl<T> PointerChain<T> {
       ReadProcessMemory(
         self.proc as _,
         addr as _,
-        &mut value as *mut _ as _,
-        std::mem::size_of::<T>(),
+        &mut value as *mut usize as _,
+        std::mem::size_of::<usize>(),
         null_mut(),
       )
     };
