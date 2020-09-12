@@ -354,15 +354,23 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 // === PUBLIC API ===
 // ==================
 
-/// Interface for implementing the "game loop".
+/// Interface for implementing the render loop.
 ///
-/// The `render` method of this trait will be invoked once per frame. Memory
-/// management and UI visualization (via the current frame's `imgui::Ui`
-/// instance) should be made inside of it.
 
 pub trait RenderLoop {
+
+  /// Invoked once per frame. Memory management and UI visualization (via the
+  /// current frame's `imgui::Ui` instance) should be made inside of it.
   fn render<'a>(&mut self, ctx: RenderContext);
+
+  /// Return `true` when you want your UI to be rendered to screen.
+  ///
+  /// The [`render`](#tyrender) method will still be called, but the draw data
+  /// will not be displayed
   fn is_visible(&self) -> bool;
+
+  /// Return `true` when you want the underlying application to stop receiving
+  /// `WndProc` events. Presently not functioning.
   fn is_capturing(&self) -> bool;
 }
 

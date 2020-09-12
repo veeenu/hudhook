@@ -5,6 +5,25 @@ use winapi::um::{
   memoryapi::ReadProcessMemory, memoryapi::WriteProcessMemory, processthreadsapi::GetCurrentProcess,
 };
 
+/// Wraps CheatEngine's concept of pointer with nested offsets. Evaluates,
+/// if the evaluation does not fail, to a mutable pointer of type `T`.
+///
+/// At runtime, it evaluates the final address of the chain by reading the
+/// base pointer, then recursively reading the next memory address in the
+/// chain at an offset from there. For example,
+///
+/// ```
+/// PointerChain::<T>::new(&[a, b, c, d, e])
+/// ```
+///
+/// evaluates to
+///
+/// ```
+/// *(*(*(*(*a + b) + c) + d) + e)
+/// ```
+///
+/// This is useful for managing reverse engineered structures which are not
+/// fully known.
 pub struct PointerChain<T> {
   proc: *const c_void,
   base: *mut T,
@@ -12,6 +31,7 @@ pub struct PointerChain<T> {
 }
 
 impl<T> PointerChain<T> {
+  /// Creates a new pointer chain given an array of addresses.
   pub fn new(chain: &[usize]) -> PointerChain<T> {
     let mut it = chain.iter();
     let base = *it.next().unwrap() as usize as *mut T;
@@ -40,6 +60,9 @@ impl<T> PointerChain<T> {
     }
   }
 
+  /// Safely evaluates the pointer chain.
+  /// Relies on `ReadProcessMemory` instead of pointer dereferencing for crash
+  /// safety.  Returns `None` if the evaluation failed.
   pub fn eval(&self) -> Option<*mut T> {
     self
       .offsets

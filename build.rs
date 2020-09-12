@@ -8,16 +8,16 @@ fn main() {
 
   let parts = target.splitn(4, '-').collect::<Vec<_>>();
   let arch = parts[0];
-  let sys  = parts[2];
+  let sys = parts[2];
 
   if sys != "windows" {
     panic!("Platform '{}' not supported.", sys);
   }
 
   let hde = match arch {
-    "i686"   => "hde/hde32.c",
+    "i686" => "hde/hde32.c",
     "x86_64" => "hde/hde64.c",
-    _        => panic!("Architecture '{}' not supported.", arch)
+    _ => panic!("Architecture '{}' not supported.", arch),
   };
 
   let mh_src_dir = Path::new(&root_dir).join("lib/minhook/src");
@@ -30,6 +30,8 @@ fn main() {
     .compile("libminhook.a");
 
   println!("cargo:rerun-if-changed=lib/minhook/src/");
-  println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
-  // println!("cargo:rustc-link-lib=static=minhook");
+  println!(
+    "cargo:rustc-link-search=native={}",
+    env::var("OUT_DIR").unwrap()
+  );
 }

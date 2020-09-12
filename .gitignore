@@ -4,3 +4,4 @@
 /hudhook.log
 /lib/test_sample/*.exe
 /lib/test_sample/*.obj
+/tests/test_sample.exe

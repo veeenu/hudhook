@@ -1,4 +1,4 @@
-use hudhook::prelude::*;
+use hudhook::*;
 use simplelog::*;
 use std::process::Command;
 
@@ -8,7 +8,9 @@ fn example_hello_world() {
     .expect("Failed to run child process");
   std::thread::sleep(std::time::Duration::from_millis(250));
 
-  // let pid = inject::find_process("sample.exe").expect("Process not found");
+  // Build test_sample.exe from `lib/test_sample/test_sample.cpp`:
+  // > cl /std:c++17 .\test_sample.cpp; .\test_sample.exe
+  // > cp .\test_sample.exe tests
   inject("test_sample.exe", "target/release/examples/hello_world.dll").unwrap();
 
   child.wait().expect("Child process error");

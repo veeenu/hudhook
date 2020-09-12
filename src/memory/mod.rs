@@ -1,3 +1,4 @@
+//! Memory manipulation API.
 mod pointer_chain;
 mod process_util;
 

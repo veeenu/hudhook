@@ -22,6 +22,7 @@ impl From<String> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Returns the path of the implementor's DLL.
 pub fn get_dll_path() -> Option<String> {
   let mut hmodule: HMODULE = null_mut();
   // SAFETY
