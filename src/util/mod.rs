@@ -11,6 +11,9 @@ use winapi::{
   },
 };
 
+/// Trivial to-string implementation of an error.
+///
+/// Will be superseded by a more articulate structure when the need will arise.
 #[derive(Debug)]
 pub struct Error(pub String);
 
