@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["hudhook"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;<a class=\"struct\" href=\"https://doc.rust-lang.org/nightly/alloc/string/struct.String.html\" title=\"struct alloc::string::String\">String</a>&gt; for <a class=\"struct\" href=\"hudhook/struct.Error.html\" title=\"struct hudhook::Error\">Error</a>","synthetic":false,"types":["hudhook::util::Error"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

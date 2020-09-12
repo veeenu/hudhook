@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["aob_scan","Boyer-Moore implementation for scanning array of bytes."],["base_address","Returns the base address for the main process module."]],"struct":[["PointerChain","Wraps CheatEngine's concept of pointer with nested offsets. Evaluates, if the evaluation does not fail, to a mutable pointer of type `T`."]]});
