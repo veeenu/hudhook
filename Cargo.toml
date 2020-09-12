@@ -4,7 +4,7 @@ description = "A DirectX 11 render loop hook with memory manipulation API"
 homepage = "https://github.com/veeenu/hudhook"
 repository = "https://github.com/veeenu/hudhook"
 license-file = "LICENSE.md"
-version = "0.1.2"
+version = "0.1.2.1"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -29,3 +29,6 @@ crate-type = ["cdylib"]
 
 [build-dependencies]
 cc = "1.0.45"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
