@@ -7,6 +7,7 @@ use winapi::shared::minwindef::*;
 use winapi::shared::windef::{HWND, RECT};
 use winapi::um::d3d11::*;
 use winapi::um::d3dcommon::*;
+use winapi::um::processthreadsapi::GetCurrentProcessId;
 use winapi::um::winnt::*;
 use winapi::um::winuser::*;
 use winapi::Interface;
@@ -15,6 +16,7 @@ use core::mem::MaybeUninit;
 
 use std::cell::Cell;
 use std::ptr::null_mut;
+use std::sync::{Arc, Mutex};
 
 use crate::imgui_impl;
 use crate::mh;
@@ -294,6 +296,51 @@ extern "system" fn present_impl(
   }
 }
 
+fn get_current_hwnd() -> Option<HWND> {
+  // https://gist.github.com/application-developer-DA/5a460d9ca02948f1d2bfa53100c941da
+  pub fn enumerate_windows<F>(mut callback: F) -> BOOL
+  where
+    F: FnMut(HWND) -> bool,
+  {
+    let mut trait_obj: &mut dyn FnMut(HWND) -> bool = &mut callback;
+    let closure_pointer_pointer: *mut std::ffi::c_void = unsafe { std::mem::transmute(&mut trait_obj) };
+
+    let lparam = closure_pointer_pointer as LPARAM;
+    unsafe { EnumWindows(Some(enumerate_callback), lparam) }
+  }
+
+  unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let closure: &mut &mut dyn FnMut(HWND) -> bool = std::mem::transmute(lparam as *mut std::ffi::c_void);
+    if closure(hwnd) {
+      TRUE
+    } else {
+      FALSE
+    }
+  }
+
+  let mutex: Arc<Mutex<Option<HWND>>> = Arc::new(Mutex::new(None));
+  let pid = unsafe { GetCurrentProcessId() };
+
+  let outcome = enumerate_windows(|hwnd| {
+    let mut mutex = mutex.lock().unwrap();
+
+    if unsafe { GetWindowThreadProcessId(hwnd, null_mut()) } == pid {
+      debug!("Found HWND: {:x}", hwnd as usize);
+      *mutex = Some(hwnd);
+      false
+    } else {
+      true
+    }
+  });
+
+  if outcome != 0 {
+    let guard = mutex.lock().unwrap();
+    *guard
+  } else {
+    None
+  }
+}
+
 /// Get the `IDXGISwapChain::Present` function address.
 ///
 /// Creates a swap chain + device instance and looks up its
@@ -312,7 +359,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
   swap_chain_desc.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
   swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
   swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swap_chain_desc.OutputWindow = unsafe { GetForegroundWindow() };
+  swap_chain_desc.OutputWindow = get_current_hwnd().unwrap_or_else(|| unsafe { GetForegroundWindow() });
   swap_chain_desc.SampleDesc.Count = 1;
   swap_chain_desc.Windowed = 1;
 
@@ -335,7 +382,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 
   if result < 0 {
     return Err(Error(format!(
-      "D3D11CreateDeviceAndSwapChain failed {:?}",
+      "D3D11CreateDeviceAndSwapChain failed {:x}",
       result
     )));
   }
@@ -358,7 +405,6 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 ///
 
 pub trait RenderLoop {
-
   /// Invoked once per frame. Memory management and UI visualization (via the
   /// current frame's `imgui::Ui` instance) should be made inside of it.
   fn render<'a>(&mut self, ctx: RenderContext);
