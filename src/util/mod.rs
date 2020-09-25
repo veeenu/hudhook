@@ -23,6 +23,12 @@ impl From<String> for Error {
   }
 }
 
+impl std::fmt::Display for Error {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.0)
+  }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Returns the path of the implementor's DLL.
