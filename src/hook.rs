@@ -4,9 +4,10 @@ use winapi::shared::dxgi::*;
 use winapi::shared::dxgiformat::*;
 use winapi::shared::dxgitype::*;
 use winapi::shared::minwindef::*;
-use winapi::shared::windef::{HWND, RECT};
+use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, RECT};
 use winapi::um::d3d11::*;
 use winapi::um::d3dcommon::*;
+use winapi::um::libloaderapi::GetModuleHandleA;
 use winapi::um::processthreadsapi::GetCurrentProcessId;
 use winapi::um::winnt::*;
 use winapi::um::winuser::*;
@@ -103,13 +104,19 @@ impl DxgiHook {
 
     let mut imgui_ctx = imgui::Context::create();
     imgui_ctx.set_ini_filename(None);
-    imgui_ctx
-      .fonts()
-      .add_font(&[imgui::FontSource::DefaultFontData {
+    imgui_ctx.fonts().add_font(&[
+      imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
           ..imgui::FontConfig::default()
         }),
-      }]);
+      },
+      imgui::FontSource::DefaultFontData {
+        config: Some(imgui::FontConfig {
+          size_pixels: 32.,
+          ..imgui::FontConfig::default()
+        }),
+      },
+    ]);
 
     let renderer = imgui_impl::dx11::Renderer::new(p_device, p_device_context, &mut imgui_ctx)?;
 
@@ -201,10 +208,10 @@ impl DxgiHook {
         display_size,
       });
 
-      if self.render_loop.is_visible() {
-        trace!("Rendering frame data");
-        let dd = ui.render();
+      trace!("Rendering frame data");
+      let dd = ui.render();
 
+      if self.render_loop.is_visible() {
         trace!("Displaying image data");
         match self.renderer.render(dd) {
           Ok(_) => {}
@@ -303,14 +310,16 @@ fn get_current_hwnd() -> Option<HWND> {
     F: FnMut(HWND) -> bool,
   {
     let mut trait_obj: &mut dyn FnMut(HWND) -> bool = &mut callback;
-    let closure_pointer_pointer: *mut std::ffi::c_void = unsafe { std::mem::transmute(&mut trait_obj) };
+    let closure_pointer_pointer: *mut std::ffi::c_void =
+      unsafe { std::mem::transmute(&mut trait_obj) };
 
     let lparam = closure_pointer_pointer as LPARAM;
     unsafe { EnumWindows(Some(enumerate_callback), lparam) }
   }
 
   unsafe extern "system" fn enumerate_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let closure: &mut &mut dyn FnMut(HWND) -> bool = std::mem::transmute(lparam as *mut std::ffi::c_void);
+    let closure: &mut &mut dyn FnMut(HWND) -> bool =
+      std::mem::transmute(lparam as *mut std::ffi::c_void);
     if closure(hwnd) {
       TRUE
     } else {
@@ -347,11 +356,57 @@ fn get_current_hwnd() -> Option<HWND> {
 /// vtable to find the address.
 
 fn get_present_address() -> Result<IDXGISwapChainPresent> {
+  struct ThrowawayHwnd(HWND);
+  impl ThrowawayHwnd {
+    pub fn new() -> ThrowawayHwnd {
+      let hinstance = unsafe { GetModuleHandleA(0 as *const i8) };
+      let wnd_class = WNDCLASSA {
+        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(DefWindowProcA),
+        hInstance: hinstance,
+        lpszClassName: "HUDHOOK_DUMMY\0".as_ptr() as *const i8,
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hIcon: 0 as HICON,
+        hCursor: 0 as HICON,
+        hbrBackground: 0 as HBRUSH,
+        lpszMenuName: 0 as *const i8,
+      };
+      ThrowawayHwnd(unsafe {
+        RegisterClassA(&wnd_class);
+        CreateWindowExA(
+          0,
+          "HUDHOOK_DUMMY\0".as_ptr() as _,
+          "HUDHOOK_DUMMY\0".as_ptr() as _,
+          WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+          0,
+          0,
+          16,
+          16,
+          0 as HWND,
+          0 as HMENU,
+          std::mem::transmute(hinstance),
+          0 as LPVOID,
+        )
+      })
+    }
+  }
+
+  impl Drop for ThrowawayHwnd {
+    fn drop(&mut self) {
+      unsafe {
+        DestroyWindow(self.0);
+      }
+    }
+  }
+
   let mut feature_level = D3D_FEATURE_LEVEL_11_0;
   let mut swap_chain_desc: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
   let mut p_device: *mut ID3D11Device = null_mut();
   let mut p_context: *mut ID3D11DeviceContext = null_mut();
   let mut p_swap_chain: *mut IDXGISwapChain = null_mut();
+
+  let dummy_hwnd = ThrowawayHwnd::new();
 
   swap_chain_desc.BufferCount = 1;
   swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -359,7 +414,9 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
   swap_chain_desc.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
   swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
   swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swap_chain_desc.OutputWindow = get_current_hwnd().unwrap_or_else(|| unsafe { GetForegroundWindow() });
+  // swap_chain_desc.OutputWindow = get_current_hwnd().unwrap_or_else(|| dummy_hwnd.0);
+  // Let's always use our dummy window for the sake of consistency.
+  swap_chain_desc.OutputWindow = dummy_hwnd.0;
   swap_chain_desc.SampleDesc.Count = 1;
   swap_chain_desc.Windowed = 1;
 
@@ -388,11 +445,14 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
   }
 
   let ret = unsafe { (*(&*p_swap_chain).lpVtbl).Present };
+
   unsafe {
     (*p_device).Release();
     (*p_context).Release();
     (*p_swap_chain).Release();
   }
+
+  drop(dummy_hwnd);
 
   Ok(ret)
 }

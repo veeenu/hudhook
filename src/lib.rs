@@ -133,7 +133,7 @@ macro_rules! hudhook {
     ) {
       if reason == 1 {
         trace!("DllMain()");
-        thread::spawn(|| {
+        thread::spawn(move || {
           debug!("Started thread, enabling hook...");
           match apply_hook($e) {
             Ok(_) => {
