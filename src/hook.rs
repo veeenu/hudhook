@@ -110,9 +110,11 @@ impl DxgiHook {
           ..imgui::FontConfig::default()
         }),
       },
+    ]);
+    imgui_ctx.fonts().add_font(&[
       imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
-          size_pixels: 32.,
+          size_pixels: 26.,
           ..imgui::FontConfig::default()
         }),
       },

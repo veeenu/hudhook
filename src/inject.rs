@@ -6,6 +6,7 @@ use std::mem;
 use log::*;
 use winapi::ctypes::*;
 use winapi::shared::minwindef::*;
+use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::handleapi::*;
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use winapi::um::memoryapi;
@@ -17,7 +18,7 @@ use winapi::um::winbase::INFINITE;
 use winapi::um::winnt::*;
 
 fn find_process(s: &str) -> Option<DWORD> {
-  let mut lpid_process = [0 as DWORD; 5120];
+  let mut lpid_process = [0 as DWORD; 65535];
   let mut cb_needed = 0 as DWORD;
   let mut ret = 0;
 
@@ -29,13 +30,17 @@ fn find_process(s: &str) -> Option<DWORD> {
     );
   }
 
-  for i in 0..((cb_needed as f64 / mem::size_of::<DWORD>() as f64) as usize) {
+  let process_count = cb_needed as usize / mem::size_of::<DWORD>();
+  trace!("{} processes", process_count);
+
+  for i in 0..process_count {
     let pid = lpid_process[i];
     let hproc = unsafe {
       processthreadsapi::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
     };
 
     if hproc == 0 as *mut c_void {
+      trace!("GetLastError: {:x}", unsafe { GetLastError() });
       continue;
     }
 
@@ -57,7 +62,7 @@ fn find_process(s: &str) -> Option<DWORD> {
       );
     }
     let mn = unsafe { CStr::from_ptr(modname.as_ptr()) }.to_string_lossy();
-    trace!("find_process: {} -> {}", mn, s);
+    trace!("find_process[{:>5}]: {} -> {}", i, mn, s);
 
     if mn == s {
       let mut mi = psapi::MODULEINFO {
