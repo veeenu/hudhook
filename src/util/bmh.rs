@@ -1,6 +1,6 @@
 pub(crate) fn into_needle(pattern: &str) -> Vec<Option<u8>> {
   pattern
-    .split(" ")
+    .split(' ')
     .map(|byte| match byte {
       "?" | "??" => None,
       x => u8::from_str_radix(x, 16).ok(),
@@ -8,6 +8,7 @@ pub(crate) fn into_needle(pattern: &str) -> Vec<Option<u8>> {
     .collect::<Vec<_>>()
 }
 
+#[allow(clippy::many_single_char_names)]
 pub(crate) fn bmh(haystack: &[u8], needle: &[Option<u8>]) -> Option<usize> {
   let (m, n) = (needle.len(), haystack.len());
   if m > n {
@@ -15,9 +16,10 @@ pub(crate) fn bmh(haystack: &[u8], needle: &[Option<u8>]) -> Option<usize> {
   }
 
   let mut skip = [m; 256];
-  for k in 0..m - 1 {
-    if let Some(v) = needle[k] {
-      skip[v as usize] = m - k - 1;
+  // for k in 0..m - 1 {
+  for (k, v) in needle.iter().enumerate().take(m - 1) {
+    if let Some(v) = v {
+      skip[*v as usize] = m - k - 1;
     }
   }
 

@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::ptr::{null, null_mut, NonNull};
 
-use imgui;
 use imgui::internal::RawWrapper;
 
 use log::*;
@@ -105,7 +104,7 @@ impl DeviceObjects {
         StencilReadMask: 0,
         StencilWriteMask: 0,
         FrontFace: ff,
-        BackFace: ff.clone(),
+        BackFace: ff,
       };
 
       let mut depth_stencil_state = null_mut();
@@ -165,7 +164,7 @@ impl DeviceObjects {
       let mut texture_view = null_mut();
       match unsafe {
         device.CreateShaderResourceView(
-          std::mem::transmute(d3dtex),
+          d3dtex as *mut winapi::um::d3d11::ID3D11Resource,
           &srv_desc as *const _,
           &mut texture_view as *mut *mut _,
         )
@@ -319,8 +318,8 @@ impl RenderBufferData {
     Ok(())
   }
 
-  fn map_resources<'a>(
-    &'a self,
+  fn map_resources(
+    &self,
     device_ctx: NonNull<ID3D11DeviceContext>,
   ) -> Result<(
     MappedSubresource<imgui::DrawVert, ID3D11Buffer>,
@@ -400,8 +399,8 @@ impl Renderer {
     let io = ctx.io_mut();
     io.backend_flags |= imgui::BackendFlags::RENDERER_HAS_VTX_OFFSET;
 
-    let mut device = NonNull::new(device).ok_or_else(|| (format!("Null device")))?;
-    let device_ctx = NonNull::new(device_ctx).ok_or_else(|| (format!("Null device context")))?;
+    let mut device = NonNull::new(device).ok_or_else(|| "Null device".to_string())?;
+    let device_ctx = NonNull::new(device_ctx).ok_or_else(|| "Null device context".to_string())?;
     let device_objects = DeviceObjects::new(unsafe { device.as_mut() }, ctx)?;
 
     // let dxgi_factory = {
@@ -495,12 +494,12 @@ impl Renderer {
       unsafe {
         std::ptr::copy_nonoverlapping(
           vertex_buffer.as_ptr(),
-          vertex_pdata.get_ptr().offset(offset as _),
+          vertex_pdata.get_ptr().add(offset),
           vertex_buffer.len(),
         );
         std::ptr::copy_nonoverlapping(
           index_buffer.as_ptr(),
-          index_pdata.get_ptr().offset(offset as _),
+          index_pdata.get_ptr().add(offset),
           index_buffer.len(),
         );
       }
@@ -682,4 +681,3 @@ impl Drop for Renderer {
     unsafe { self.device.as_mut().Release() };
   }
 }
-

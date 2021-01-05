@@ -29,7 +29,7 @@
 //! executable will be very minimal and used to inject the DLL into the
 //! target process.
 //!
-//! ```
+//! ```no_run
 //! // lib.rs
 //! use hudhook::*;
 //!
@@ -51,7 +51,7 @@
 //! hudhook!(Box::new(MyRenderLoop::new()))
 //! ```
 //!
-//! ```
+//! ```no_run
 //! // main.rs
 //! use hudhook::inject;
 //!
@@ -70,7 +70,7 @@
 //!
 //! In an initialization step:
 //!
-//! ```
+//! ```no_run
 //! let x = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x80]);
 //! let y = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x88]);
 //! let z = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x84]);
@@ -78,11 +78,12 @@
 //!
 //! In the render loop:
 //!
-//! ```
+//! ```no_run
 //! x.read().map(|val| x.write(val + 1.));
 //! y.read().map(|val| y.write(val + 1.));
 //! z.read().map(|val| z.write(val + 1.));
 //! ```
+#![allow(clippy::needless_doctest_main)]
 
 mod hook;
 mod inject;
@@ -115,7 +116,7 @@ pub use winapi;
 ///   fn render(&self, frame: imgui::Ui) { ... }
 /// }
 ///
-/// hook!(Box::new(MyRenderLoop::new(...)))
+/// hudhook!(Box::new(MyRenderLoop::new(...)));
 /// ```
 #[macro_export]
 macro_rules! hudhook {

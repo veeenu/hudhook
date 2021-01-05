@@ -1,3 +1,5 @@
+#![allow(clippy::needless_doctest_main)]
+
 use crate::util::Error;
 
 use std::ffi::{CStr, CString};
@@ -18,8 +20,8 @@ use winapi::um::winbase::INFINITE;
 use winapi::um::winnt::*;
 
 fn find_process(s: &str) -> Option<DWORD> {
-  let mut lpid_process = [0 as DWORD; 65535];
-  let mut cb_needed = 0 as DWORD;
+  let mut lpid_process = [0u32; 65535];
+  let mut cb_needed = 0u32;
   let mut ret = 0;
 
   unsafe {
@@ -33,20 +35,20 @@ fn find_process(s: &str) -> Option<DWORD> {
   let process_count = cb_needed as usize / mem::size_of::<DWORD>();
   trace!("{} processes", process_count);
 
-  for i in 0..process_count {
-    let pid = lpid_process[i];
+  for (i, &pid) in lpid_process.iter().enumerate().take(process_count) {
+    // let pid = lpid_process[i];
     let hproc = unsafe {
       processthreadsapi::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
     };
 
-    if hproc == 0 as *mut c_void {
+    if hproc == std::ptr::null_mut::<c_void>() {
       trace!("GetLastError: {:x}", unsafe { GetLastError() });
       continue;
     }
 
     let mut hmodule = [0 as HMODULE; 64];
-    let mut pmcb_needed = 0 as DWORD;
-    let mut modname = [0 as CHAR; 128];
+    let mut pmcb_needed = 0u32;
+    let mut modname = [0i8; 128];
     unsafe {
       psapi::EnumProcessModules(
         hproc,
@@ -67,7 +69,7 @@ fn find_process(s: &str) -> Option<DWORD> {
     if mn == s {
       let mut mi = psapi::MODULEINFO {
         lpBaseOfDll: 0 as LPVOID,
-        SizeOfImage: 0 as DWORD,
+        SizeOfImage: 0u32,
         EntryPoint: 0 as LPVOID,
       };
       unsafe {
@@ -98,7 +100,7 @@ fn find_process(s: &str) -> Option<DWORD> {
 /// executable which launches your mod's dll.
 ///
 /// Example:
-/// ```
+/// ```no_run
 /// use hudhook::prelude::inject;
 ///
 /// pub fn main() {
@@ -109,7 +111,7 @@ pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
   let pid: DWORD = find_process(process_name)
     .ok_or_else(|| Error(format!("Couldn't find process: {}", process_name)))?;
   let pathstr = std::fs::canonicalize(dll).map_err(|e| Error::from(format!("{:?}", e)))?;
-  let mut path = [0 as CHAR; MAX_PATH];
+  let mut path = [0i8; MAX_PATH];
   for (dest, src) in path.iter_mut().zip(
     CString::new(pathstr.to_str().unwrap())
       .unwrap()
@@ -136,15 +138,14 @@ pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
       dllp,
       std::mem::transmute(&path),
       MAX_PATH,
-      0 as *mut usize,
+      std::ptr::null_mut::<usize>(),
     );
   }
 
   let thread = unsafe {
-    let proc_addr = GetProcAddress(
-      GetModuleHandleA(CString::new("Kernel32").unwrap().as_ptr()),
-      CString::new("LoadLibraryA").unwrap().as_ptr(),
-    );
+    let kernel32 = CString::new("Kernel32").unwrap();
+    let loadlibrarya = CString::new("LoadLibraryA").unwrap();
+    let proc_addr = GetProcAddress(GetModuleHandleA(kernel32.as_ptr()), loadlibrarya.as_ptr());
     processthreadsapi::CreateRemoteThread(
       hproc,
       0 as LPSECURITY_ATTRIBUTES,
@@ -152,14 +153,14 @@ pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
       Some(std::mem::transmute(proc_addr)),
       dllp,
       0,
-      0 as *mut DWORD,
+      std::ptr::null_mut::<DWORD>(),
     )
   };
   // println!("{:?}", thread);
 
   unsafe {
     WaitForSingleObject(thread, INFINITE);
-    let mut ec = 0 as DWORD;
+    let mut ec = 0u32;
     processthreadsapi::GetExitCodeThread(thread, &mut ec as *mut DWORD);
     CloseHandle(thread);
     memoryapi::VirtualFreeEx(hproc, dllp, 0, MEM_RELEASE);

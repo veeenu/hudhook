@@ -9,8 +9,7 @@ fn test_run_against_sample() {
   std::thread::sleep(std::time::Duration::from_millis(250));
 
   // let pid = inject::find_process("sample.exe").expect("Process not found");
-  inject::inject("sample.exe", "target/release/hudhook.dll").ok();
+  inject("test_sample.exe", "target/release/examples/hello_world.dll").unwrap();
 
   child.wait().expect("Child process error");
 }
-

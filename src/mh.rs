@@ -1,8 +1,8 @@
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 
 pub use winapi::shared::{
-  minwindef::{LPVOID},
-  ntdef::{LPCSTR, LPCWSTR}
+  minwindef::LPVOID,
+  ntdef::{LPCSTR, LPCWSTR},
 };
 
 #[must_use]
@@ -38,7 +38,7 @@ pub enum MH_STATUS {
   /// The specified module is not loaded.
   MH_ERROR_MODULE_NOT_FOUND,
   /// The specified function is not found.
-  MH_ERROR_FUNCTION_NOT_FOUND
+  MH_ERROR_FUNCTION_NOT_FOUND,
 }
 
 extern "system" {

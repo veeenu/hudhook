@@ -17,7 +17,8 @@ pub(crate) fn get_base_address<S>() -> *const S {
 /// Intended to be used as an utility along with
 /// [`PointerChain`](struct.PointerChain.html).
 pub fn base_address() -> usize {
-  return unsafe { std::mem::transmute(get_base_address::<c_void>()) };
+  // unsafe { std::mem::transmute(get_base_address::<c_void>()) }
+  get_base_address::<c_void>() as usize
 }
 
 /// Boyer-Moore implementation for [scanning array of bytes](https://wiki.cheatengine.org/index.php?title=Tutorials:AOBs).

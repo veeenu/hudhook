@@ -4,11 +4,10 @@ use winapi::shared::dxgi::*;
 use winapi::shared::dxgiformat::*;
 use winapi::shared::dxgitype::*;
 use winapi::shared::minwindef::*;
-use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, RECT};
+use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, POINT, RECT};
 use winapi::um::d3d11::*;
 use winapi::um::d3dcommon::*;
 use winapi::um::libloaderapi::GetModuleHandleA;
-use winapi::um::processthreadsapi::GetCurrentProcessId;
 use winapi::um::winnt::*;
 use winapi::um::winuser::*;
 use winapi::Interface;
@@ -17,7 +16,6 @@ use core::mem::MaybeUninit;
 
 use std::cell::Cell;
 use std::ptr::null_mut;
-use std::sync::{Arc, Mutex};
 
 use crate::imgui_impl;
 use crate::mh;
@@ -49,7 +47,7 @@ enum DxgiHookState {
   Uninitialized,
   Hooked(IDXGISwapChainPresent, Box<dyn RenderLoop>),
   Errored(IDXGISwapChainPresent),
-  Ok(DxgiHook),
+  Ok(Box<DxgiHook>),
 }
 
 impl Default for DxgiHookState {
@@ -71,8 +69,8 @@ impl DxgiHook {
     render_loop: Box<dyn RenderLoop>,
   ) -> Result<DxgiHook> {
     trace!("Initializing DXGI hook");
-    let this =
-      unsafe { p_this.as_ref() }.ok_or_else(|| Error(format!("Null IDXGISwapChain reference")))?;
+    let this = unsafe { p_this.as_ref() }
+      .ok_or_else(|| Error("Null IDXGISwapChain reference".to_string()))?;
     let mut ui: UINT = 0;
     unsafe { this.GetLastPresentCount(&mut ui) };
 
@@ -94,6 +92,7 @@ impl DxgiHook {
     let mut sd: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
     unsafe { this.GetDesc(&mut sd as _) };
 
+    #[allow(clippy::fn_to_numeric_cast)]
     let default_wnd_proc = unsafe {
       std::mem::transmute(SetWindowLongPtrA(
         sd.OutputWindow,
@@ -104,21 +103,21 @@ impl DxgiHook {
 
     let mut imgui_ctx = imgui::Context::create();
     imgui_ctx.set_ini_filename(None);
-    imgui_ctx.fonts().add_font(&[
-      imgui::FontSource::DefaultFontData {
+    imgui_ctx
+      .fonts()
+      .add_font(&[imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
           ..imgui::FontConfig::default()
         }),
-      },
-    ]);
-    imgui_ctx.fonts().add_font(&[
-      imgui::FontSource::DefaultFontData {
+      }]);
+    imgui_ctx
+      .fonts()
+      .add_font(&[imgui::FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
           size_pixels: 26.,
           ..imgui::FontConfig::default()
         }),
-      },
-    ]);
+      }]);
 
     let renderer = imgui_impl::dx11::Renderer::new(p_device, p_device_context, &mut imgui_ctx)?;
 
@@ -142,7 +141,6 @@ impl DxgiHook {
     Ok(DxgiHook {
       present_trampoline,
       default_wnd_proc,
-      // p_device,
       p_device_context,
       render_target_view,
       imgui_ctx,
@@ -199,7 +197,9 @@ impl DxgiHook {
       } = *io;
 
       trace!("Calling render loop");
+      set_mouse_pos(&mut self.imgui_ctx, sd.OutputWindow);
       let ui = self.imgui_ctx.frame();
+
       self.render_loop.render(RenderContext {
         frame: &ui,
         key_ctrl,
@@ -226,6 +226,22 @@ impl DxgiHook {
   }
 }
 
+fn set_mouse_pos(ctx: &mut imgui::Context, hwnd: HWND) {
+  let io = ctx.io_mut();
+  let mut pos = POINT { x: 0, y: 0 };
+
+  let active_window = unsafe { GetForegroundWindow() };
+  if active_window != 0 as HWND
+    && (active_window == hwnd || unsafe { IsChild(active_window, hwnd) != 0 })
+  {
+    let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
+    if gcp != 0 && unsafe { ScreenToClient(hwnd, &mut pos as *mut _) } != 0 {
+      io.mouse_pos[0] = pos.x as _;
+      io.mouse_pos[1] = pos.y as _;
+    }
+  }
+}
+
 /// Placeholder `WndProc`.
 ///
 /// Currently processes keydown and keyup events.
@@ -237,6 +253,20 @@ unsafe extern "system" fn wnd_proc(
   lparam: LPARAM,
 ) -> isize {
   if let DxgiHookState::Ok(hook) = DXGI_HOOK_STATE.get_mut() {
+    let set_capture = |mouse_down: &[bool], hwnd| {
+      let any_down = mouse_down.iter().any(|i| *i);
+      if !any_down && GetCapture() == 0 as HWND {
+        SetCapture(hwnd);
+      }
+    };
+
+    let release_capture = |mouse_down: &[bool], hwnd| {
+      let any_down = mouse_down.iter().any(|i| *i);
+      if !any_down && GetCapture() == hwnd {
+        ReleaseCapture();
+      }
+    };
+
     match umsg {
       WM_KEYDOWN | WM_SYSKEYDOWN => {
         if wparam < 256 {
@@ -248,6 +278,48 @@ unsafe extern "system" fn wnd_proc(
           hook.imgui_ctx.io_mut().keys_down[wparam] = false;
         }
       }
+      WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+        set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[0] = true;
+      }
+      WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+        set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[1] = true;
+      }
+      WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
+        set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[2] = true;
+      }
+      WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+        let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+          3
+        } else {
+          4
+        };
+        set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[btn] = true;
+      }
+      WM_LBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[0] = false;
+        release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+      }
+      WM_RBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[1] = false;
+        release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+      }
+      WM_MBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[2] = false;
+        release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+      }
+      WM_XBUTTONUP => {
+        let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+          3
+        } else {
+          4
+        };
+        hook.imgui_ctx.io_mut().mouse_down[btn] = false;
+        release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+      }
       WM_CHAR => hook
         .imgui_ctx
         .io_mut()
@@ -255,10 +327,6 @@ unsafe extern "system" fn wnd_proc(
       _ => {}
     }
 
-    //if !hook.render_loop.is_capturing() {
-    //} else {
-    //  0
-    //}
     CallWindowProcW(Some(hook.default_wnd_proc), hwnd, umsg, wparam, lparam)
   } else {
     0
@@ -283,7 +351,7 @@ extern "system" fn present_impl(
       }
       DxgiHookState::Hooked(present_trampoline, render_loop) => {
         match DxgiHook::initialize_dx(present_trampoline, this, render_loop) {
-          Ok(dh) => DxgiHookState::Ok(dh),
+          Ok(dh) => DxgiHookState::Ok(Box::new(dh)),
           Err(e) => {
             error!("DXGI Hook initialization failed: {:?}", e);
             DxgiHookState::Errored(present_trampoline)
@@ -305,6 +373,7 @@ extern "system" fn present_impl(
   }
 }
 
+/*
 fn get_current_hwnd() -> Option<HWND> {
   // https://gist.github.com/application-developer-DA/5a460d9ca02948f1d2bfa53100c941da
   pub fn enumerate_windows<F>(mut callback: F) -> BOOL
@@ -351,6 +420,7 @@ fn get_current_hwnd() -> Option<HWND> {
     None
   }
 }
+*/
 
 /// Get the `IDXGISwapChain::Present` function address.
 ///
@@ -361,7 +431,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
   struct ThrowawayHwnd(HWND);
   impl ThrowawayHwnd {
     pub fn new() -> ThrowawayHwnd {
-      let hinstance = unsafe { GetModuleHandleA(0 as *const i8) };
+      let hinstance = unsafe { GetModuleHandleA(std::ptr::null::<i8>()) };
       let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(DefWindowProcA),
@@ -372,7 +442,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
         hIcon: 0 as HICON,
         hCursor: 0 as HICON,
         hbrBackground: 0 as HBRUSH,
-        lpszMenuName: 0 as *const i8,
+        lpszMenuName: std::ptr::null::<i8>(),
       };
       ThrowawayHwnd(unsafe {
         RegisterClassA(&wnd_class);
@@ -424,10 +494,10 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 
   let result = unsafe {
     D3D11CreateDeviceAndSwapChain(
-      0 as *mut IDXGIAdapter,
+      std::ptr::null_mut::<IDXGIAdapter>(),
       D3D_DRIVER_TYPE_HARDWARE,
       0 as HMODULE,
-      0 as UINT,
+      0u32,
       &mut feature_level as *mut D3D_FEATURE_LEVEL,
       1,
       D3D11_SDK_VERSION,
@@ -446,7 +516,8 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
     )));
   }
 
-  let ret = unsafe { (*(&*p_swap_chain).lpVtbl).Present };
+  // let ret = unsafe { (*(&*p_swap_chain).lpVtbl).Present };
+  let ret = unsafe { (*(*p_swap_chain).lpVtbl).Present };
 
   unsafe {
     (*p_device).Release();
@@ -469,7 +540,7 @@ fn get_present_address() -> Result<IDXGISwapChainPresent> {
 pub trait RenderLoop {
   /// Invoked once per frame. Memory management and UI visualization (via the
   /// current frame's `imgui::Ui` instance) should be made inside of it.
-  fn render<'a>(&mut self, ctx: RenderContext);
+  fn render(&mut self, ctx: RenderContext);
 
   /// Return `true` when you want your UI to be rendered to screen.
   ///

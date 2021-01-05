@@ -24,6 +24,7 @@ use winapi::um::{
 ///
 /// This is useful for managing reverse engineered structures which are not
 /// fully known.
+#[derive(Clone)]
 pub struct PointerChain<T> {
   proc: *const c_void,
   base: *mut T,
@@ -38,7 +39,7 @@ impl<T> PointerChain<T> {
     PointerChain {
       proc: unsafe { GetCurrentProcess() },
       base,
-      offsets: it.map(|x| *x).collect(),
+      offsets: it.copied().collect(), // it.map(|x| *x).collect(),
     }
   }
 
@@ -75,7 +76,8 @@ impl<T> PointerChain<T> {
           None
         }
       })
-      .and_then(|addr| Some(addr as *mut T))
+      .map(|addr| addr as *mut T)
+    // .and_then(|addr| Some(addr as *mut T))
   }
 
   /// Evaluates the pointer chain and attempts to read the datum.

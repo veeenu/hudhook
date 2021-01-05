@@ -76,7 +76,7 @@ pub(crate) unsafe fn reckless_string(s: &str) -> CString {
 pub(crate) fn ptr_as_ref<'a, T>(ptr: *const T) -> Result<&'a T> {
   match unsafe { ptr.as_ref() } {
     Some(t) => Ok(t),
-    None => Err(format!("Null pointer").into()),
+    None => Err("Null pointer".to_string().into()),
   }
 }
 

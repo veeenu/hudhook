@@ -1,14 +1,14 @@
-use std::ptr::null_mut;
 use std::ffi::CStr;
+use std::ptr::null_mut;
 
-use winapi::um::d3d11::*;
-use winapi::um::d3dcompiler::*;
-use winapi::um::d3dcommon::*;
 use winapi::shared::dxgiformat::*;
+use winapi::um::d3d11::*;
+use winapi::um::d3dcommon::*;
+use winapi::um::d3dcompiler::*;
 
 use crate::util::*;
 
-const VERTEX_SHADER_SRC: &'static str = r"
+const VERTEX_SHADER_SRC: &str = r"
   cbuffer vertexBuffer : register(b0) {
     float4x4 ProjectionMatrix;
   };
@@ -30,7 +30,7 @@ const VERTEX_SHADER_SRC: &'static str = r"
     return output;
   }";
 
-const PIXEL_SHADER_SRC: &'static str = r"
+const PIXEL_SHADER_SRC: &str = r"
   struct PS_INPUT {
     float4 pos : SV_POSITION;
     float4 col : COLOR0;
@@ -61,21 +61,24 @@ impl VertexShader {
     let mut vertex_shader = null_mut();
     let mut input_layout = null_mut();
     let mut constant_buffer: *mut ID3D11Buffer = null_mut();
-    
+
     match unsafe {
       D3DCompile(
         reckless_string(VERTEX_SHADER_SRC).as_ptr() as _,
         VERTEX_SHADER_SRC.len(),
-        null_mut(), null_mut(), null_mut(),
+        null_mut(),
+        null_mut(),
+        null_mut(),
         reckless_string("main").as_ptr() as _,
         reckless_string("vs_4_0").as_ptr(),
-        0, 0,
+        0,
+        0,
         &mut vertex_shader_blob as *mut _,
-        null_mut()
+        null_mut(),
       )
     } {
       0 | 1 => { /* OK */ }
-      e => return Err(format!("D3DCompile Vertex Shader: {:x}", e).into())
+      e => return Err(format!("D3DCompile Vertex Shader: {:x}", e).into()),
     }
 
     let vertex_shader_blob_ref = ptr_as_ref(vertex_shader_blob)?;
@@ -85,10 +88,11 @@ impl VertexShader {
         vertex_shader_blob_ref.GetBufferPointer(),
         vertex_shader_blob_ref.GetBufferSize(),
         null_mut(),
-        &mut vertex_shader as *mut _
+        &mut vertex_shader as *mut _,
       )
-    } != 0 {
-      return Err(format!("CreateVertexShader error").into())
+    } != 0
+    {
+      return Err("CreateVertexShader error".to_string().into());
     }
 
     let local_layout = [
@@ -99,7 +103,7 @@ impl VertexShader {
         InputSlot: 0,
         AlignedByteOffset: 0,
         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-        InstanceDataStepRate: 0
+        InstanceDataStepRate: 0,
       },
       D3D11_INPUT_ELEMENT_DESC {
         SemanticName: CStr::from_bytes_with_nul(b"TEXCOORD\0").unwrap().as_ptr(),
@@ -108,7 +112,7 @@ impl VertexShader {
         InputSlot: 0,
         AlignedByteOffset: 8,
         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-        InstanceDataStepRate: 0
+        InstanceDataStepRate: 0,
       },
       D3D11_INPUT_ELEMENT_DESC {
         SemanticName: CStr::from_bytes_with_nul(b"COLOR\0").unwrap().as_ptr(),
@@ -117,20 +121,21 @@ impl VertexShader {
         InputSlot: 0,
         AlignedByteOffset: 16,
         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
-        InstanceDataStepRate: 0
-      }
+        InstanceDataStepRate: 0,
+      },
     ];
 
     match unsafe {
       device.CreateInputLayout(
-        local_layout.as_ptr(), 3,
+        local_layout.as_ptr(),
+        3,
         vertex_shader_blob_ref.GetBufferPointer(),
         vertex_shader_blob_ref.GetBufferSize(),
-        &mut input_layout as *mut _
+        &mut input_layout as *mut _,
       )
     } {
-      0 => {},
-      e => return Err(format!("CreateInputLayout error: {:x}", e).into())
+      0 => {}
+      e => return Err(format!("CreateInputLayout error: {:x}", e).into()),
     };
 
     let desc = D3D11_BUFFER_DESC {
@@ -139,18 +144,22 @@ impl VertexShader {
       BindFlags: D3D11_BIND_CONSTANT_BUFFER,
       CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
       MiscFlags: 0,
-      StructureByteStride: 0
+      StructureByteStride: 0,
     };
 
     unsafe {
-      device.CreateBuffer(&desc as *const _, null_mut(), &mut constant_buffer as *mut _);
+      device.CreateBuffer(
+        &desc as *const _,
+        null_mut(),
+        &mut constant_buffer as *mut _,
+      );
     }
 
     Ok(VertexShader {
       vertex_shader,
       vertex_shader_blob,
       constant_buffer,
-      input_layout
+      input_layout,
     })
   }
 }
@@ -184,16 +193,19 @@ impl PixelShader {
       D3DCompile(
         reckless_string(PIXEL_SHADER_SRC).as_ptr() as _,
         PIXEL_SHADER_SRC.len(),
-        null_mut(), null_mut(), null_mut(),
+        null_mut(),
+        null_mut(),
+        null_mut(),
         reckless_string("main").as_ptr(),
         reckless_string("ps_4_0").as_ptr(),
-        0, 0,
+        0,
+        0,
         &mut pixel_shader_blob as *mut _,
-        null_mut()
+        null_mut(),
       )
     } {
-      0 | 1 => { /* OK */ },
-      e => return Err(format!("D3DCompile Pixel Shader: {:x}", e).into())
+      0 | 1 => { /* OK */ }
+      e => return Err(format!("D3DCompile Pixel Shader: {:x}", e).into()),
     }
 
     let pixel_shader_blob_ref = ptr_as_ref(pixel_shader_blob)?;
@@ -203,14 +215,16 @@ impl PixelShader {
         pixel_shader_blob_ref.GetBufferPointer(),
         pixel_shader_blob_ref.GetBufferSize(),
         null_mut(),
-        &mut pixel_shader as *mut _
+        &mut pixel_shader as *mut _,
       )
-    } != 0 {
-      return Err(format!("CreatePixelShader error").into());
+    } != 0
+    {
+      return Err("CreatePixelShader error".to_string().into());
     }
 
     Ok(PixelShader {
-      pixel_shader, pixel_shader_blob
+      pixel_shader,
+      pixel_shader_blob,
     })
   }
 }
