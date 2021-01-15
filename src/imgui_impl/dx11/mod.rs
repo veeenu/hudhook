@@ -291,7 +291,7 @@ impl RenderBufferData {
     index_buffer_size: usize,
   ) -> Result<()> {
     // Mutate the buffers by allocating more memory if their size is not sufficient anymore
-    if self.vertex_buffer_size < vertex_buffer_size
+    if self.vertex_buffer_size <= vertex_buffer_size
       || (self.vertex_buffer_size == 0 && vertex_buffer_size == 0)
     {
       unsafe {
@@ -306,11 +306,11 @@ impl RenderBufferData {
       trace!("Created vertex buffer {:p}", self.vertex_buffer);
     }
 
-    if self.index_buffer_size < index_buffer_size
+    if self.index_buffer_size <= index_buffer_size
       || (self.index_buffer_size == 0 && index_buffer_size == 0)
     {
       unsafe { self.index_buffer.as_ref().map(|e| e.Release()).unwrap_or(0) };
-      self.index_buffer_size = index_buffer_size + 5000;
+      self.index_buffer_size = index_buffer_size + 10000;
       self.index_buffer = RenderBufferData::create_index_buffer(device, self.index_buffer_size)?;
       trace!("Created index buffer {:p}", self.index_buffer);
     }
@@ -488,21 +488,25 @@ impl Renderer {
     let (vertex_pdata, index_pdata) = self.render_buffer_data.map_resources(self.device_ctx)?;
 
     trace!("Copying buffers");
+    let mut vertex_offs = 0;
+    let mut index_offs = 0;
     for (offset, cl) in draw_data.draw_lists().enumerate() {
       let vertex_buffer = cl.vtx_buffer();
       let index_buffer = cl.idx_buffer();
       unsafe {
         std::ptr::copy_nonoverlapping(
           vertex_buffer.as_ptr(),
-          vertex_pdata.get_ptr().add(offset),
+          vertex_pdata.get_ptr().add(vertex_offs),
           vertex_buffer.len(),
         );
         std::ptr::copy_nonoverlapping(
           index_buffer.as_ptr(),
-          index_pdata.get_ptr().add(offset),
+          index_pdata.get_ptr().add(index_offs),
           index_buffer.len(),
         );
       }
+      vertex_offs += vertex_buffer.len();
+      index_offs += index_buffer.len();
     }
 
     trace!("Dropping buffers");
@@ -570,21 +574,25 @@ impl Renderer {
                 .PSSetShaderResources(0, 1, &mut tex_srv as *mut _);
               self.device_ctx.as_ref().DrawIndexed(
                 count as u32,
-                (cmd_params.idx_offset + goffs_idx) as _,
-                (cmd_params.vtx_offset + goffs_vtx) as _,
+                goffs_idx as _,
+                goffs_vtx as _,
+                //(cmd_params.idx_offset + goffs_idx) as _,
+                //(cmd_params.vtx_offset + goffs_vtx) as _,
               );
             }
+            goffs_idx += count;
           }
           imgui::DrawCmd::ResetRenderState => {
             self.setup_render_state(draw_data);
           }
           imgui::DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
-            callback(cl.raw() as *const _, raw_cmd);
+            // callback(cl.raw() as *const _, raw_cmd);
+            callback(cl.raw(), raw_cmd)
           },
         }
       }
 
-      goffs_idx += cl.idx_buffer().len();
+      // goffs_idx += cl.idx_buffer().len();
       goffs_vtx += cl.vtx_buffer().len();
     }
 

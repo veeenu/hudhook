@@ -281,14 +281,17 @@ unsafe extern "system" fn wnd_proc(
       WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
         set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
         hook.imgui_ctx.io_mut().mouse_down[0] = true;
+        return 1;
       }
       WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
         set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
         hook.imgui_ctx.io_mut().mouse_down[1] = true;
+        return 1;
       }
       WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
         set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
         hook.imgui_ctx.io_mut().mouse_down[2] = true;
+        return 1;
       }
       WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
         let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
@@ -298,18 +301,22 @@ unsafe extern "system" fn wnd_proc(
         };
         set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
         hook.imgui_ctx.io_mut().mouse_down[btn] = true;
+        return 1;
       }
       WM_LBUTTONUP => {
         hook.imgui_ctx.io_mut().mouse_down[0] = false;
         release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        return 1;
       }
       WM_RBUTTONUP => {
         hook.imgui_ctx.io_mut().mouse_down[1] = false;
         release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        return 1;
       }
       WM_MBUTTONUP => {
         hook.imgui_ctx.io_mut().mouse_down[2] = false;
         release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        return 1;
       }
       WM_XBUTTONUP => {
         let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
