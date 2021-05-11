@@ -490,7 +490,7 @@ impl Renderer {
     trace!("Copying buffers");
     let mut vertex_offs = 0;
     let mut index_offs = 0;
-    for (offset, cl) in draw_data.draw_lists().enumerate() {
+    for (_offset, cl) in draw_data.draw_lists().enumerate() {
       let vertex_buffer = cl.vtx_buffer();
       let index_buffer = cl.idx_buffer();
       unsafe {
