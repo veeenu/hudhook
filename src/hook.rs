@@ -327,6 +327,12 @@ unsafe extern "system" fn wnd_proc(
         hook.imgui_ctx.io_mut().mouse_down[btn] = false;
         release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
       }
+      WM_MOUSEWHEEL => {
+        hook.imgui_ctx.io_mut().mouse_wheel += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+      }
+      WM_MOUSEHWHEEL => {
+        hook.imgui_ctx.io_mut().mouse_wheel_h += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+      }
       WM_CHAR => hook
         .imgui_ctx
         .io_mut()

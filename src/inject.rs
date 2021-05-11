@@ -3,7 +3,9 @@
 use crate::util::Error;
 
 use std::ffi::{CStr, CString};
+use std::os::windows::ffi::OsStrExt;
 use std::mem;
+use std::path::Path;
 
 use log::*;
 use winapi::ctypes::*;
@@ -107,45 +109,54 @@ fn find_process(s: &str) -> Option<DWORD> {
 ///   inject("DarkSoulsIII.exe", "darksoulsiii-practice-tool.dll");
 /// }
 /// ```
-pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
+pub fn inject(process_name: &str, dll: &Path) -> Result<(), Error> {
   let pid: DWORD = find_process(process_name)
     .ok_or_else(|| Error(format!("Couldn't find process: {}", process_name)))?;
   let pathstr = std::fs::canonicalize(dll).map_err(|e| Error::from(format!("{:?}", e)))?;
-  let mut path = [0i8; MAX_PATH];
+  let mut path = [0i16; MAX_PATH];
   for (dest, src) in path.iter_mut().zip(
-    CString::new(pathstr.to_str().unwrap())
+    pathstr.as_os_str().encode_wide()
+  ) {
+    *dest = src as _;
+  }
+  /*let mut path = [0i8; MAX_PATH];
+  for (dest, src) in path.iter_mut().zip(
+    CString::new(pathstr.as_os_str().encode_wide())
       .unwrap()
       .into_bytes()
       .into_iter(),
   ) {
     *dest = src as _;
-  }
+  }*/
 
   let hproc = unsafe { processthreadsapi::OpenProcess(PROCESS_ALL_ACCESS, 0, pid) };
   let dllp = unsafe {
     memoryapi::VirtualAllocEx(
       hproc,
       0 as LPVOID,
-      MAX_PATH,
+      MAX_PATH * std::mem::size_of::<u16>(),
       MEM_RESERVE | MEM_COMMIT,
       PAGE_READWRITE,
     )
   };
 
-  unsafe {
+  let mut bytes_written = 0usize;
+  let res = unsafe {
     memoryapi::WriteProcessMemory(
       hproc,
       dllp,
-      std::mem::transmute(&path),
-      MAX_PATH,
-      std::ptr::null_mut::<usize>(),
-    );
-  }
+      path.as_ptr() as *const std::ffi::c_void,
+      MAX_PATH * std::mem::size_of::<u16>(),
+      (&mut bytes_written) as *mut _,
+    )
+  };
+
+  trace!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res);
 
   let thread = unsafe {
     let kernel32 = CString::new("Kernel32").unwrap();
-    let loadlibrarya = CString::new("LoadLibraryA").unwrap();
-    let proc_addr = GetProcAddress(GetModuleHandleA(kernel32.as_ptr()), loadlibrarya.as_ptr());
+    let loadlibraryw = CString::new("LoadLibraryW").unwrap();
+    let proc_addr = GetProcAddress(GetModuleHandleA(kernel32.as_ptr()), loadlibraryw.as_ptr());
     processthreadsapi::CreateRemoteThread(
       hproc,
       0 as LPSECURITY_ATTRIBUTES,
@@ -156,7 +167,6 @@ pub fn inject(process_name: &str, dll: &str) -> Result<(), Error> {
       std::ptr::null_mut::<DWORD>(),
     )
   };
-  // println!("{:?}", thread);
 
   unsafe {
     WaitForSingleObject(thread, INFINITE);
