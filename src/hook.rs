@@ -97,7 +97,7 @@ impl DxgiHook {
       std::mem::transmute(SetWindowLongPtrA(
         sd.OutputWindow,
         GWLP_WNDPROC,
-        wnd_proc as WndProc as isize,
+        wnd_proc as _,
       ))
     };
 
