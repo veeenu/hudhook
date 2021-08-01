@@ -119,15 +119,6 @@ pub fn inject(process_name: &str, dll: &Path) -> Result<(), Error> {
   ) {
     *dest = src as _;
   }
-  /*let mut path = [0i8; MAX_PATH];
-  for (dest, src) in path.iter_mut().zip(
-    CString::new(pathstr.as_os_str().encode_wide())
-      .unwrap()
-      .into_bytes()
-      .into_iter(),
-  ) {
-    *dest = src as _;
-  }*/
 
   let hproc = unsafe { processthreadsapi::OpenProcess(PROCESS_ALL_ACCESS, 0, pid) };
   let dllp = unsafe {

@@ -46,5 +46,8 @@ extern "system" {
   pub fn MH_Uninitialize() -> MH_STATUS;
   pub fn MH_CreateHook(pTarget: LPVOID, pDetour: LPVOID, ppOriginal: *mut LPVOID) -> MH_STATUS;
   pub fn MH_EnableHook(pTarget: LPVOID) -> MH_STATUS;
+  pub fn MH_QueueEnableHook(pTarget: LPVOID) -> MH_STATUS;
   pub fn MH_DisableHook(pTarget: LPVOID) -> MH_STATUS;
+  pub fn MH_QueueDisableHook(pTarget: LPVOID) -> MH_STATUS;
+  pub fn MH_ApplyQueued() -> MH_STATUS;
 }

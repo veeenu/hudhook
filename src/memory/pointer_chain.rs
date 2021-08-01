@@ -30,6 +30,8 @@ pub struct PointerChain<T> {
   base: *mut T,
   offsets: Vec<usize>,
 }
+unsafe impl<T> Send for PointerChain<T> {}
+unsafe impl<T> Sync for PointerChain<T> {}
 
 impl<T> PointerChain<T> {
   /// Creates a new pointer chain given an array of addresses.

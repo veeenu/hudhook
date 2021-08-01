@@ -127,7 +127,7 @@ macro_rules! hudhook {
 
     /// Entry point created by the `hudhook` library.
     #[no_mangle]
-    pub extern "stdcall" fn DllMain(
+    pub unsafe extern "stdcall" fn DllMain(
       _: winapi::shared::minwindef::HINSTANCE,
       reason: u32,
       _: *mut winapi::ctypes::c_void,
@@ -136,14 +136,15 @@ macro_rules! hudhook {
         trace!("DllMain()");
         thread::spawn(move || {
           debug!("Started thread, enabling hook...");
-          match apply_hook($e) {
+          apply_hook($e);
+          /*match apply_hook($e) {
             Ok(_) => {
               debug!("Hook enabled");
             }
             Err(e) => {
               error!("Hook errored: {:?}", e);
             }
-          }
+          }*/
         });
       }
     }

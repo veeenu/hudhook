@@ -66,13 +66,11 @@ pub(crate) struct VERTEX_CONSTANT_BUFFER(pub [[f32; 4]; 4]);
 /// A reckless implementation of a conversion from
 /// a string to raw C char data. Pls only use with
 /// static const strings.
-
 pub(crate) unsafe fn reckless_string(s: &str) -> CString {
   CString::new(s).unwrap()
 }
 
 /// Convert pointer to ref, emit error if null
-
 pub(crate) fn ptr_as_ref<'a, T>(ptr: *const T) -> Result<&'a T> {
   match unsafe { ptr.as_ref() } {
     Some(t) => Ok(t),
