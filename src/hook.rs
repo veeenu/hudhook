@@ -1,10 +1,8 @@
-use core::mem::MaybeUninit;
-
-use std::cell::Cell;
 use std::ffi::c_void;
 use std::ffi::CString;
 use std::ptr::null_mut;
-use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
@@ -23,15 +21,11 @@ use winapi::um::libloaderapi::GetProcAddress;
 use winapi::um::libloaderapi::LoadLibraryA;
 use winapi::um::winnt::*;
 use winapi::um::winuser::*;
-use winapi::um::xinput::XInputGetState;
-use winapi::um::xinput::XINPUT_STATE;
+use winapi::um::xinput::*;
 use winapi::Interface;
 
 use crate::imgui_impl;
 use crate::mh;
-use crate::util::Error;
-
-type Result<T> = std::result::Result<T, Error>;
 
 type XInputGetStateType =
   unsafe extern "system" fn(dw_user_index: DWORD, p_state: *mut XINPUT_STATE) -> DWORD;
@@ -55,12 +49,73 @@ unsafe impl Sync for DxgiHookState {}
 
 pub struct RenderContext<'a> {
   pub frame: &'a imgui::Ui<'a>,
+  pub controller: ControllerState,
 }
 
 pub trait RenderLoop: Send {
   /// Invoked once per frame. Memory management and UI visualization (via the
   /// current frame's `imgui::Ui` instance) should be made inside of it.
   fn render(&mut self, ctx: RenderContext<'_>);
+}
+
+#[derive(Clone)]
+pub struct ControllerState {
+  pub up: bool,
+  pub down: bool,
+  pub left: bool,
+  pub right: bool,
+  pub start: bool,
+  pub back: bool,
+  pub l3: bool,
+  pub r3: bool,
+  pub lb: bool,
+  pub rb: bool,
+  pub a: bool,
+  pub b: bool,
+  pub x: bool,
+  pub y: bool,
+
+  pub left_stick_x: i16,
+  pub left_stick_y: i16,
+  pub right_stick_x: i16,
+  pub right_stick_y: i16,
+
+  pub lt: u8,
+  pub rt: u8,
+}
+
+impl Default for ControllerState {
+  fn default() -> Self {
+    unsafe { std::mem::zeroed() }
+  }
+}
+
+impl From<&XINPUT_STATE> for ControllerState {
+  fn from(i: &XINPUT_STATE) -> Self {
+    let g = i.Gamepad;
+    ControllerState {
+      up: g.wButtons & XINPUT_GAMEPAD_DPAD_UP != 0,
+      down: g.wButtons & XINPUT_GAMEPAD_DPAD_DOWN != 0,
+      left: g.wButtons & XINPUT_GAMEPAD_DPAD_LEFT != 0,
+      right: g.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT != 0,
+      start: g.wButtons & XINPUT_GAMEPAD_START != 0,
+      back: g.wButtons & XINPUT_GAMEPAD_BACK != 0,
+      l3: g.wButtons & XINPUT_GAMEPAD_LEFT_THUMB != 0,
+      r3: g.wButtons & XINPUT_GAMEPAD_RIGHT_THUMB != 0,
+      lb: g.wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER != 0,
+      rb: g.wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER != 0,
+      a: g.wButtons & XINPUT_GAMEPAD_A != 0,
+      b: g.wButtons & XINPUT_GAMEPAD_B != 0,
+      x: g.wButtons & XINPUT_GAMEPAD_X != 0,
+      y: g.wButtons & XINPUT_GAMEPAD_Y != 0,
+      left_stick_x: g.sThumbLX,
+      left_stick_y: g.sThumbLY,
+      right_stick_x: g.sThumbRX,
+      right_stick_y: g.sThumbRY,
+      lt: g.bLeftTrigger,
+      rt: g.bRightTrigger,
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,6 +129,7 @@ static DXGI_HOOK_STATE: OnceCell<Mutex<DxgiHookState>> = OnceCell::new();
 
 lazy_static! {
   static ref RENDER_LOOP: OnceCell<Mutex<Box<dyn RenderLoop>>> = OnceCell::new();
+  static ref CONTROLLER_STATE: OnceCell<RwLock<ControllerState>> = OnceCell::new();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -170,9 +226,24 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     }
 
     let ui = dxgi_hook_state.imgui_ctx.frame();
-    RENDER_LOOP.get().unwrap().lock().unwrap().render(RenderContext {
-      frame: &ui
-    });
+
+    let controller = {
+      CONTROLLER_STATE
+        .get_or_init(|| RwLock::new(ControllerState::default()))
+        .read()
+        .unwrap()
+        .clone()
+    };
+
+    RENDER_LOOP
+      .get()
+      .unwrap()
+      .lock()
+      .unwrap()
+      .render(RenderContext {
+        frame: &ui,
+        controller,
+      });
     let dd = ui.render();
 
     match dxgi_hook_state.imgui_renderer.render(dd) {
@@ -188,8 +259,17 @@ extern "system" fn xinput_get_state_impl(
   dw_user_index: DWORD,
   p_state: *mut XINPUT_STATE,
 ) -> DWORD {
+  static LAST_PACKET_NUMBER: OnceCell<AtomicU32> = OnceCell::new();
+
   let mut state: XINPUT_STATE = unsafe { std::mem::zeroed() };
   let retval = unsafe { XInputGetState(dw_user_index, &mut state as *mut _) };
+
+  let lpn = LAST_PACKET_NUMBER.get_or_init(|| AtomicU32::new(0));
+
+  if state.dwPacketNumber != lpn.load(Ordering::Relaxed) {
+    let cs = CONTROLLER_STATE.get_or_init(|| RwLock::new(ControllerState::default()));
+    *cs.write().unwrap() = ControllerState::from(&state);
+  }
 
   if let Some(m) = unsafe { p_state.as_mut() } {
     *m = state;
@@ -345,15 +425,21 @@ pub unsafe fn apply_hook(render_loop: Box<dyn RenderLoop>) {
   let status = mh::MH_ApplyQueued();
   info!("MH_ApplyQueued: {:?}", status);
 
-  if DXGI_SWAP_CHAIN_TRAMPOLINE.set(std::mem::transmute::<_, DXGISwapChainPresentType>(
-    dxgi_swap_chain_present_trampoline,
-  )).is_err() {
+  if DXGI_SWAP_CHAIN_TRAMPOLINE
+    .set(std::mem::transmute::<_, DXGISwapChainPresentType>(
+      dxgi_swap_chain_present_trampoline,
+    ))
+    .is_err()
+  {
     panic!("IDXGISwapChain::Present trampoline already assigned");
   }
 
-  if XINPUT_GET_STATE_TRAMPOLINE.set(std::mem::transmute::<*mut c_void, XInputGetStateType>(
-    xinput_get_state_trampoline,
-  )).is_err() {
+  if XINPUT_GET_STATE_TRAMPOLINE
+    .set(std::mem::transmute::<*mut c_void, XInputGetStateType>(
+      xinput_get_state_trampoline,
+    ))
+    .is_err()
+  {
     panic!("XInputGetState trampoline already assigned");
   }
 
