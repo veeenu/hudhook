@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
+use imgui::NavInput;
 use lazy_static::lazy_static;
 use log::*;
 use once_cell::sync::OnceCell;
@@ -33,6 +34,9 @@ type XInputGetStateType =
 type DXGISwapChainPresentType =
   unsafe extern "system" fn(This: *mut IDXGISwapChain, SyncInterval: UINT, Flags: UINT) -> HRESULT;
 
+type WndProcType =
+  unsafe extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize;
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Data structures and traits
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +47,7 @@ struct DxgiHookState {
   render_target: *mut ID3D11RenderTargetView,
   imgui_renderer: imgui_impl::dx11::Renderer,
   imgui_ctx: imgui::Context,
+  default_wnd_proc: WndProcType,
 }
 unsafe impl Send for DxgiHookState {}
 unsafe impl Sync for DxgiHookState {}
@@ -52,10 +57,12 @@ pub struct RenderContext<'a> {
   pub controller: ControllerState,
 }
 
-pub trait RenderLoop: Send {
+pub trait RenderLoop: Send + Sync {
   /// Invoked once per frame. Memory management and UI visualization (via the
   /// current frame's `imgui::Ui` instance) should be made inside of it.
   fn render(&mut self, ctx: RenderContext<'_>);
+  fn is_visible(&self) -> bool;
+  fn is_capturing(&self) -> bool;
 }
 
 #[derive(Clone)]
@@ -173,6 +180,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 
       let mut imgui_ctx = imgui::Context::create();
       imgui_ctx.set_ini_filename(None);
+      imgui_ctx.io_mut().nav_active = true;
+      imgui_ctx.io_mut().nav_visible = true;
       let imgui_renderer =
         imgui_impl::dx11::Renderer::new(dev, ctx, &mut imgui_ctx).expect("Renderer::new");
 
@@ -185,12 +194,20 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
       (*dev).CreateRenderTargetView(back_buf as _, null_mut(), &mut render_target);
       (*back_buf).Release();
 
+      #[allow(clippy::fn_to_numeric_cast)]
+      let default_wnd_proc = std::mem::transmute(SetWindowLongPtrA(
+        sd.OutputWindow,
+        GWLP_WNDPROC,
+        wnd_proc as _,
+      ));
+
       Mutex::new(DxgiHookState {
         dev,
         ctx,
         render_target,
         imgui_renderer,
         imgui_ctx,
+        default_wnd_proc,
       })
     })
     .lock()
@@ -235,15 +252,17 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         .clone()
     };
 
-    RENDER_LOOP
-      .get()
-      .unwrap()
-      .lock()
-      .unwrap()
-      .render(RenderContext {
-        frame: &ui,
-        controller,
-      });
+    {
+      RENDER_LOOP
+        .get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .render(RenderContext {
+          frame: &ui,
+          controller,
+        });
+    }
     let dd = ui.render();
 
     match dxgi_hook_state.imgui_renderer.render(dd) {
@@ -264,18 +283,168 @@ extern "system" fn xinput_get_state_impl(
   let mut state: XINPUT_STATE = unsafe { std::mem::zeroed() };
   let retval = unsafe { XInputGetState(dw_user_index, &mut state as *mut _) };
 
+  let is_capturing = { RENDER_LOOP.get().unwrap().lock().unwrap().is_capturing() };
+
   let lpn = LAST_PACKET_NUMBER.get_or_init(|| AtomicU32::new(0));
 
   if state.dwPacketNumber != lpn.load(Ordering::Relaxed) {
     let cs = CONTROLLER_STATE.get_or_init(|| RwLock::new(ControllerState::default()));
-    *cs.write().unwrap() = ControllerState::from(&state);
+    let mut cs_mut = cs.write().unwrap();
+    *cs_mut = ControllerState::from(&state);
+
+    if let Some(hook) = DXGI_HOOK_STATE.get() {
+      let mut hook = hook.lock().unwrap();
+      let nav_inputs = &mut hook.imgui_ctx.io_mut().nav_inputs;
+
+      let mut map_button = |i: NavInput, state: bool| {
+        nav_inputs[i as usize] = if state { 1.0 } else { 0.0 };
+      };
+
+      map_button(NavInput::Activate, cs_mut.a);
+      map_button(NavInput::Cancel, cs_mut.b);
+      map_button(NavInput::Menu, cs_mut.x);
+      map_button(NavInput::Input, cs_mut.y);
+      map_button(NavInput::DpadLeft, cs_mut.left);
+      map_button(NavInput::DpadRight, cs_mut.right);
+      map_button(NavInput::DpadDown, cs_mut.down);
+      map_button(NavInput::DpadUp, cs_mut.up);
+      map_button(NavInput::FocusNext, cs_mut.rb);
+      map_button(NavInput::FocusPrev, cs_mut.lb);
+      map_button(NavInput::TweakSlow, cs_mut.lb);
+      map_button(NavInput::TweakFast, cs_mut.rb);
+
+      let mut map_analog = |i: NavInput, state: i16, min: i16, max: i16| {
+        let vn = (state - min) as f32 / (max - min) as f32;
+        let vn = f32::min(1.0, vn);
+        if vn > 0.0 && nav_inputs[i as usize] < vn {
+          nav_inputs[i as usize] = vn;
+        }
+      };
+
+      let l_dz = XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE;
+
+      map_analog(NavInput::LStickLeft, cs_mut.left_stick_x, -l_dz, -32768);
+      map_analog(NavInput::LStickRight, cs_mut.left_stick_x, l_dz, 32767);
+      map_analog(NavInput::LStickDown, cs_mut.left_stick_y, -l_dz, -32768);
+      map_analog(NavInput::LStickUp, cs_mut.left_stick_y, l_dz, 32767);
+    }
   }
 
   if let Some(m) = unsafe { p_state.as_mut() } {
-    *m = state;
+    if !is_capturing {
+      *m = state;
+    }
   }
 
   retval
+}
+
+unsafe extern "system" fn wnd_proc(
+  hwnd: HWND,
+  umsg: UINT,
+  wparam: WPARAM,
+  lparam: LPARAM,
+) -> isize {
+  if let Some(hook) = DXGI_HOOK_STATE.get() {
+    let mut hook = hook.lock().unwrap();
+
+    let set_capture = |mouse_down: &[bool], hwnd| {
+      let any_down = mouse_down.iter().any(|i| *i);
+      if !any_down && GetCapture() == 0 as HWND {
+        SetCapture(hwnd);
+      }
+    };
+
+    let release_capture = |mouse_down: &[bool], hwnd| {
+      let any_down = mouse_down.iter().any(|i| *i);
+      if !any_down && GetCapture() == hwnd {
+        ReleaseCapture();
+      }
+    };
+
+    match umsg {
+      WM_KEYDOWN | WM_SYSKEYDOWN => {
+        if wparam < 256 {
+          hook.imgui_ctx.io_mut().keys_down[wparam] = true;
+        }
+      }
+      WM_KEYUP | WM_SYSKEYUP => {
+        if wparam < 256 {
+          hook.imgui_ctx.io_mut().keys_down[wparam] = false;
+        }
+      }
+      WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+        // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[0] = true;
+        // return 1;
+      }
+      WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+        // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[1] = true;
+        // return 1;
+      }
+      WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
+        // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[2] = true;
+        // return 1;
+      }
+      WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+        let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+          3
+        } else {
+          4
+        };
+        // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        hook.imgui_ctx.io_mut().mouse_down[btn] = true;
+        // return 1;
+      }
+      WM_LBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[0] = false;
+        // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        // return 1;
+      }
+      WM_RBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[1] = false;
+        // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        // return 1;
+      }
+      WM_MBUTTONUP => {
+        hook.imgui_ctx.io_mut().mouse_down[2] = false;
+        // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+        // return 1;
+      }
+      WM_XBUTTONUP => {
+        let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+          3
+        } else {
+          4
+        };
+        hook.imgui_ctx.io_mut().mouse_down[btn] = false;
+        // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
+      }
+      WM_MOUSEWHEEL => {
+        hook.imgui_ctx.io_mut().mouse_wheel +=
+          (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+      }
+      WM_MOUSEHWHEEL => {
+        hook.imgui_ctx.io_mut().mouse_wheel_h +=
+          (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+      }
+      WM_CHAR => hook
+        .imgui_ctx
+        .io_mut()
+        .add_input_character(wparam as u8 as char),
+      _ => {}
+    }
+
+    let wnd_proc = hook.default_wnd_proc;
+    drop(hook);
+
+    CallWindowProcW(Some(wnd_proc), hwnd, umsg, wparam, lparam)
+  } else {
+    debug!("WndProc called before hook was set");
+    0
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

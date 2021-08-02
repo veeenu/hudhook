@@ -17,7 +17,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 winapi = { version = "0.3.8", features = [ "std", "d3d11", "dxgi", "d3dcompiler", "ntdef", "minwindef", "windef", "psapi", "memoryapi", "synchapi", "winuser", "processthreadsapi", "xinput" ] }
 user32-sys = "0.1"
-imgui = "0.6.1"
+imgui = { git = "https://github.com/imgui-rs/imgui-rs.git", rev = "794ece8" }
 log = "0.4.8"
 simplelog = "0.7.4"
 lazy_static = "1.4.0"

@@ -97,7 +97,7 @@ mod imgui_impl {
 //
 // Reexports
 //
-pub use crate::hook::{apply_hook, RenderContext, RenderLoop};
+pub use crate::hook::{apply_hook, RenderContext, RenderLoop, ControllerState};
 pub use crate::inject::inject;
 pub use crate::util::{get_dll_path, Error};
 
