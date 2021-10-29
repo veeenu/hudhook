@@ -47,6 +47,7 @@ struct DxgiHookState {
   render_target: *mut ID3D11RenderTargetView,
   imgui_renderer: imgui_impl::dx11::Renderer,
   imgui_ctx: imgui::Context,
+  controller_state: ControllerState,
   default_wnd_proc: WndProcType,
 }
 unsafe impl Send for DxgiHookState {}
@@ -201,12 +202,15 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         wnd_proc as _,
       ));
 
+      let controller_state = ControllerState::default();
+
       Mutex::new(DxgiHookState {
         dev,
         ctx,
         render_target,
         imgui_renderer,
         imgui_ctx,
+        controller_state,
         default_wnd_proc,
       })
     })
@@ -294,39 +298,40 @@ extern "system" fn xinput_get_state_impl(
 
     if let Some(hook) = DXGI_HOOK_STATE.get() {
       let mut hook = hook.lock().unwrap();
-      let nav_inputs = &mut hook.imgui_ctx.io_mut().nav_inputs;
+      hook.controller_state = cs_mut.clone();
+      // let nav_inputs = &mut hook.imgui_ctx.io_mut().nav_inputs;
 
-      let mut map_button = |i: NavInput, state: bool| {
-        nav_inputs[i as usize] = if state { 1.0 } else { 0.0 };
-      };
+      // let mut map_button = |i: NavInput, state: bool| {
+      //   nav_inputs[i as usize] = if state { 1.0 } else { 0.0 };
+      // };
 
-      map_button(NavInput::Activate, cs_mut.a);
-      map_button(NavInput::Cancel, cs_mut.b);
-      map_button(NavInput::Menu, cs_mut.x);
-      map_button(NavInput::Input, cs_mut.y);
-      map_button(NavInput::DpadLeft, cs_mut.left);
-      map_button(NavInput::DpadRight, cs_mut.right);
-      map_button(NavInput::DpadDown, cs_mut.down);
-      map_button(NavInput::DpadUp, cs_mut.up);
-      map_button(NavInput::FocusNext, cs_mut.rb);
-      map_button(NavInput::FocusPrev, cs_mut.lb);
-      map_button(NavInput::TweakSlow, cs_mut.lb);
-      map_button(NavInput::TweakFast, cs_mut.rb);
+      // map_button(NavInput::Activate, cs_mut.a);
+      // map_button(NavInput::Cancel, cs_mut.b);
+      // map_button(NavInput::Menu, cs_mut.x);
+      // map_button(NavInput::Input, cs_mut.y);
+      // map_button(NavInput::DpadLeft, cs_mut.left);
+      // map_button(NavInput::DpadRight, cs_mut.right);
+      // map_button(NavInput::DpadDown, cs_mut.down);
+      // map_button(NavInput::DpadUp, cs_mut.up);
+      // map_button(NavInput::FocusNext, cs_mut.rb);
+      // map_button(NavInput::FocusPrev, cs_mut.lb);
+      // map_button(NavInput::TweakSlow, cs_mut.lb);
+      // map_button(NavInput::TweakFast, cs_mut.rb);
 
-      let mut map_analog = |i: NavInput, state: i16, min: i16, max: i16| {
-        let vn = (state - min) as f32 / (max - min) as f32;
-        let vn = f32::min(1.0, vn);
-        if vn > 0.0 && nav_inputs[i as usize] < vn {
-          nav_inputs[i as usize] = vn;
-        }
-      };
+      // let mut map_analog = |i: NavInput, state: i16, min: i16, max: i16| {
+      //   let vn = (state - min) as f32 / (max - min) as f32;
+      //   let vn = f32::min(1.0, vn);
+      //   if vn > 0.0 && nav_inputs[i as usize] < vn {
+      //     nav_inputs[i as usize] = vn;
+      //   }
+      // };
 
-      let l_dz = XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE;
+      // let l_dz = XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE;
 
-      map_analog(NavInput::LStickLeft, cs_mut.left_stick_x, -l_dz, -32768);
-      map_analog(NavInput::LStickRight, cs_mut.left_stick_x, l_dz, 32767);
-      map_analog(NavInput::LStickDown, cs_mut.left_stick_y, -l_dz, -32768);
-      map_analog(NavInput::LStickUp, cs_mut.left_stick_y, l_dz, 32767);
+      // map_analog(NavInput::LStickLeft, cs_mut.left_stick_x, -l_dz, -32768);
+      // map_analog(NavInput::LStickRight, cs_mut.left_stick_x, l_dz, 32767);
+      // map_analog(NavInput::LStickDown, cs_mut.left_stick_y, -l_dz, -32768);
+      // map_analog(NavInput::LStickUp, cs_mut.left_stick_y, l_dz, 32767);
     }
   }
 
@@ -556,6 +561,10 @@ unsafe fn get_xinput_addr() -> LPVOID {
 /// creates and enables the hook via `MinHook`. Returns the callback to the
 /// trampoline function, if successful.
 pub unsafe fn apply_hook(render_loop: Box<dyn RenderLoop>) {
+  if RENDER_LOOP.set(Mutex::new(render_loop)).is_err() {
+    panic!("Render loop already assigned");
+  }
+
   let xinput_addr = get_xinput_addr();
   info!("XInputGetState = {:p}", xinput_addr);
 
@@ -610,9 +619,5 @@ pub unsafe fn apply_hook(render_loop: Box<dyn RenderLoop>) {
     .is_err()
   {
     panic!("XInputGetState trampoline already assigned");
-  }
-
-  if RENDER_LOOP.set(Mutex::new(render_loop)).is_err() {
-    panic!("Render loop already assigned");
   }
 }
