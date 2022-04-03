@@ -149,9 +149,9 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            _: winapi::shared::minwindef::HINSTANCE,
+            _: windows::Win32::Foundation::HINSTANCE,
             reason: u32,
-            _: *mut winapi::ctypes::c_void,
+            _: *mut std::ffi::c_void,
         ) {
             static mut HOOKS: OnceCell<mh::Hooks> = OnceCell::new();
 

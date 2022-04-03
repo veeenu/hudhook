@@ -829,8 +829,6 @@ impl RenderEngine {
         fonts.tex_id = TextureId::from(self.font_srv_gpu_desc_handle.ptr as usize);
     }
 
-    fn shutdown(&mut self) {}
-
     pub fn new_frame(&mut self, ctx: &mut imgui::Context) {
         if self.pipeline_state.is_none() {
             self.create_device_objects(ctx);

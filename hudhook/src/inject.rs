@@ -1,6 +1,6 @@
 use std::ffi::CString;
 use std::path::PathBuf;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 use log::*;
 use widestring::U16CString;
@@ -14,7 +14,7 @@ use winapi::um::winbase::INFINITE;
 use winapi::um::winnt::{MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE, PROCESS_ALL_ACCESS};
 use winapi::um::{memoryapi, processthreadsapi};
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowThreadProcessId};
-use windows::core::{PCWSTR, PWSTR};
+use windows::core::PCWSTR;
 
 /// Inject the DLL stored at `dll_path` in the process that owns the window with title `title`.
 pub fn inject(title: &str, dll_path: PathBuf) {

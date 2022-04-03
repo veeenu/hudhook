@@ -1,22 +1,19 @@
 use crate::mh;
 
-use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 
 use log::*;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use winapi::shared::minwindef::{HMODULE, LOWORD};
-use winapi::um::winuser::{GET_WHEEL_DELTA_WPARAM, GET_XBUTTON_WPARAM};
-use windows::core::{IUnknown, Interface, HRESULT, PCSTR};
+use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, IDXGIFactory, IDXGISwapChain, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
 };
@@ -121,6 +118,13 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
+    fn hiword(i: usize) -> u16 {
+        ((i >> 16) & 0xffff) as u16
+    }
+    fn loword(i: usize) -> u16 {
+        (i & 0xffff) as u16
+    }
+
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
             let ctx = &mut imgui_renderer.ctx;
@@ -153,7 +157,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     // return 1;
                 }
                 WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                    let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1.0 as u16 {
+                    let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
                         3
                     } else {
                         4
@@ -178,7 +182,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     // return 1;
                 }
                 WM_XBUTTONUP => {
-                    let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1.0 as u16 {
+                    let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
                         3
                     } else {
                         4
@@ -188,15 +192,15 @@ unsafe extern "system" fn imgui_wnd_proc(
                 }
                 WM_MOUSEWHEEL => {
                     io.mouse_wheel +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (hiword(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_MOUSEHWHEEL => {
                     io.mouse_wheel_h +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (hiword(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_CHAR => io.add_input_character(wparam as u8 as char),
                 WM_ACTIVATE => {
-                    if LOWORD(wparam as _) == WA_INACTIVE as u16 {
+                    if loword(wparam) == WA_INACTIVE as u16 {
                         imgui_renderer.flags.focused = false;
                     } else {
                         imgui_renderer.flags.focused = true;
@@ -504,11 +508,11 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
 
     let command_queue: ID3D12CommandQueue =
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
-    let command_alloc: ID3D12CommandAllocator =
-        unsafe { dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
-    let command_list: ID3D12CommandList =
-        unsafe { dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_alloc, None) }
-            .unwrap();
+    // let command_alloc: ID3D12CommandAllocator =
+    //     unsafe { dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
+    // let command_list: ID3D12CommandList =
+    //     unsafe { dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_alloc, None) }
+    //         .unwrap();
 
     let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
         BufferDesc: DXGI_MODE_DESC {
