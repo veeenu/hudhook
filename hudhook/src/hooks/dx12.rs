@@ -7,15 +7,16 @@ use std::ptr::{null, null_mut};
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use winapi::um::winuser::GET_WHEEL_DELTA_WPARAM;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC,
-    DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
+    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
@@ -133,28 +134,22 @@ unsafe extern "system" fn imgui_wnd_proc(
             match umsg {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
                     if wparam < 256 {
-                        io.keys_down[wparam] = true;
+                        io.keys_down[wparam as usize] = true;
                     }
                 }
                 WM_KEYUP | WM_SYSKEYUP => {
                     if wparam < 256 {
-                        io.keys_down[wparam] = false;
+                        io.keys_down[wparam as usize] = false;
                     }
                 }
                 WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-                    // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[0] = true;
-                    // return 1;
                 }
                 WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-                    // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[1] = true;
-                    // return 1;
                 }
                 WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-                    // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[2] = true;
-                    // return 1;
                 }
                 WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
                     let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
@@ -162,24 +157,16 @@ unsafe extern "system" fn imgui_wnd_proc(
                     } else {
                         4
                     };
-                    // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[btn] = true;
-                    // return 1;
                 }
                 WM_LBUTTONUP => {
                     io.mouse_down[0] = false;
-                    // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
-                    // return 1;
                 }
                 WM_RBUTTONUP => {
                     io.mouse_down[1] = false;
-                    // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
-                    // return 1;
                 }
                 WM_MBUTTONUP => {
                     io.mouse_down[2] = false;
-                    // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
-                    // return 1;
                 }
                 WM_XBUTTONUP => {
                     let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
@@ -188,15 +175,12 @@ unsafe extern "system" fn imgui_wnd_proc(
                         4
                     };
                     io.mouse_down[btn] = false;
-                    // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                 }
                 WM_MOUSEWHEEL => {
-                    io.mouse_wheel +=
-                        (hiword(wparam) as f32) / (WHEEL_DELTA as f32);
+                    io.mouse_wheel += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_MOUSEHWHEEL => {
-                    io.mouse_wheel_h +=
-                        (hiword(wparam) as f32) / (WHEEL_DELTA as f32);
+                    io.mouse_wheel_h += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_CHAR => io.add_input_character(wparam as u8 as char),
                 WM_ACTIVATE => {
@@ -321,8 +305,34 @@ impl ImguiRenderer {
         ));
 
         ctx.set_ini_filename(None);
-        ctx.io_mut().nav_active = true;
-        ctx.io_mut().nav_visible = true;
+
+        {
+            let io = ctx.io_mut();
+            io.nav_active = true;
+            io.nav_visible = true;
+            io.key_map[imgui::Key::Tab as usize] = VK_TAB.0 as _;
+            io.key_map[imgui::Key::LeftArrow as usize] = VK_LEFT.0 as _;
+            io.key_map[imgui::Key::RightArrow as usize] = VK_RIGHT.0 as _;
+            io.key_map[imgui::Key::UpArrow as usize] = VK_UP.0 as _;
+            io.key_map[imgui::Key::DownArrow as usize] = VK_DOWN.0 as _;
+            io.key_map[imgui::Key::PageUp as usize] = VK_PRIOR.0 as _;
+            io.key_map[imgui::Key::PageDown as usize] = VK_NEXT.0 as _;
+            io.key_map[imgui::Key::Home as usize] = VK_HOME.0 as _;
+            io.key_map[imgui::Key::End as usize] = VK_END.0 as _;
+            io.key_map[imgui::Key::Insert as usize] = VK_INSERT.0 as _;
+            io.key_map[imgui::Key::Delete as usize] = VK_DELETE.0 as _;
+            io.key_map[imgui::Key::Backspace as usize] = VK_BACK.0 as _;
+            io.key_map[imgui::Key::Space as usize] = VK_SPACE.0 as _;
+            io.key_map[imgui::Key::KeyPadEnter as usize] = VK_RETURN.0 as _;
+            io.key_map[imgui::Key::Escape as usize] = VK_ESCAPE.0 as _;
+            io.key_map[imgui::Key::KeyPadEnter as usize] = VK_RETURN.0 as _;
+            io.key_map[imgui::Key::A as usize] = 'A' as u32;
+            io.key_map[imgui::Key::C as usize] = 'C' as u32;
+            io.key_map[imgui::Key::V as usize] = 'V' as u32;
+            io.key_map[imgui::Key::X as usize] = 'X' as u32;
+            io.key_map[imgui::Key::Y as usize] = 'Y' as u32;
+            io.key_map[imgui::Key::Z as usize] = 'Z' as u32;
+        }
 
         let flags = ImguiRenderLoopFlags { focused: true };
 
