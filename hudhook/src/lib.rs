@@ -149,7 +149,7 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            _: windows::Win32::Foundation::HINSTANCE,
+            _hmodule: windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
@@ -162,7 +162,12 @@ macro_rules! hudhook {
                     HOOKS.set(hooks).ok();
                 });
             } else if reason == DLL_PROCESS_DETACH {
-                // TODO figure out a way to trigger drops on exit
+                // TODO trigger drops on exit:
+                // - Store _hmodule in a static OnceCell
+                // - Call FreeLibraryAndExitThread from a utility function
+                // This branch will then get called.
+                trace!("Unapplying hooks");
+                HOOKS.get().unapply();
             }
         }
     };

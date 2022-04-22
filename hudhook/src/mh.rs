@@ -134,6 +134,6 @@ impl Hooks {
 
 impl Drop for Hooks {
     fn drop(&mut self) {
-        self.unapply();
+        // self.unapply();
     }
 }
