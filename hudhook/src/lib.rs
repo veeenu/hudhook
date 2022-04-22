@@ -167,7 +167,9 @@ macro_rules! hudhook {
                 // - Call FreeLibraryAndExitThread from a utility function
                 // This branch will then get called.
                 trace!("Unapplying hooks");
-                HOOKS.get().unapply();
+                if let Some(hooks) = HOOKS.get() {
+                    hooks.unapply();
+                }
             }
         }
     };
