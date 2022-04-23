@@ -145,11 +145,27 @@ macro_rules! hudhook {
         use hudhook::*;
 
         use std::lazy::OnceCell;
+        // use std::lazy::SyncOnceCell;
+        // use std::sync::Mutex;
+
+        // static DLL_MODULE: SyncOnceCell<Mutex<windows::Win32::Foundation::HINSTANCE>> =
+        //     SyncOnceCell::new();
+
+        // fn hudhook_exit() {
+        //     if let Some(hmodule) = DLL_MODULE.get() {
+        //         unsafe {
+        //             windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread(
+        //                 (*hmodule.lock().unwrap()),
+        //                 0,
+        //             )
+        //         };
+        //     }
+        // }
 
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            _hmodule: windows::Win32::Foundation::HINSTANCE,
+            hmodule: windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
@@ -157,6 +173,9 @@ macro_rules! hudhook {
 
             if reason == DLL_PROCESS_ATTACH {
                 trace!("DllMain()");
+                // if DLL_MODULE.set(Mutex::new(hmodule)).is_err() {
+                //     debug!("Couldn't store DLL module");
+                // }
                 std::thread::spawn(move || {
                     let hooks = hudhook::mh::Hooks::new($hooks);
                     HOOKS.set(hooks).ok();
@@ -164,6 +183,7 @@ macro_rules! hudhook {
             } else if reason == DLL_PROCESS_DETACH {
                 // TODO trigger drops on exit:
                 // - Store _hmodule in a static OnceCell
+                // - Wait for a render loop to be complete
                 // - Call FreeLibraryAndExitThread from a utility function
                 // This branch will then get called.
                 trace!("Unapplying hooks");
