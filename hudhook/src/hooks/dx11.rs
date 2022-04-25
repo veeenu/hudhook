@@ -386,14 +386,12 @@ where
 
     let mut trampoline = null_mut();
 
-    debug!(
-        "MH_CreateHook: {:?}",
-        mh::MH_CreateHook(
-            dxgi_swap_chain_present_addr,
-            imgui_dxgi_swap_chain_present_impl as *mut c_void,
-            &mut trampoline as *mut _ as _
-        )
+    let status = mh::MH_CreateHook(
+        dxgi_swap_chain_present_addr,
+        imgui_dxgi_swap_chain_present_impl as *mut c_void,
+        &mut trampoline as *mut _ as _,
     );
+    debug!("MH_CreateHook: {:?}", status);
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
     TRAMPOLINE.get_or_init(|| std::mem::transmute(trampoline));

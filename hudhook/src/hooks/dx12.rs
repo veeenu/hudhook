@@ -585,21 +585,25 @@ where
     let mut trampoline_dscp = null_mut();
     let mut trampoline_cqecl = null_mut();
 
-    debug!(
-        "MH_CreateHook: {:?}",
+    let status = 
         mh::MH_CreateHook(
             dxgi_swap_chain_present_addr as *mut c_void,
             imgui_dxgi_swap_chain_present_impl as *mut c_void,
             &mut trampoline_dscp as *mut _ as _
-        )
-    );
+        );
     debug!(
         "MH_CreateHook: {:?}",
+        status
+    );
+    let status = 
         mh::MH_CreateHook(
             execute_command_lists_addr as *mut c_void,
             imgui_execute_command_lists_impl as *mut c_void,
             &mut trampoline_cqecl as *mut _ as _
-        )
+        );
+    debug!(
+        "MH_CreateHook: {:?}",
+        status,
     );
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
