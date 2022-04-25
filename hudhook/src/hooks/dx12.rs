@@ -8,7 +8,6 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use winapi::um::winuser::GET_WHEEL_DELTA_WPARAM;
-use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -20,6 +19,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 type DXGISwapChainPresentType =
@@ -177,10 +177,12 @@ unsafe extern "system" fn imgui_wnd_proc(
                     io.mouse_down[btn] = false;
                 }
                 WM_MOUSEWHEEL => {
-                    io.mouse_wheel += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                    io.mouse_wheel +=
+                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_MOUSEHWHEEL => {
-                    io.mouse_wheel_h += (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                    io.mouse_wheel_h +=
+                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_CHAR => io.add_input_character(wparam as u8 as char),
                 WM_ACTIVATE => {
@@ -585,26 +587,18 @@ where
     let mut trampoline_dscp = null_mut();
     let mut trampoline_cqecl = null_mut();
 
-    let status = 
-        mh::MH_CreateHook(
-            dxgi_swap_chain_present_addr as *mut c_void,
-            imgui_dxgi_swap_chain_present_impl as *mut c_void,
-            &mut trampoline_dscp as *mut _ as _
-        );
-    debug!(
-        "MH_CreateHook: {:?}",
-        status
+    let status = mh::MH_CreateHook(
+        dxgi_swap_chain_present_addr as *mut c_void,
+        imgui_dxgi_swap_chain_present_impl as *mut c_void,
+        &mut trampoline_dscp as *mut _ as _,
     );
-    let status = 
-        mh::MH_CreateHook(
-            execute_command_lists_addr as *mut c_void,
-            imgui_execute_command_lists_impl as *mut c_void,
-            &mut trampoline_cqecl as *mut _ as _
-        );
-    debug!(
-        "MH_CreateHook: {:?}",
-        status,
+    debug!("MH_CreateHook: {:?}", status);
+    let status = mh::MH_CreateHook(
+        execute_command_lists_addr as *mut c_void,
+        imgui_execute_command_lists_impl as *mut c_void,
+        &mut trampoline_cqecl as *mut _ as _,
     );
+    debug!("MH_CreateHook: {:?}", status,);
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
     TRAMPOLINE.get_or_init(|| {
