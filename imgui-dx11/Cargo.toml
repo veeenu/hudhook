@@ -1,0 +1,12 @@
+[package]
+name = "imgui-dx11"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+imgui = "0.8.0"
+imgui-sys = "0.8.0"
+winapi = { version = "0.3.9", features = [ "std", "d3d11", "dxgi", "d3dcompiler", "ntdef", "minwindef", "windef", "psapi", "memoryapi", "synchapi", "winuser", "processthreadsapi", "xinput", "libloaderapi", "winerror", "dxgidebug" ] }
+windows = "0.21.1"
