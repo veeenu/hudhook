@@ -11,6 +11,10 @@ authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 build = "build.rs"
 links = "minhook"
 
+[features]
+default = []
+dxgi_debug = []
+
 [[example]]
 name = "hook_you"
 crate-type = ["cdylib"]

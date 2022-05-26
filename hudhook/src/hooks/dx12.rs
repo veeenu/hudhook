@@ -9,7 +9,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use winapi::um::winuser::GET_WHEEL_DELTA_WPARAM;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -31,6 +31,15 @@ type ExecuteCommandListsType = unsafe extern "system" fn(
     command_lists: *mut ID3D12CommandList,
 );
 
+type ResizeBuffersType = unsafe extern "system" fn(
+    This: IDXGISwapChain3,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT;
+
 type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
@@ -46,20 +55,54 @@ trait Renderer {
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut imgui_dx12::imgui::Ui, flags: &ImguiRenderLoopFlags);
+    fn initialize(&mut self, _ctx: &mut imgui_dx12::imgui::Context) {}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Global singletons
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static TRAMPOLINE: OnceCell<(DXGISwapChainPresentType, ExecuteCommandListsType)> = OnceCell::new();
+static TRAMPOLINE: OnceCell<(
+    DXGISwapChainPresentType,
+    ExecuteCommandListsType,
+    ResizeBuffersType,
+)> = OnceCell::new();
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Debugging
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(feature = "dxgi_debug")]
+unsafe fn print_dxgi_debug_messages() {
+    let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
+
+    for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
+        let mut msg_len: usize = 0;
+        diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _)
+            .unwrap();
+        let diqm = vec![0u8; msg_len];
+        let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
+        diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _)
+            .unwrap();
+        let diqm = pdiqm.as_ref().unwrap();
+        trace!(
+            "{}",
+            String::from_utf8_lossy(std::slice::from_raw_parts(
+                diqm.pDescription as *const u8,
+                diqm.DescriptionByteLength - 1
+            ))
+        );
+    }
+    diq.ClearStoredMessages(DXGI_DEBUG_ALL);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Hook entry points
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 
 #[derive(Debug)]
 struct FrameContext {
@@ -73,25 +116,46 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
-    static CELL: OnceCell<()> = OnceCell::new();
+    COMMAND_QUEUE_GUARD
+        .get_or_try_init(|| {
+            trace!("cmd_queue ptr is {:?}", cmd_queue);
+            if let Some(renderer) = IMGUI_RENDERER.get() {
+                trace!("cmd_queue ptr was set");
+                renderer.lock().command_queue = Some(cmd_queue.clone());
+                Ok(())
+            } else {
+                trace!("cmd_queue ptr was not set");
+                Err(())
+            }
+        })
+        .ok();
 
-    CELL.get_or_try_init(|| {
-        trace!("cmd_queue ptr is {:?}", cmd_queue);
-        if let Some(renderer) = IMGUI_RENDERER.get() {
-            trace!("cmd_queue ptr was set");
-            renderer.lock().command_queue = Some(cmd_queue.clone());
-            Ok(())
-        } else {
-            trace!("cmd_queue ptr was not set");
-            Err(())
-        }
-    })
-    .ok();
-
-    let (_, trampoline) = TRAMPOLINE
+    let (_, trampoline, _) = TRAMPOLINE
         .get()
         .expect("ID3D12CommandQueue::ExecuteCommandLists trampoline uninitialized");
     trampoline(cmd_queue, num_command_lists, command_lists);
+}
+
+unsafe extern "system" fn imgui_resize_buffers_impl(
+    swap_chain: IDXGISwapChain3,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT {
+    trace!("IDXGISwapChain3::ResizeBuffers invoked");
+    let (_, _, trampoline) = TRAMPOLINE
+        .get()
+        .expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
+
+    if let Some(mutex) = IMGUI_RENDERER.take() {
+        mutex.lock().cleanup(swap_chain.clone());
+    };
+
+    COMMAND_QUEUE_GUARD.take();
+
+    trampoline(swap_chain, buffer_count, width, height, new_format, flags)
 }
 
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
@@ -99,18 +163,30 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
-    let (trampoline_present, _) = TRAMPOLINE
+    let (trampoline_present, _, _) = TRAMPOLINE
         .get()
         .expect("IDXGISwapChain::Present trampoline uninitialized");
 
-    let mut renderer = IMGUI_RENDERER
-        .get_or_init(|| Mutex::new(Box::new(ImguiRenderer::new(swap_chain.clone()))))
-        .lock();
+    trace!("IDXGISwapChain3::Present({swap_chain:?}, {sync_interval}, {flags}) invoked");
 
-    renderer.render(swap_chain.clone());
-    drop(renderer);
+    let renderer =
+        IMGUI_RENDERER.get_or_init(|| Mutex::new(Box::new(ImguiRenderer::new(swap_chain.clone()))));
 
-    trampoline_present(swap_chain, sync_interval, flags)
+    {
+        renderer.lock().render(swap_chain.clone());
+    }
+
+    trace!("Invoking IDXGISwapChain3::Present trampoline");
+    let r = trampoline_present(swap_chain, sync_interval, flags);
+    trace!("Trampoline returned {:?}", r);
+
+    // Windows + R -> dxcpl.exe
+    // Edit list... -> add eldenring.exe
+    // DXGI debug layer -> Force On
+    #[cfg(feature = "dxgi_debug")]
+    print_dxgi_debug_messages();
+
+    r
 }
 
 unsafe extern "system" fn imgui_wnd_proc(
@@ -119,6 +195,13 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
+    trace!(
+        "Entering WndProc {:x} {:x} {:x} {:x}",
+        hwnd.0,
+        umsg,
+        wparam,
+        lparam
+    );
     fn hiword(i: usize) -> u16 {
         ((i >> 16) & 0xffff) as u16
     }
@@ -199,6 +282,8 @@ unsafe extern "system" fn imgui_wnd_proc(
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
+            trace!("Leaving WndProc");
+
             CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         }
         Some(None) => {
@@ -219,11 +304,9 @@ unsafe extern "system" fn imgui_wnd_proc(
 struct ImguiRenderer {
     ctx: imgui_dx12::imgui::Context,
     engine: imgui_dx12::RenderEngine,
-    render_loop: Box<dyn ImguiRenderLoop>,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     frame_contexts: Vec<FrameContext>,
-    // frame_contexts_idx: usize,
     _rtv_heap: ID3D12DescriptorHeap,
     renderer_heap: ID3D12DescriptorHeap,
     command_queue: Option<ID3D12CommandQueue>,
@@ -232,6 +315,8 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
+        #[cfg(feature = "dxgi_debug")]
+        info!("DXGI debugging activated");
         trace!("Initializing renderer");
         let desc = swap_chain.GetDesc().unwrap();
         let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
@@ -267,14 +352,14 @@ impl ImguiRenderer {
             dev.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
         let rtv_handle_start = rtv_heap.GetCPUDescriptorHandleForHeapStart();
-        debug!("rtv_handle_start ptr {:x}", rtv_handle_start.ptr);
+        trace!("rtv_handle_start ptr {:x}", rtv_handle_start.ptr);
 
         let frame_contexts: Vec<FrameContext> = (0..desc.BufferCount)
             .map(|i| {
                 let desc_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                     ptr: rtv_handle_start.ptr + (i * rtv_heap_inc_size) as usize,
                 };
-                debug!("desc handle {i} ptr {:x}", desc_handle.ptr);
+                trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
                 let back_buffer = swap_chain.GetBuffer(i).unwrap();
                 dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
                 FrameContext {
@@ -299,7 +384,6 @@ impl ImguiRenderer {
             cpu_desc,
             gpu_desc,
         );
-        let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             desc.OutputWindow,
             GWLP_WNDPROC,
@@ -338,13 +422,14 @@ impl ImguiRenderer {
 
         let flags = ImguiRenderLoopFlags { focused: true };
 
+        IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
+
         debug!("Done init");
         ImguiRenderer {
             ctx,
             command_queue: None,
             command_list,
             engine,
-            render_loop,
             wnd_proc,
             flags,
             _rtv_heap: rtv_heap,
@@ -354,6 +439,7 @@ impl ImguiRenderer {
     }
 
     fn render(&mut self, swap_chain: IDXGISwapChain3) -> Option<()> {
+        trace!("Rendering started");
         let sd = unsafe { swap_chain.GetDesc() }.unwrap();
         let mut rect: RECT = Default::default();
 
@@ -380,9 +466,17 @@ impl ImguiRenderer {
                     io.mouse_pos[1] = pos.y as _;
                 }
             }
+        } else {
+            trace!("GetWindowRect error: {:x}", unsafe { GetLastError().0 });
         }
 
-        let command_queue = self.command_queue.as_ref()?;
+        let command_queue = match self.command_queue.as_ref() {
+            Some(cq) => cq,
+            None => {
+                error!("Null command queue");
+                return None;
+            }
+        };
 
         let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
         let frame_context = &self.frame_contexts[frame_contexts_idx];
@@ -390,21 +484,23 @@ impl ImguiRenderer {
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;
         let mut ui = ctx.frame();
-        self.render_loop.render(&mut ui, &self.flags);
+        unsafe { IMGUI_RENDER_LOOP.get_mut() }
+            .unwrap()
+            .render(&mut ui, &self.flags);
         let draw_data = ui.render();
 
-        let mut transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
             pResource: Some(frame_context.back_buffer.clone()),
             Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             StateBefore: D3D12_RESOURCE_STATE_PRESENT,
             StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
         });
 
-        let barrier = D3D12_RESOURCE_BARRIER {
+        let mut barrier = D3D12_RESOURCE_BARRIER {
             Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             Anonymous: D3D12_RESOURCE_BARRIER_0 {
-                Transition: transition_barrier.clone(),
+                Transition: transition_barrier,
             },
         };
 
@@ -426,17 +522,33 @@ impl ImguiRenderer {
 
         self.engine
             .render_draw_data(draw_data, &self.command_list, frame_contexts_idx);
-        transition_barrier.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        transition_barrier.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+        unsafe {
+            (*barrier.Anonymous.Transition).StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            (*barrier.Anonymous.Transition).StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+        }
+
+        let barriers = vec![barrier];
 
         unsafe {
-            self.command_list.ResourceBarrier(&[barrier]);
+            self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
             command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
         }
 
-        drop(transition_barrier);
+        let barrier = barriers.into_iter().next().unwrap();
+
+        let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        trace!("Rendering done");
         None
+    }
+
+    unsafe fn cleanup(&mut self, swap_chain: IDXGISwapChain3) {
+        let desc = swap_chain.GetDesc().unwrap();
+        SetWindowLongPtrA(
+            desc.OutputWindow,
+            GWLP_WNDPROC,
+            self.wnd_proc as usize as isize,
+        );
     }
 }
 
@@ -457,7 +569,11 @@ pub struct ImguiRenderLoopFlags {
 ///
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
-fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
+fn get_present_addr() -> (
+    DXGISwapChainPresentType,
+    ExecuteCommandListsType,
+    ResizeBuffersType,
+) {
     trace!("get_present_addr");
     trace!("  HWND");
     unsafe extern "system" fn wndproc(
@@ -512,11 +628,12 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
     unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut dev) }.unwrap();
     let dev = dev.unwrap();
 
-    let mut queue_desc = D3D12_COMMAND_QUEUE_DESC::default();
-    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    queue_desc.Priority = 0;
-    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queue_desc.NodeMask = 0;
+    let queue_desc = D3D12_COMMAND_QUEUE_DESC {
+        Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+        Priority: 0,
+        Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
+        NodeMask: 0,
+    };
 
     let command_queue: ID3D12CommandQueue =
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
@@ -553,6 +670,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
     let swap_chain = unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc) }.unwrap();
     let present_ptr = unsafe { swap_chain.vtable().Present };
     let ecl_ptr = unsafe { command_queue.vtable().ExecuteCommandLists };
+    let rbuf_ptr = unsafe { swap_chain.vtable().ResizeBuffers };
 
     unsafe { DestroyWindow(hwnd) };
     unsafe { UnregisterClassA(PCSTR("HUDHOOK_DUMMY\0".as_ptr()), hinstance) };
@@ -561,6 +679,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
         (
             std::mem::transmute(present_ptr),
             std::mem::transmute(ecl_ptr),
+            std::mem::transmute(rbuf_ptr),
         )
     }
 }
@@ -570,41 +689,54 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType) {
 /// # Safety
 ///
 /// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> [mh::Hook; 2]
+pub unsafe fn hook_imgui<T: 'static>(t: T) -> [mh::Hook; 3]
 where
     T: ImguiRenderLoop + Send + Sync,
 {
-    let (dxgi_swap_chain_present_addr, execute_command_lists_addr) = get_present_addr();
-    debug!(
+    let (dxgi_swap_chain_present_addr, execute_command_lists_addr, resize_buffers_addr) =
+        get_present_addr();
+    trace!(
         "IDXGISwapChain::Present = {:p}",
         dxgi_swap_chain_present_addr as *const c_void
     );
-    debug!(
+    trace!(
         "ID3D12CommandQueue::ExecuteCommandLists = {:p}",
         execute_command_lists_addr as *const c_void
+    );
+    trace!(
+        "IDXGISwapChain::ResizeBuffers = {:p}",
+        resize_buffers_addr as *const c_void
     );
 
     let mut trampoline_dscp = null_mut();
     let mut trampoline_cqecl = null_mut();
+    let mut trampoline_rbuf = null_mut();
 
     let status = mh::MH_CreateHook(
         dxgi_swap_chain_present_addr as *mut c_void,
         imgui_dxgi_swap_chain_present_impl as *mut c_void,
         &mut trampoline_dscp as *mut _ as _,
     );
-    debug!("MH_CreateHook: {:?}", status);
+    trace!("MH_CreateHook: {:?}", status);
     let status = mh::MH_CreateHook(
         execute_command_lists_addr as *mut c_void,
         imgui_execute_command_lists_impl as *mut c_void,
         &mut trampoline_cqecl as *mut _ as _,
     );
-    debug!("MH_CreateHook: {:?}", status,);
+    trace!("MH_CreateHook: {:?}", status,);
+    let status = mh::MH_CreateHook(
+        resize_buffers_addr as *mut c_void,
+        imgui_resize_buffers_impl as *mut c_void,
+        &mut trampoline_rbuf as *mut _ as _,
+    );
+    trace!("MH_CreateHook: {:?}", status,);
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
     TRAMPOLINE.get_or_init(|| {
         (
             std::mem::transmute(trampoline_dscp),
             std::mem::transmute(trampoline_cqecl),
+            std::mem::transmute(trampoline_rbuf),
         )
     });
 
@@ -616,6 +748,10 @@ where
         mh::Hook::new(
             execute_command_lists_addr as *mut c_void,
             imgui_execute_command_lists_impl as *mut c_void,
+        ),
+        mh::Hook::new(
+            resize_buffers_addr as *mut c_void,
+            imgui_resize_buffers_impl as *mut c_void,
         ),
     ]
 }

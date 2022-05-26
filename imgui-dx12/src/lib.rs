@@ -128,6 +128,13 @@ impl FrameResources {
     }
 }
 
+impl Drop for FrameResources {
+    fn drop(&mut self) {
+        drop(self.vertex_buffer.take());
+        drop(self.index_buffer.take());
+    }
+}
+
 impl Default for FrameResources {
     fn default() -> Self {
         Self {
@@ -194,6 +201,7 @@ impl RenderEngine {
             ]
         };
 
+        trace!("Display size {}x{}", display_size[0], display_size[1]);
         unsafe {
             cmd_list.RSSetViewports(&[D3D12_VIEWPORT {
                 TopLeftX: 0f32,
@@ -257,19 +265,17 @@ impl RenderEngine {
             return;
         }
 
+        if self.frame_resources[frame_resources_idx]
+            .resize(
+                &self.dev,
+                draw_data.total_idx_count as usize,
+                draw_data.total_vtx_count as usize,
+            )
+            .is_err()
         {
-            if self.frame_resources[frame_resources_idx]
-                .resize(
-                    &self.dev,
-                    draw_data.total_idx_count as usize,
-                    draw_data.total_vtx_count as usize,
-                )
-                .is_err()
-            {
-                trace!("{:?}", unsafe { self.dev.GetDeviceRemovedReason() });
-                panic!();
-            }
-        };
+            trace!("{:?}", unsafe { self.dev.GetDeviceRemovedReason() });
+            panic!();
+        }
 
         let range = D3D12_RANGE::default();
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
@@ -288,21 +294,25 @@ impl RenderEngine {
         {
             let frame_resources = &self.frame_resources[frame_resources_idx];
 
-            frame_resources.vertex_buffer.as_ref().map(|vb| unsafe {
-                vb.Map(0, &range, &mut vtx_resource as *mut _ as _).unwrap();
-                std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
-                vb.Unmap(0, &range);
-            });
+            if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
+                unsafe {
+                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _).unwrap();
+                    std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
+                    vb.Unmap(0, &range);
+                }
+            };
 
-            frame_resources.index_buffer.as_ref().map(|ib| unsafe {
-                ib.Map(0, &range, &mut idx_resource as *mut _ as _).unwrap();
-                std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
-                ib.Unmap(0, &range);
-            });
+            if let Some(ib) = frame_resources.index_buffer.as_ref() {
+                unsafe {
+                    ib.Map(0, &range, &mut idx_resource as *mut _ as _).unwrap();
+                    std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
+                    ib.Unmap(0, &range);
+                }
+            };
         }
 
         {
-            self.setup_render_state(draw_data, &cmd_list, frame_resources_idx as usize);
+            self.setup_render_state(draw_data, cmd_list, frame_resources_idx as usize);
         }
 
         let mut vtx_offset = 0usize;
@@ -341,7 +351,7 @@ impl RenderEngine {
                         idx_offset += count;
                     }
                     DrawCmd::ResetRenderState => {
-                        self.setup_render_state(draw_data, &cmd_list, frame_resources_idx);
+                        self.setup_render_state(draw_data, cmd_list, frame_resources_idx);
                     }
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
                         callback(cl.raw(), raw_cmd)
@@ -357,12 +367,13 @@ impl RenderEngine {
             self.invalidate_device_objects();
         }
 
-        let mut desc_range = D3D12_DESCRIPTOR_RANGE::default();
-        desc_range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-        desc_range.NumDescriptors = 1;
-        desc_range.BaseShaderRegister = 0;
-        desc_range.RegisterSpace = 0;
-        desc_range.OffsetInDescriptorsFromTableStart = 0;
+        let desc_range = D3D12_DESCRIPTOR_RANGE {
+            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+            NumDescriptors: 1,
+            BaseShaderRegister: 0,
+            RegisterSpace: 0,
+            OffsetInDescriptorsFromTableStart: 0,
+        };
 
         let params = [
             D3D12_ROOT_PARAMETER {
@@ -404,15 +415,16 @@ impl RenderEngine {
             ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
         };
 
-        let mut root_signature_desc = D3D12_ROOT_SIGNATURE_DESC::default();
-        root_signature_desc.NumParameters = 2;
-        root_signature_desc.pParameters = params.as_ptr();
-        root_signature_desc.NumStaticSamplers = 1;
-        root_signature_desc.pStaticSamplers = &sampler;
-        root_signature_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
-            | D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS
-            | D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS
-            | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+        let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
+            NumParameters: 2,
+            pParameters: params.as_ptr(),
+            NumStaticSamplers: 1,
+            pStaticSamplers: &sampler,
+            Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+                | D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS
+                | D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS
+                | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS,
+        };
         let mut blob: Option<ID3DBlob> = None;
         let mut err_blob: Option<ID3DBlob> = None;
         if let Err(e) = unsafe {
@@ -622,7 +634,7 @@ impl RenderEngine {
         self.create_font_texture(ctx);
     }
 
-    fn invalidate_device_objects(&mut self) {
+    pub fn invalidate_device_objects(&mut self) {
         if let Some(root_signature) = self.root_signature.take() {
             drop(root_signature);
         }
@@ -634,8 +646,8 @@ impl RenderEngine {
         }
 
         self.frame_resources.iter_mut().for_each(|fr| {
-            fr.index_buffer.take();
-            fr.vertex_buffer.take();
+            drop(fr.index_buffer.take());
+            drop(fr.vertex_buffer.take());
         });
     }
 
@@ -715,12 +727,14 @@ impl RenderEngine {
             Begin: 0,
             End: upload_size as usize,
         };
-        upload_buffer.as_ref().map(|ub| unsafe {
-            let mut ptr: *mut u8 = null_mut();
-            ub.Map(0, &range, &mut ptr as *mut _ as _).unwrap();
-            std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
-            ub.Unmap(0, &range);
-        });
+        if let Some(ub) = upload_buffer.as_ref() {
+            unsafe {
+                let mut ptr: *mut u8 = null_mut();
+                ub.Map(0, &range, &mut ptr as *mut _ as _).unwrap();
+                std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
+                ub.Unmap(0, &range);
+            }
+        };
 
         let fence: ID3D12Fence = unsafe { self.dev.CreateFence(0, D3D12_FENCE_FLAG_NONE) }.unwrap();
 
@@ -744,17 +758,13 @@ impl RenderEngine {
         .unwrap();
 
         let cmd_list: ID3D12GraphicsCommandList = unsafe {
-            self.dev.CreateCommandList(
-                0,
-                D3D12_COMMAND_LIST_TYPE_DIRECT,
-                cmd_allocator.clone(),
-                None,
-            )
+            self.dev
+                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator, None)
         }
         .unwrap();
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
-            pResource: upload_buffer.clone(),
+            pResource: upload_buffer,
             Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
             Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                 PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
