@@ -72,7 +72,7 @@ static TRAMPOLINE: OnceCell<(
 // Debugging
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(feature = "dxgi_debug")]
+#[cfg(feature = "dxgi-debug")]
 unsafe fn print_dxgi_debug_messages() {
     let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
 
@@ -86,7 +86,7 @@ unsafe fn print_dxgi_debug_messages() {
             .unwrap();
         let diqm = pdiqm.as_ref().unwrap();
         trace!(
-            "{}",
+            "[DIQ] {}",
             String::from_utf8_lossy(std::slice::from_raw_parts(
                 diqm.pDescription as *const u8,
                 diqm.DescriptionByteLength - 1
@@ -183,7 +183,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     // Windows + R -> dxcpl.exe
     // Edit list... -> add eldenring.exe
     // DXGI debug layer -> Force On
-    #[cfg(feature = "dxgi_debug")]
+    #[cfg(feature = "dxgi-debug")]
     print_dxgi_debug_messages();
 
     r
@@ -315,7 +315,7 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
-        #[cfg(feature = "dxgi_debug")]
+        #[cfg(feature = "dxgi-debug")]
         info!("DXGI debugging activated");
         trace!("Initializing renderer");
         let desc = swap_chain.GetDesc().unwrap();
@@ -520,8 +520,12 @@ impl ImguiRenderer {
                 .SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
         };
 
-        self.engine
-            .render_draw_data(draw_data, &self.command_list, frame_contexts_idx);
+        if let Err(e) = self.engine
+            .render_draw_data(draw_data, &self.command_list, frame_contexts_idx) {
+            trace!("{}", e);
+            #[cfg(feature = "dxgi-debug")]
+            unsafe { print_dxgi_debug_messages() };
+        };
         unsafe {
             (*barrier.Anonymous.Transition).StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             (*barrier.Anonymous.Transition).StateAfter = D3D12_RESOURCE_STATE_PRESENT;

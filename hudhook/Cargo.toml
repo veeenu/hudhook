@@ -13,7 +13,7 @@ links = "minhook"
 
 [features]
 default = []
-dxgi_debug = []
+dxgi-debug = []
 
 [[example]]
 name = "hook_you"

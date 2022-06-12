@@ -58,7 +58,7 @@ impl FrameResources {
             };
             let desc = D3D12_RESOURCE_DESC {
                 Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                Alignment: 0,
+                Alignment: 65536,
                 Width: (self.vertex_buffer_size * size_of::<imgui::DrawVert>()) as u64,
                 Height: 1,
                 DepthOrArraySize: 1,
@@ -260,22 +260,26 @@ impl RenderEngine {
         draw_data: &imgui::DrawData,
         cmd_list: &ID3D12GraphicsCommandList,
         frame_resources_idx: usize,
-    ) {
+    ) -> Result<(), windows::core::Error> {
         if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
-            return;
+            trace!(
+                "Insufficent display size {}x{}, skip rendering",
+                draw_data.display_size[0],
+                draw_data.display_size[1]
+            );
+            return Ok(());
         }
 
-        if self.frame_resources[frame_resources_idx]
+        self.frame_resources[frame_resources_idx]
             .resize(
                 &self.dev,
                 draw_data.total_idx_count as usize,
                 draw_data.total_vtx_count as usize,
             )
-            .is_err()
-        {
-            trace!("{:?}", unsafe { self.dev.GetDeviceRemovedReason() });
-            panic!();
-        }
+            .map_err(|e| {
+                trace!("{:?}", unsafe { self.dev.GetDeviceRemovedReason() });
+                e
+            })?;
 
         let range = D3D12_RANGE::default();
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
@@ -296,7 +300,7 @@ impl RenderEngine {
 
             if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
                 unsafe {
-                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _).unwrap();
+                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _)?;
                     std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
                     vb.Unmap(0, &range);
                 }
@@ -304,7 +308,7 @@ impl RenderEngine {
 
             if let Some(ib) = frame_resources.index_buffer.as_ref() {
                 unsafe {
-                    ib.Map(0, &range, &mut idx_resource as *mut _ as _).unwrap();
+                    ib.Map(0, &range, &mut idx_resource as *mut _ as _)?;
                     std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
                     ib.Unmap(0, &range);
                 }
@@ -360,6 +364,8 @@ impl RenderEngine {
             }
             vtx_offset += cl.vtx_buffer().len();
         }
+
+        Ok(())
     }
 
     pub fn create_device_objects(&mut self, ctx: &mut imgui::Context) {
