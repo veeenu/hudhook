@@ -3,6 +3,7 @@ use crate::mh;
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::*;
 use once_cell::sync::OnceCell;
@@ -72,7 +73,6 @@ static TRAMPOLINE: OnceCell<(
 // Debugging
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(feature = "dxgi-debug")]
 unsafe fn print_dxgi_debug_messages() {
     let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
 
@@ -85,7 +85,7 @@ unsafe fn print_dxgi_debug_messages() {
         diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _)
             .unwrap();
         let diqm = pdiqm.as_ref().unwrap();
-        trace!(
+        debug!(
             "[DIQ] {}",
             String::from_utf8_lossy(std::slice::from_raw_parts(
                 diqm.pDescription as *const u8,
@@ -103,6 +103,7 @@ unsafe fn print_dxgi_debug_messages() {
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
+static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
 struct FrameContext {
@@ -183,8 +184,9 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     // Windows + R -> dxcpl.exe
     // Edit list... -> add eldenring.exe
     // DXGI debug layer -> Force On
-    #[cfg(feature = "dxgi-debug")]
-    print_dxgi_debug_messages();
+    if DXGI_DEBUG_ENABLED.load(Ordering::SeqCst) {
+        print_dxgi_debug_messages();
+    }
 
     r
 }
@@ -315,8 +317,6 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
-        #[cfg(feature = "dxgi-debug")]
-        info!("DXGI debugging activated");
         trace!("Initializing renderer");
         let desc = swap_chain.GetDesc().unwrap();
         let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
@@ -520,11 +520,14 @@ impl ImguiRenderer {
                 .SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
         };
 
-        if let Err(e) = self.engine
-            .render_draw_data(draw_data, &self.command_list, frame_contexts_idx) {
+        if let Err(e) =
+            self.engine
+                .render_draw_data(draw_data, &self.command_list, frame_contexts_idx)
+        {
             trace!("{}", e);
-            #[cfg(feature = "dxgi-debug")]
-            unsafe { print_dxgi_debug_messages() };
+            if DXGI_DEBUG_ENABLED.load(Ordering::SeqCst) {
+                unsafe { print_dxgi_debug_messages() }
+            };
         };
         unsafe {
             (*barrier.Anonymous.Transition).StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -686,6 +689,18 @@ fn get_present_addr() -> (
             std::mem::transmute(rbuf_ptr),
         )
     }
+}
+
+/// Globally enables DXGI debug messages.
+pub fn enable_dxgi_debug() {
+    info!("DXGI debugging enabled");
+    DXGI_DEBUG_ENABLED.store(true, Ordering::SeqCst);
+}
+
+/// Globally disables DXGI debug messages.
+pub fn disable_dxgi_debug() {
+    info!("DXGI debugging disabled");
+    DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
 }
 
 /// Construct a `mh::Hook` that will render UI via the provided `ImguiRenderLoop`.
