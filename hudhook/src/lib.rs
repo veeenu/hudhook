@@ -144,7 +144,7 @@ macro_rules! hudhook {
         use hudhook::log::*;
         use hudhook::*;
 
-        use std::lazy::OnceCell;
+        use std::cell::OnceCell;
         // use std::lazy::SyncOnceCell;
         // use std::sync::Mutex;
 
