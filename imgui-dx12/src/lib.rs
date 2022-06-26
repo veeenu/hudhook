@@ -261,6 +261,13 @@ impl RenderEngine {
         cmd_list: &ID3D12GraphicsCommandList,
         frame_resources_idx: usize,
     ) -> Result<(), windows::core::Error> {
+        let print_device_removed_reason = |e: windows::core::Error| -> windows::core::Error {
+            trace!("Device removed reason: {:?}", unsafe {
+                self.dev.GetDeviceRemovedReason()
+            });
+            e
+        };
+
         if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
             trace!(
                 "Insufficent display size {}x{}, skip rendering",
@@ -276,10 +283,7 @@ impl RenderEngine {
                 draw_data.total_idx_count as usize,
                 draw_data.total_vtx_count as usize,
             )
-            .map_err(|e| {
-                trace!("{:?}", unsafe { self.dev.GetDeviceRemovedReason() });
-                e
-            })?;
+            .map_err(print_device_removed_reason)?;
 
         let range = D3D12_RANGE::default();
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
@@ -300,7 +304,8 @@ impl RenderEngine {
 
             if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
                 unsafe {
-                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _)?;
+                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _)
+                        .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
                     vb.Unmap(0, &range);
                 }
@@ -308,7 +313,8 @@ impl RenderEngine {
 
             if let Some(ib) = frame_resources.index_buffer.as_ref() {
                 unsafe {
-                    ib.Map(0, &range, &mut idx_resource as *mut _ as _)?;
+                    ib.Map(0, &range, &mut idx_resource as *mut _ as _)
+                        .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
                     ib.Unmap(0, &range);
                 }
