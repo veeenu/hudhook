@@ -93,7 +93,6 @@
 
 pub mod hooks;
 pub mod inject;
-pub mod mh;
 
 pub mod utils {
     /// Allocate a Windows console.
@@ -131,6 +130,8 @@ pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;
     pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
+
+    pub use detour::RawDetour;
 }
 
 /// Entry point for the library.
@@ -179,15 +180,17 @@ macro_rules! hudhook {
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
-            static mut HOOKS: OnceCell<mh::Hooks> = OnceCell::new();
-
+            static mut HOOKS: OnceCell<Vec<RawDetour>> = OnceCell::new();
+            
             if reason == DLL_PROCESS_ATTACH {
                 trace!("DllMain()");
-                // if DLL_MODULE.set(Mutex::new(hmodule)).is_err() {
-                //     debug!("Couldn't store DLL module");
-                // }
                 std::thread::spawn(move || {
-                    let hooks = hudhook::mh::Hooks::new($hooks);
+                    let hooks: Vec<RawDetour> = { $hooks() }.into_iter().collect();
+                    for hook in &hooks {
+                        if let Err(e) = hook.enable() {
+                            error!("Couldn't enable hook: {e}");
+                        }
+                    };
                     HOOKS.set(hooks).ok();
                 });
             } else if reason == DLL_PROCESS_DETACH {
@@ -198,9 +201,35 @@ macro_rules! hudhook {
                 // This branch will then get called.
                 trace!("Unapplying hooks");
                 if let Some(hooks) = HOOKS.get() {
-                    hooks.unapply();
+                    hooks.iter().for_each(|hook| {
+                        if let Err(e) = hook.disable() {
+                            error!("Error disabling hook: {e}");
+                        }
+                    });
                 }
             }
+            // static mut HOOKS: OnceCell<mh::Hooks> = OnceCell::new();
+
+            // if reason == DLL_PROCESS_ATTACH {
+            //     trace!("DllMain()");
+            //     // if DLL_MODULE.set(Mutex::new(hmodule)).is_err() {
+            //     //     debug!("Couldn't store DLL module");
+            //     // }
+            //     std::thread::spawn(move || {
+            //         let hooks = hudhook::mh::Hooks::new($hooks);
+            //         HOOKS.set(hooks).ok();
+            //     });
+            // } else if reason == DLL_PROCESS_DETACH {
+            //     // TODO trigger drops on exit:
+            //     // - Store _hmodule in a static OnceCell
+            //     // - Wait for a render loop to be complete
+            //     // - Call FreeLibraryAndExitThread from a utility function
+            //     // This branch will then get called.
+            //     trace!("Unapplying hooks");
+            //     if let Some(hooks) = HOOKS.get() {
+            //         hooks.unapply();
+            //     }
+            // }
         }
     };
 }

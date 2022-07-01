@@ -3,6 +3,7 @@ use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use detour::RawDetour;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -21,7 +22,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{get_wheel_delta_wparam, hiword, loword};
-use crate::mh;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -661,7 +661,7 @@ pub fn disable_dxgi_debug() {
 /// # Safety
 ///
 /// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> [mh::Hook; 3]
+pub unsafe fn hook_imgui<T: 'static>(t: T) -> [RawDetour; 3]
 where
     T: ImguiRenderLoop + Send + Sync,
 {
@@ -674,47 +674,66 @@ where
     );
     trace!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *const c_void);
 
-    let mut trampoline_dscp = null_mut();
-    let mut trampoline_cqecl = null_mut();
-    let mut trampoline_rbuf = null_mut();
+    // let mut trampoline_dscp = null_mut();
+    // let mut trampoline_cqecl = null_mut();
+    // let mut trampoline_rbuf = null_mut();
 
-    let status = mh::MH_CreateHook(
-        dxgi_swap_chain_present_addr as *mut c_void,
-        imgui_dxgi_swap_chain_present_impl as *mut c_void,
-        &mut trampoline_dscp as *mut _ as _,
-    );
-    trace!("MH_CreateHook: {:?}", status);
-    let status = mh::MH_CreateHook(
-        execute_command_lists_addr as *mut c_void,
-        imgui_execute_command_lists_impl as *mut c_void,
-        &mut trampoline_cqecl as *mut _ as _,
-    );
-    trace!("MH_CreateHook: {:?}", status,);
-    let status = mh::MH_CreateHook(
-        resize_buffers_addr as *mut c_void,
-        imgui_resize_buffers_impl as *mut c_void,
-        &mut trampoline_rbuf as *mut _ as _,
-    );
-    trace!("MH_CreateHook: {:?}", status,);
+    // let status = mh::MH_CreateHook(
+    //     dxgi_swap_chain_present_addr as *mut c_void,
+    //     imgui_dxgi_swap_chain_present_impl as *mut c_void,
+    //     &mut trampoline_dscp as *mut _ as _,
+    // );
+    // trace!("MH_CreateHook: {:?}", status);
+    // let status = mh::MH_CreateHook(
+    //     execute_command_lists_addr as *mut c_void,
+    //     imgui_execute_command_lists_impl as *mut c_void,
+    //     &mut trampoline_cqecl as *mut _ as _,
+    // );
+    // trace!("MH_CreateHook: {:?}", status,);
+    // let status = mh::MH_CreateHook(
+    //     resize_buffers_addr as *mut c_void,
+    //     imgui_resize_buffers_impl as *mut c_void,
+    //     &mut trampoline_rbuf as *mut _ as _,
+    // );
+    // trace!("MH_CreateHook: {:?}", status,);
+
+    let hook_dscp = RawDetour::new(
+        dxgi_swap_chain_present_addr as *const _,
+        imgui_dxgi_swap_chain_present_impl as *const _,
+    ).expect("IDXGISwapChain::Present hook");
+
+    let hook_cqecl = RawDetour::new(
+        execute_command_lists_addr as *const _,
+        imgui_execute_command_lists_impl as *const _,
+    ).expect("ID3D12CommandQueue::ExecuteCommandLists hook");
+
+    let hook_rbuf = RawDetour::new(
+        resize_buffers_addr as *const _,
+        imgui_resize_buffers_impl as *const _,
+    ).expect("IDXGISwapChain::ResizeBuffers hook");
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
     TRAMPOLINE.get_or_init(|| {
         (
-            std::mem::transmute(trampoline_dscp),
-            std::mem::transmute(trampoline_cqecl),
-            std::mem::transmute(trampoline_rbuf),
+            std::mem::transmute(hook_dscp.trampoline()),
+            std::mem::transmute(hook_cqecl.trampoline()),
+            std::mem::transmute(hook_rbuf.trampoline()),
         )
     });
 
     [
-        mh::Hook::new(
-            dxgi_swap_chain_present_addr as *mut c_void,
-            imgui_dxgi_swap_chain_present_impl as *mut c_void,
-        ),
-        mh::Hook::new(
-            execute_command_lists_addr as *mut c_void,
-            imgui_execute_command_lists_impl as *mut c_void,
-        ),
-        mh::Hook::new(resize_buffers_addr as *mut c_void, imgui_resize_buffers_impl as *mut c_void),
+        hook_dscp, hook_cqecl, hook_rbuf
     ]
+
+    // [
+    //     mh::Hook::new(
+    //         dxgi_swap_chain_present_addr as *mut c_void,
+    //         imgui_dxgi_swap_chain_present_impl as *mut c_void,
+    //     ),
+    //     mh::Hook::new(
+    //         execute_command_lists_addr as *mut c_void,
+    //         imgui_execute_command_lists_impl as *mut c_void,
+    //     ),
+    //     mh::Hook::new(resize_buffers_addr as *mut c_void, imgui_resize_buffers_impl as *mut c_void),
+    // ]
 }

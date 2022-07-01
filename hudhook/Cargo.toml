@@ -8,8 +8,7 @@ repository = "https://github.com/veeenu/hudhook"
 documentation = "https://veeenu.github.io/hudhook"
 license-file = "LICENSE.md"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
-build = "build.rs"
-links = "minhook"
+# links = "minhook"
 
 [[example]]
 name = "hook_you"
@@ -20,6 +19,7 @@ name = "inject"
 
 [dependencies]
 console = "0.15.0"
+detour = "0.8.1"
 dialoguer = "0.9.0"
 imgui = "0.8.0"
 imgui-dx11 = { path = "../imgui-dx11" }
@@ -29,13 +29,6 @@ once_cell = "1.8.0"
 parking_lot = "0.11.2"
 simplelog = "0.11.0"
 widestring = "0.5.1"
-# winapi = { version = "0.3.9", features = [ 
-#   "std", "d3d11", "d3d12", "dinput", "dinputd", 
-#   "dxgi", "d3dcompiler", "ntdef", "minwindef",
-#   "windef", "psapi", "memoryapi", "synchapi",
-#   "winuser", "processthreadsapi", "xinput",
-#   "libloaderapi", "winerror", "dxgidebug"
-# ] }
 windows = { version = "0.34.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",

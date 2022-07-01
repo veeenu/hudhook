@@ -1,6 +1,7 @@
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
+use detour::RawDetour;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -22,7 +23,6 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword};
-use crate::mh;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -371,24 +371,21 @@ fn get_present_addr() -> DXGISwapChainPresentType {
 /// # Safety
 ///
 /// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> mh::Hook
+pub unsafe fn hook_imgui<T: 'static>(t: T) -> RawDetour
 where
     T: ImguiRenderLoop + Send + Sync,
 {
-    let dxgi_swap_chain_present_addr = get_present_addr() as *mut c_void;
-    debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr);
+    let dxgi_swap_chain_present_addr = get_present_addr();
+    debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
 
-    let mut trampoline: *mut c_void = null_mut();
-
-    let status = mh::MH_CreateHook(
-        dxgi_swap_chain_present_addr,
-        imgui_dxgi_swap_chain_present_impl as *mut c_void,
-        &mut trampoline as *mut _ as *mut _,
-    );
-    debug!("MH_CreateHook: {:?}", status);
+    let hook = RawDetour::new(
+        dxgi_swap_chain_present_addr as *const _,
+        imgui_dxgi_swap_chain_present_impl as *const _,
+    )
+    .expect("Create detour");
 
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-    TRAMPOLINE.get_or_init(|| std::mem::transmute(trampoline));
+    TRAMPOLINE.get_or_init(|| std::mem::transmute(hook.trampoline()));
 
-    mh::Hook::new(dxgi_swap_chain_present_addr, imgui_dxgi_swap_chain_present_impl as *mut c_void)
+    hook
 }
