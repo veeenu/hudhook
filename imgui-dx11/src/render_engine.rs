@@ -6,11 +6,18 @@ use crate::texture::Texture;
 
 use imgui::internal::RawWrapper;
 use imgui::{DrawCmd, DrawVert};
-use winapi::shared::dxgi::IDXGISwapChain;
-use winapi::shared::dxgiformat::*;
-use winapi::shared::windef::*;
-use winapi::um::d3d11::*;
-use winapi::um::d3dcommon::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+use windows::Win32::Graphics::Direct3D11::{
+    ID3D11Device, ID3D11DeviceContext
+};
+use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32_UINT};
+use windows::Win32::Graphics::Dxgi::IDXGISwapChain;
+// use winapi::shared::dxgi::IDXGISwapChain;
+// use winapi::shared::dxgiformat::*;
+// use winapi::shared::windef::*;
+// use winapi::um::d3d11::*;
+// use winapi::um::d3dcommon::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 pub struct RenderEngine {
     ctx: imgui::Context,
@@ -24,9 +31,9 @@ impl RenderEngine {
     pub fn new(hwnd: HWND) -> Self {
         let mut ctx = imgui::Context::create();
         let dasc = DeviceAndSwapChain::new(hwnd);
-        let shader_program = ShaderProgram::new(&dasc);
+        let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts());
+        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
         RenderEngine {
             ctx,
             dasc,
@@ -37,15 +44,15 @@ impl RenderEngine {
     }
 
     pub fn new_with_ptrs(
-        dev: *mut ID3D11Device,
-        dev_ctx: *mut ID3D11DeviceContext,
-        swap_chain: *mut IDXGISwapChain,
+        dev: ID3D11Device,
+        dev_ctx: ID3D11DeviceContext,
+        swap_chain: IDXGISwapChain,
     ) -> Self {
         let mut ctx = imgui::Context::create();
         let dasc = DeviceAndSwapChain::new_with_ptrs(dev, dev_ctx, swap_chain);
-        let shader_program = ShaderProgram::new(&dasc);
+        let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts());
+        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
         RenderEngine {
             ctx,
             dasc,
@@ -59,15 +66,15 @@ impl RenderEngine {
         &mut self.ctx
     }
 
-    pub fn dev(&self) -> &ID3D11Device {
+    pub fn dev(&self) -> ID3D11Device {
         self.dasc.dev()
     }
 
-    pub fn dev_ctx(&self) -> &ID3D11DeviceContext {
+    pub fn dev_ctx(&self) -> ID3D11DeviceContext {
         self.dasc.dev_ctx()
     }
 
-    pub fn swap_chain(&self) -> &IDXGISwapChain {
+    pub fn swap_chain(&self) -> IDXGISwapChain {
         self.dasc.swap_chain()
     }
 
@@ -109,7 +116,7 @@ impl RenderEngine {
             dev_ctx.IASetVertexBuffers(
                 0,
                 1,
-                &self.buffers.vtx_buffer(),
+                &Some(self.buffers.vtx_buffer()),
                 &(std::mem::size_of::<DrawVert>() as u32),
                 &0,
             );
@@ -123,8 +130,8 @@ impl RenderEngine {
                 0,
             );
             dev_ctx.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            dev_ctx.VSSetConstantBuffers(0, 1, &self.buffers.mtx_buffer());
-            dev_ctx.PSSetShaderResources(0, 1, &self.texture.tex_view());
+            dev_ctx.VSSetConstantBuffers(0, &[Some(self.buffers.mtx_buffer())]);
+            dev_ctx.PSSetShaderResources(0, &[Some(self.texture.tex_view())]);
 
             let mut vtx_offset = 0usize;
             let mut idx_offset = 0usize;
@@ -134,18 +141,17 @@ impl RenderEngine {
                     match cmd {
                         DrawCmd::Elements { count, cmd_params } => {
                             let [cx, cy, cw, ch] = cmd_params.clip_rect;
-                            dev_ctx.RSSetScissorRects(
-                                1,
-                                &D3D11_RECT {
-                                    left: (cx - x) as i32,
-                                    top: (cy - y) as i32,
-                                    right: (cw - x) as i32,
-                                    bottom: (ch - y) as i32,
-                                },
-                            );
+                            dev_ctx.RSSetScissorRects(&[RECT {
+                                left: (cx - x) as i32,
+                                top: (cy - y) as i32,
+                                right: (cw - x) as i32,
+                                bottom: (ch - y) as i32,
+                            }]);
 
-                            self.dasc
-                                .set_shader_resources(cmd_params.texture_id.id() as _);
+                            // SAFETY ID3D11ShaderResourceView is #[repr(transparent)]
+                            // over a pointer. We store that pointer in the texture id.
+                            let srv = cmd_params.texture_id.id();
+                            self.dasc.set_shader_resources(std::mem::transmute(srv));
 
                             dev_ctx.DrawIndexed(count as u32, idx_offset as _, vtx_offset as _);
 
@@ -170,6 +176,8 @@ impl RenderEngine {
     }
 
     pub fn present(&self) {
-        unsafe { self.dasc.swap_chain().Present(1, 0) };
+        if let Err(e) = unsafe { self.dasc.swap_chain().Present(1, 0) } {
+            log::error!("Present: {e}");
+        }
     }
 }

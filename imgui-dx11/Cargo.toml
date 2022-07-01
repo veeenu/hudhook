@@ -8,5 +8,19 @@ edition = "2021"
 [dependencies]
 imgui = "0.8.0"
 imgui-sys = "0.8.0"
-winapi = { version = "0.3.9", features = [ "std", "d3d11", "dxgi", "d3dcompiler", "ntdef", "minwindef", "windef", "psapi", "memoryapi", "synchapi", "winuser", "processthreadsapi", "xinput", "libloaderapi", "winerror", "dxgidebug" ] }
-windows = "0.21.1"
+log = "0.4.17"
+# winapi = { version = "0.3.9", features = [ "std", "d3d11", "dxgi", "d3dcompiler", "ntdef", "minwindef", "windef", "psapi", "memoryapi", "synchapi", "winuser", "processthreadsapi", "xinput", "libloaderapi", "winerror", "dxgidebug" ] }
+windows = { version = "0.34.0", features = [
+  "Win32_Devices_HumanInterfaceDevice",
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Direct3D_Fxc",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }

@@ -1,15 +1,18 @@
-use std::ptr::{null_mut, NonNull};
+use std::ptr::null_mut;
 
 use imgui::{DrawListIterator, DrawVert};
-use winapi::um::d3d11::*;
+use windows::Win32::Graphics::Direct3D11::{
+    ID3D11Buffer, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
+    D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_USAGE_DYNAMIC,
+};
+// use winapi::um::d3d11::*;
 
-use crate::common::check_hresult;
 use crate::device_and_swapchain::DeviceAndSwapChain;
 
 pub(crate) struct Buffers {
-    vtx_buffer: NonNull<ID3D11Buffer>,
-    idx_buffer: NonNull<ID3D11Buffer>,
-    mtx_buffer: NonNull<ID3D11Buffer>,
+    vtx_buffer: ID3D11Buffer,
+    idx_buffer: ID3D11Buffer,
+    mtx_buffer: ID3D11Buffer,
 
     vtx_count: usize,
     idx_count: usize,
@@ -20,22 +23,21 @@ struct VertexConstantBuffer([[f32; 4]; 4]);
 
 impl Buffers {
     pub(crate) fn new(dasc: &DeviceAndSwapChain) -> Self {
-        let mut mtx_buffer = null_mut();
-
-        check_hresult(unsafe {
-            dasc.dev().CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    BindFlags: D3D11_BIND_CONSTANT_BUFFER,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                } as *const _,
-                null_mut(),
-                &mut mtx_buffer as _,
-            )
-        });
+        let mtx_buffer = unsafe {
+            dasc.dev()
+                .CreateBuffer(
+                    &D3D11_BUFFER_DESC {
+                        ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
+                        Usage: D3D11_USAGE_DYNAMIC,
+                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
+                        MiscFlags: 0,
+                        StructureByteStride: 0,
+                    } as *const _,
+                    null_mut(),
+                )
+                .expect("CreateBuffer")
+        };
 
         let vtx_buffer = Buffers::create_vertex_buffer(dasc, 1);
         let idx_buffer = Buffers::create_index_buffer(dasc, 1);
@@ -43,7 +45,7 @@ impl Buffers {
         Buffers {
             vtx_buffer,
             idx_buffer,
-            mtx_buffer: NonNull::new(mtx_buffer).expect("Null matrix buffer"),
+            mtx_buffer,
             vtx_count: 1,
             idx_count: 1,
         }
@@ -52,7 +54,7 @@ impl Buffers {
     pub(crate) fn set_constant_buffer(&mut self, dasc: &DeviceAndSwapChain, rect: [f32; 4]) {
         let [l, t, r, b] = rect;
 
-        dasc.with_mapped(self.mtx_buffer, |ms| unsafe {
+        dasc.with_mapped(&self.mtx_buffer, |ms| unsafe {
             std::ptr::copy_nonoverlapping(
                 &VertexConstantBuffer([
                     [2. / (r - l), 0., 0., 0.],
@@ -77,86 +79,74 @@ impl Buffers {
 
         self.resize(dasc, vertices.len(), indices.len());
 
-        dasc.with_mapped(self.vtx_buffer, |ms| unsafe {
+        dasc.with_mapped(&self.vtx_buffer, |ms| unsafe {
             std::ptr::copy_nonoverlapping(vertices.as_ptr(), ms.pData as _, vertices.len());
         });
 
-        dasc.with_mapped(self.idx_buffer, |ms| unsafe {
+        dasc.with_mapped(&self.idx_buffer, |ms| unsafe {
             std::ptr::copy_nonoverlapping(indices.as_ptr(), ms.pData as _, indices.len());
         });
     }
 
     pub(crate) fn resize(&mut self, dasc: &DeviceAndSwapChain, vtx_count: usize, idx_count: usize) {
         if self.vtx_count <= vtx_count || (self.vtx_count == 0 && vtx_count == 0) {
-            unsafe { self.vtx_buffer.as_ref().Release() };
+            // unsafe { self.vtx_buffer.as_ref().Release() };
             self.vtx_count = vtx_count + 4096;
             self.vtx_buffer = Buffers::create_vertex_buffer(dasc, self.vtx_count);
         }
 
         if self.idx_count <= idx_count || (self.idx_count == 0 && idx_count == 0) {
-            unsafe { self.idx_buffer.as_ref().Release() };
+            // unsafe { self.idx_buffer.as_ref().Release() };
             self.idx_count = idx_count + 4096;
             self.idx_buffer = Buffers::create_index_buffer(dasc, self.idx_count);
         }
     }
 
-    pub(crate) fn create_vertex_buffer(
-        dasc: &DeviceAndSwapChain,
-        size: usize,
-    ) -> NonNull<ID3D11Buffer> {
-        let mut buffer = null_mut();
-
-        check_hresult(unsafe {
-            dasc.dev().CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
-                    BindFlags: D3D11_BIND_VERTEX_BUFFER,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                },
-                null_mut(),
-                &mut buffer as *mut _,
-            )
-        });
-
-        NonNull::new(buffer).expect("Null vertex buffer")
+    pub(crate) fn create_vertex_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
+        unsafe {
+            dasc.dev()
+                .CreateBuffer(
+                    &D3D11_BUFFER_DESC {
+                        Usage: D3D11_USAGE_DYNAMIC,
+                        ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
+                        BindFlags: D3D11_BIND_VERTEX_BUFFER.0,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
+                        MiscFlags: 0,
+                        StructureByteStride: 0,
+                    },
+                    null_mut(),
+                )
+                .expect("CreateBuffer")
+        }
     }
 
-    pub(crate) fn create_index_buffer(
-        dasc: &DeviceAndSwapChain,
-        size: usize,
-    ) -> NonNull<ID3D11Buffer> {
-        let mut buffer = null_mut();
-
-        check_hresult(unsafe {
-            dasc.dev().CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
-                    BindFlags: D3D11_BIND_INDEX_BUFFER,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                },
-                null_mut(),
-                &mut buffer as *mut _,
-            )
-        });
-
-        NonNull::new(buffer).expect("Null index buffer")
+    pub(crate) fn create_index_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
+        unsafe {
+            dasc.dev()
+                .CreateBuffer(
+                    &D3D11_BUFFER_DESC {
+                        Usage: D3D11_USAGE_DYNAMIC,
+                        ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
+                        BindFlags: D3D11_BIND_INDEX_BUFFER.0,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
+                        MiscFlags: 0,
+                        StructureByteStride: 0,
+                    },
+                    null_mut(),
+                )
+                .expect("CreateBuffer")
+        }
     }
 
-    pub(crate) fn vtx_buffer(&self) -> *mut ID3D11Buffer {
-        self.vtx_buffer.as_ptr()
+    pub(crate) fn vtx_buffer(&self) -> ID3D11Buffer {
+        self.vtx_buffer.clone()
     }
 
-    pub(crate) fn idx_buffer(&self) -> *mut ID3D11Buffer {
-        self.idx_buffer.as_ptr()
+    pub(crate) fn idx_buffer(&self) -> ID3D11Buffer {
+        self.idx_buffer.clone()
     }
 
-    pub(crate) fn mtx_buffer(&self) -> *mut ID3D11Buffer {
-        self.mtx_buffer.as_ptr()
+    pub(crate) fn mtx_buffer(&self) -> ID3D11Buffer {
+        self.mtx_buffer.clone()
     }
 }
