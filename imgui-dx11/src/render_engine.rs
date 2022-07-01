@@ -6,6 +6,7 @@ use crate::texture::Texture;
 
 use imgui::internal::RawWrapper;
 use imgui::{DrawCmd, DrawVert};
+use log::trace;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 use windows::Win32::Graphics::Direct3D11::{
@@ -13,11 +14,6 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32_UINT};
 use windows::Win32::Graphics::Dxgi::IDXGISwapChain;
-// use winapi::shared::dxgi::IDXGISwapChain;
-// use winapi::shared::dxgiformat::*;
-// use winapi::shared::windef::*;
-// use winapi::um::d3d11::*;
-// use winapi::um::d3dcommon::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 pub struct RenderEngine {
     ctx: imgui::Context,
@@ -79,6 +75,7 @@ impl RenderEngine {
     }
 
     pub fn render<F: FnOnce(&mut imgui::Ui)>(&mut self, f: F) -> Result<(), String> {
+        trace!("Rendering started");
         let state_backup = StateBackup::backup(self.dasc.dev_ctx());
 
         if let Some(mut rect) = self.dasc.get_window_rect() {
@@ -93,6 +90,7 @@ impl RenderEngine {
             self.dasc.set_viewport(rect);
             self.dasc.set_render_target();
         }
+        trace!("Set shader program state");
         unsafe { self.shader_program.set_state(&self.dasc) };
 
         let mut ui = self.ctx.frame();
@@ -109,6 +107,7 @@ impl RenderEngine {
         unsafe {
             let dev_ctx = self.dasc.dev_ctx();
 
+            trace!("Setting up buffers");
             self.buffers
                 .set_constant_buffer(&self.dasc, [x, y, x + width, y + height]);
             self.buffers.set_buffers(&self.dasc, draw_data.draw_lists());
@@ -136,10 +135,12 @@ impl RenderEngine {
             let mut vtx_offset = 0usize;
             let mut idx_offset = 0usize;
 
+            trace!("Rendering draw lists");
             for cl in draw_data.draw_lists() {
                 for cmd in cl.commands() {
                     match cmd {
                         DrawCmd::Elements { count, cmd_params } => {
+                            trace!("Rendering {count} elements");
                             let [cx, cy, cw, ch] = cmd_params.clip_rect;
                             dev_ctx.RSSetScissorRects(&[RECT {
                                 left: (cx - x) as i32,
@@ -148,20 +149,24 @@ impl RenderEngine {
                                 bottom: (ch - y) as i32,
                             }]);
 
-                            // SAFETY ID3D11ShaderResourceView is #[repr(transparent)]
-                            // over a pointer. We store that pointer in the texture id.
-                            let srv = cmd_params.texture_id.id();
-                            self.dasc.set_shader_resources(std::mem::transmute(srv));
+                            // let srv = cmd_params.texture_id.id();
+                            // We only load the font texture. This may not be correct.
+                            self.dasc.set_shader_resources(self.texture.tex_view());
 
+                            trace!("Drawing indexed {count}, {idx_offset}, {vtx_offset}");
                             dev_ctx.DrawIndexed(count as u32, idx_offset as _, vtx_offset as _);
 
                             idx_offset += count;
                         }
                         DrawCmd::ResetRenderState => {
+                            trace!("Resetting render state");
                             self.dasc.setup_state(draw_data);
                             self.shader_program.set_state(&self.dasc);
                         }
-                        DrawCmd::RawCallback { callback, raw_cmd } => callback(cl.raw(), raw_cmd),
+                        DrawCmd::RawCallback { callback, raw_cmd } => {
+                            trace!("Executing raw callback");
+                            callback(cl.raw(), raw_cmd)
+                        }
                     }
                 }
                 vtx_offset += cl.vtx_buffer().len();
@@ -170,7 +175,10 @@ impl RenderEngine {
             // self.dasc.swap_chain().Present(1, 0);
         }
 
+        trace!("Restoring state backup");
         state_backup.restore(self.dasc.dev_ctx());
+
+        trace!("Rendering done");
 
         Ok(())
     }

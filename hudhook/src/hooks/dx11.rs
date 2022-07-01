@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, WPARAM, LRESULT};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, GetLastError};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -18,14 +18,13 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
 };
 use windows::Win32::Graphics::Dxgi::{
-    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{get_xbutton_wparam, get_wheel_delta_wparam, loword};
+use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -71,15 +70,13 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
 
     let mut renderer = IMGUI_RENDERER
         .get_or_init(|| {
+            trace!("Initializing renderer");
+
             let dev: ID3D11Device = p_this.GetDevice().expect("GetDevice");
             let mut dev_ctx: Option<ID3D11DeviceContext> = None;
             dev.GetImmediateContext(&mut dev_ctx);
             let dev_ctx = dev_ctx.unwrap();
             let sd = p_this.GetDesc().expect("GetDesc");
-            // check_hresult((*p_this).GetDevice(&ID3D11Device::uuidof(), &mut dev as *mut _ as _));
-            // (*dev).GetImmediateContext(&mut dev_ctx as _);
-
-            // check_hresult((*p_this).GetDesc(&mut sd as *mut _));
 
             let mut engine = imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, p_this.clone());
             let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
@@ -89,12 +86,15 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
                 imgui_wnd_proc as usize as isize,
             ));
 
+            trace!("Initializing imgui context");
             let imgui_ctx = engine.ctx();
             imgui_ctx.set_ini_filename(None);
             imgui_ctx.io_mut().nav_active = true;
             imgui_ctx.io_mut().nav_visible = true;
 
             let flags = ImguiRenderLoopFlags { focused: true };
+
+            trace!("Renderer initialized");
 
             Mutex::new(Box::new(ImguiRenderer {
                 engine,
@@ -106,11 +106,12 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
         .lock();
 
     {
+        trace!("Present impl: Rendering");
         let ctx = (*renderer).ctx();
         let sd = p_this.GetDesc().expect("GetDesc");
-        let mut rect: RECT = std::mem::zeroed();
+        let mut rect: RECT = Default::default();
 
-        if GetWindowRect(sd.OutputWindow, &mut rect as _) != BOOL(0) {
+        if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
             let mut io = ctx.io_mut();
 
             io.display_size = [
@@ -121,24 +122,30 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = GetForegroundWindow();
-            if active_window != HWND(0)
+            if !active_window.is_invalid()
                 && (active_window == sd.OutputWindow
-                    || IsChild(active_window, sd.OutputWindow) != BOOL(0))
+                    || IsChild(active_window, sd.OutputWindow).as_bool())
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp != BOOL(0) && ScreenToClient(sd.OutputWindow, &mut pos as *mut _) != BOOL(0)
+                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool()
                 {
                     io.mouse_pos[0] = pos.x as _;
                     io.mouse_pos[1] = pos.y as _;
                 }
             }
+        } else {
+            trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
     }
 
     (*renderer).render();
     drop(renderer);
 
-    trampoline(p_this, sync_interval, flags)
+    trace!("Invoking IDXGISwapChain::Present trampoline");
+    let r = trampoline(p_this, sync_interval, flags);
+    trace!("Trampoline returned {:?}", r);
+
+    r
 }
 
 unsafe extern "system" fn imgui_wnd_proc(
@@ -292,12 +299,22 @@ pub struct ImguiRenderLoopFlags {
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> DXGISwapChainPresentType {
+    trace!("Getting IDXGISwapChain::Present addr...");
+
+    unsafe extern "system" fn def_window_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        DefWindowProcA(hwnd, msg, wparam, lparam)
+    }
+
     let hwnd = {
         let hinstance = unsafe { GetModuleHandleA(None) };
-        // SAFETY it is a pointer.
         let wnd_class = WNDCLASSA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: None, // Some(DefWindowProcA),
+            lpfnWndProc: Some(def_window_proc),
             hInstance: hinstance,
             lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
             cbClsExtra: 0,
@@ -342,6 +359,7 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     swap_chain_desc.SampleDesc.Count = 1;
     swap_chain_desc.Windowed = BOOL(1);
 
+    trace!("Creating device and swap chain...");
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
@@ -362,9 +380,6 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     let ret = unsafe { p_swap_chain.unwrap().vtable().Present };
 
     unsafe {
-        // (*p_device).Release();
-        // (*p_context).Release();
-        // (*p_swap_chain).Release();
         DestroyWindow(hwnd);
     }
 

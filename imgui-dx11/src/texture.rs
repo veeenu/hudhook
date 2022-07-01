@@ -1,3 +1,4 @@
+use log::trace;
 use windows::core::Error;
 use windows::Win32::Graphics::Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D;
 use windows::Win32::Graphics::Direct3D11::{
@@ -82,7 +83,8 @@ impl Texture {
             })?
         };
 
-        fonts.tex_id = imgui::TextureId::from(&tex_view as *const _);
+        fonts.tex_id = imgui::TextureId::from(&tex_view as *const _ as usize);
+        trace!("Texture view: {:x} id: {:x}", &tex_view as *const _ as usize, fonts.tex_id.id());
 
         Ok(Texture {
             _tex,
