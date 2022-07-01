@@ -94,7 +94,7 @@ pub mod utils {
     /// Allocate a Windows console.
     pub fn alloc_console() {
         unsafe {
-            winapi::um::consoleapi::AllocConsole();
+            crate::reexports::AllocConsole();
         }
     }
 
@@ -115,15 +115,18 @@ pub mod utils {
     /// Free the previously allocated Windows console.
     pub fn free_console() {
         unsafe {
-            winapi::um::wincon::FreeConsole();
+            crate::reexports::FreeConsole();
         }
     }
 }
 
 pub use log;
-pub use winapi::um::winnt::{
-    DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
-};
+
+pub mod reexports {
+    pub use windows::Win32::Foundation::HINSTANCE;
+    pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
+    pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
+}
 
 /// Entry point for the library.
 ///
@@ -142,9 +145,11 @@ pub use winapi::um::winnt::{
 macro_rules! hudhook {
     ($hooks:expr) => {
         use hudhook::log::*;
+        use hudhook::reexports::*;
         use hudhook::*;
 
         use std::cell::OnceCell;
+
         // use std::lazy::SyncOnceCell;
         // use std::sync::Mutex;
 
@@ -165,7 +170,7 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: windows::Win32::Foundation::HINSTANCE,
+            hmodule: HINSTANCE,
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {

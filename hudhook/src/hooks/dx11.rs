@@ -1,32 +1,37 @@
 use crate::mh;
 
 use std::ffi::c_void;
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
-use imgui_dx11::check_hresult;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 
-use winapi::shared::dxgi::*;
-use winapi::shared::dxgiformat::*;
-use winapi::shared::dxgitype::*;
-use winapi::shared::minwindef::*;
-use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, POINT, RECT};
-use winapi::um::d3d11::*;
-use winapi::um::d3dcommon::*;
-use winapi::um::winnt::*;
-use winapi::um::winuser::*;
-use winapi::Interface;
+use windows::core::{Interface, HRESULT, PCSTR};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, WPARAM, LRESULT};
+use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+};
+use windows::Win32::Graphics::Dxgi::{
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+};
+use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
+use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
-type DXGISwapChainPresentType = unsafe extern "system" fn(
-    This: *mut IDXGISwapChain,
-    SyncInterval: UINT,
-    Flags: UINT,
-) -> HRESULT;
+use super::{get_xbutton_wparam, get_wheel_delta_wparam, loword};
+
+type DXGISwapChainPresentType =
+    unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
 
 type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: UINT, wparam: WPARAM, lparam: LPARAM) -> isize;
+    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Data structures and traits
@@ -56,9 +61,9 @@ static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> =
 static IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
-    p_this: *mut IDXGISwapChain,
-    sync_interval: UINT,
-    flags: UINT,
+    p_this: IDXGISwapChain,
+    sync_interval: u32,
+    flags: u32,
 ) -> HRESULT {
     let trampoline = TRAMPOLINE
         .get()
@@ -66,16 +71,17 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
 
     let mut renderer = IMGUI_RENDERER
         .get_or_init(|| {
-            let mut dev: *mut ID3D11Device = null_mut();
-            let mut dev_ctx: *mut ID3D11DeviceContext = null_mut();
-            let mut sd: DXGI_SWAP_CHAIN_DESC = std::mem::zeroed();
+            let dev: ID3D11Device = p_this.GetDevice().expect("GetDevice");
+            let mut dev_ctx: Option<ID3D11DeviceContext> = None;
+            dev.GetImmediateContext(&mut dev_ctx);
+            let dev_ctx = dev_ctx.unwrap();
+            let sd = p_this.GetDesc().expect("GetDesc");
+            // check_hresult((*p_this).GetDevice(&ID3D11Device::uuidof(), &mut dev as *mut _ as _));
+            // (*dev).GetImmediateContext(&mut dev_ctx as _);
 
-            check_hresult((*p_this).GetDevice(&ID3D11Device::uuidof(), &mut dev as *mut _ as _));
-            (*dev).GetImmediateContext(&mut dev_ctx as _);
+            // check_hresult((*p_this).GetDesc(&mut sd as *mut _));
 
-            check_hresult((*p_this).GetDesc(&mut sd as *mut _));
-
-            let mut engine = imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, &mut *p_this);
+            let mut engine = imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, p_this.clone());
             let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
             let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
                 sd.OutputWindow,
@@ -101,11 +107,10 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
 
     {
         let ctx = (*renderer).ctx();
-        let mut sd: DXGI_SWAP_CHAIN_DESC = std::mem::zeroed();
+        let sd = p_this.GetDesc().expect("GetDesc");
         let mut rect: RECT = std::mem::zeroed();
-        p_this.as_ref().unwrap().GetDesc(&mut sd as _);
 
-        if GetWindowRect(sd.OutputWindow, &mut rect as _) != 0 {
+        if GetWindowRect(sd.OutputWindow, &mut rect as _) != BOOL(0) {
             let mut io = ctx.io_mut();
 
             io.display_size = [
@@ -116,12 +121,13 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = GetForegroundWindow();
-            if active_window != 0 as HWND
+            if active_window != HWND(0)
                 && (active_window == sd.OutputWindow
-                    || IsChild(active_window, sd.OutputWindow) != 0)
+                    || IsChild(active_window, sd.OutputWindow) != BOOL(0))
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp != 0 && ScreenToClient(sd.OutputWindow, &mut pos as *mut _) != 0 {
+                if gcp != BOOL(0) && ScreenToClient(sd.OutputWindow, &mut pos as *mut _) != BOOL(0)
+                {
                     io.mouse_pos[0] = pos.x as _;
                     io.mouse_pos[1] = pos.y as _;
                 }
@@ -137,10 +143,10 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
 
 unsafe extern "system" fn imgui_wnd_proc(
     hwnd: HWND,
-    umsg: UINT,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> isize {
+    umsg: u32,
+    WPARAM(wparam): WPARAM,
+    LPARAM(lparam): LPARAM,
+) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
             let ctx = imgui_renderer.ctx();
@@ -173,7 +179,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     // return 1;
                 }
                 WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                    let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+                    let btn = if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ {
                         3
                     } else {
                         4
@@ -198,7 +204,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     // return 1;
                 }
                 WM_XBUTTONUP => {
-                    let btn = if GET_XBUTTON_WPARAM(wparam) == XBUTTON1 {
+                    let btn = if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ {
                         3
                     } else {
                         4
@@ -208,20 +214,20 @@ unsafe extern "system" fn imgui_wnd_proc(
                 }
                 WM_MOUSEWHEEL => {
                     io.mouse_wheel +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_MOUSEHWHEEL => {
                     io.mouse_wheel_h +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
                 }
-                WM_CHAR => io.add_input_character(wparam as u8 as char),
+                WM_CHAR => io.add_input_character(char::from_u32(wparam as _).unwrap()),
                 WM_ACTIVATE => {
-                    if LOWORD(wparam as _) == WA_INACTIVE {
+                    if loword(wparam as _) == WA_INACTIVE as _ {
                         imgui_renderer.flags.focused = false;
                     } else {
                         imgui_renderer.flags.focused = true;
                     }
-                    return 1;
+                    return LRESULT(1);
                 }
                 _ => {}
             }
@@ -229,15 +235,15 @@ unsafe extern "system" fn imgui_wnd_proc(
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
-            CallWindowProcW(Some(wnd_proc), hwnd, umsg, wparam, lparam)
+            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         }
         Some(None) => {
             debug!("Could not lock in WndProc");
-            DefWindowProcW(hwnd, umsg, wparam, lparam)
+            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         }
         None => {
             debug!("WndProc called before hook was set");
-            DefWindowProcW(hwnd, umsg, wparam, lparam)
+            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         }
     }
 }
@@ -285,46 +291,46 @@ pub struct ImguiRenderLoopFlags {
 ///
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
-fn get_present_addr() -> LPVOID {
+fn get_present_addr() -> DXGISwapChainPresentType {
     let hwnd = {
-        let hinstance =
-            unsafe { winapi::um::libloaderapi::GetModuleHandleA(std::ptr::null::<i8>()) };
+        let hinstance = unsafe { GetModuleHandleA(None) };
+        // SAFETY it is a pointer.
         let wnd_class = WNDCLASSA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(DefWindowProcA),
+            lpfnWndProc: None, // Some(DefWindowProcA),
             hInstance: hinstance,
-            lpszClassName: "HUDHOOK_DUMMY\0".as_ptr() as *const i8,
+            lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
             cbClsExtra: 0,
             cbWndExtra: 0,
-            hIcon: 0 as HICON,
-            hCursor: 0 as HICON,
-            hbrBackground: 0 as HBRUSH,
-            lpszMenuName: std::ptr::null::<i8>(),
+            hIcon: HICON(0),
+            hCursor: HCURSOR(0),
+            hbrBackground: HBRUSH(0),
+            lpszMenuName: PCSTR(null()),
         };
         unsafe {
             RegisterClassA(&wnd_class);
             CreateWindowExA(
-                0,
-                "HUDHOOK_DUMMY\0".as_ptr() as _,
-                "HUDHOOK_DUMMY\0".as_ptr() as _,
+                WINDOW_EX_STYLE(0),
+                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
+                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                 0,
                 0,
                 16,
                 16,
-                0 as HWND,
-                0 as HMENU,
-                std::mem::transmute(hinstance),
-                0 as LPVOID,
+                HWND(0),
+                HMENU(0),
+                hinstance,
+                null(),
             )
         }
     };
 
-    let mut feature_level = D3D_FEATURE_LEVEL_11_0;
+    let feature_level = D3D_FEATURE_LEVEL_11_0;
     let mut swap_chain_desc: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
-    let mut p_device: *mut ID3D11Device = null_mut();
-    let mut p_context: *mut ID3D11DeviceContext = null_mut();
-    let mut p_swap_chain: *mut IDXGISwapChain = null_mut();
+    let mut p_device: Option<ID3D11Device> = None;
+    let mut p_context: Option<ID3D11DeviceContext> = None;
+    let mut p_swap_chain: Option<IDXGISwapChain> = None;
 
     swap_chain_desc.BufferCount = 1;
     swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -334,39 +340,35 @@ fn get_present_addr() -> LPVOID {
     swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swap_chain_desc.OutputWindow = hwnd;
     swap_chain_desc.SampleDesc.Count = 1;
-    swap_chain_desc.Windowed = 1;
-
-    let result = unsafe {
-        D3D11CreateDeviceAndSwapChain(
-            std::ptr::null_mut::<IDXGIAdapter>(),
-            D3D_DRIVER_TYPE_HARDWARE,
-            0 as HMODULE,
-            0u32,
-            &mut feature_level as *mut D3D_FEATURE_LEVEL,
-            1,
-            D3D11_SDK_VERSION,
-            &mut swap_chain_desc as *mut DXGI_SWAP_CHAIN_DESC,
-            &mut p_swap_chain as *mut *mut IDXGISwapChain,
-            &mut p_device as *mut *mut ID3D11Device,
-            null_mut(),
-            &mut p_context as *mut *mut ID3D11DeviceContext,
-        )
-    };
-
-    if result < 0 {
-        panic!("D3D11CreateDeviceAndSwapChain failed {:x}", result);
-    }
-
-    let ret = unsafe { (*(*p_swap_chain).lpVtbl).Present };
+    swap_chain_desc.Windowed = BOOL(1);
 
     unsafe {
-        (*p_device).Release();
-        (*p_context).Release();
-        (*p_swap_chain).Release();
+        D3D11CreateDeviceAndSwapChain(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            None,
+            D3D11_CREATE_DEVICE_FLAG(0),
+            &[feature_level],
+            D3D11_SDK_VERSION,
+            &swap_chain_desc,
+            &mut p_swap_chain,
+            &mut p_device,
+            null_mut(),
+            &mut p_context,
+        )
+        .expect("D3D11CreateDeviceAndSwapChain failed")
+    };
+
+    let ret = unsafe { p_swap_chain.unwrap().vtable().Present };
+
+    unsafe {
+        // (*p_device).Release();
+        // (*p_context).Release();
+        // (*p_swap_chain).Release();
         DestroyWindow(hwnd);
     }
 
-    ret as LPVOID
+    unsafe { std::mem::transmute(ret) }
 }
 
 /// Construct a `mh::Hook` that will render UI via the provided `ImguiRenderLoop`.
@@ -378,18 +380,18 @@ pub unsafe fn hook_imgui<T: 'static>(t: T) -> mh::Hook
 where
     T: ImguiRenderLoop + Send + Sync,
 {
-    let dxgi_swap_chain_present_addr = get_present_addr();
+    let dxgi_swap_chain_present_addr = get_present_addr() as *mut c_void;
     debug!(
         "IDXGISwapChain::Present = {:p}",
         dxgi_swap_chain_present_addr
     );
 
-    let mut trampoline = null_mut();
+    let mut trampoline: *mut c_void = null_mut();
 
     let status = mh::MH_CreateHook(
         dxgi_swap_chain_present_addr,
         imgui_dxgi_swap_chain_present_impl as *mut c_void,
-        &mut trampoline as *mut _ as _,
+        &mut trampoline as *mut _ as *mut _,
     );
     debug!("MH_CreateHook: {:?}", status);
 

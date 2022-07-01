@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use winapi::um::winuser::GET_WHEEL_DELTA_WPARAM;
+use super::{hiword, loword, get_wheel_delta_wparam};
 use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -204,12 +204,6 @@ unsafe extern "system" fn imgui_wnd_proc(
         wparam,
         lparam
     );
-    fn hiword(i: usize) -> u16 {
-        ((i >> 16) & 0xffff) as u16
-    }
-    fn loword(i: usize) -> u16 {
-        (i & 0xffff) as u16
-    }
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
@@ -237,7 +231,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     io.mouse_down[2] = true;
                 }
                 WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                    let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
+                    let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 {
                         3
                     } else {
                         4
@@ -254,7 +248,7 @@ unsafe extern "system" fn imgui_wnd_proc(
                     io.mouse_down[2] = false;
                 }
                 WM_XBUTTONUP => {
-                    let btn = if hiword(wparam) == XBUTTON1.0 as u16 {
+                    let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 {
                         3
                     } else {
                         4
@@ -263,15 +257,15 @@ unsafe extern "system" fn imgui_wnd_proc(
                 }
                 WM_MOUSEWHEEL => {
                     io.mouse_wheel +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_MOUSEHWHEEL => {
                     io.mouse_wheel_h +=
-                        (GET_WHEEL_DELTA_WPARAM(wparam) as f32) / (WHEEL_DELTA as f32);
+                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
                 }
                 WM_CHAR => io.add_input_character(wparam as u8 as char),
                 WM_ACTIVATE => {
-                    if loword(wparam) == WA_INACTIVE as u16 {
+                    if loword(wparam as _) == WA_INACTIVE as u16 {
                         imgui_renderer.flags.focused = false;
                     } else {
                         imgui_renderer.flags.focused = true;
