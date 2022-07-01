@@ -19,4 +19,3 @@ pub fn get_wheel_delta_wparam(wparam: u32) -> u16 {
 pub fn get_xbutton_wparam(wparam: u32) -> u16 {
     hiword(wparam)
 }
-

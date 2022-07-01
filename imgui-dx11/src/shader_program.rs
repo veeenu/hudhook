@@ -1,3 +1,5 @@
+use std::ptr::null_mut;
+
 use windows::core::{Error, PCSTR};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -17,8 +19,6 @@ use windows::Win32::Graphics::Dxgi::Common::{
 };
 
 use crate::device_and_swapchain::*;
-
-use std::ptr::null_mut;
 
 const VERTEX_SHADER_SRC: &str = r"
   cbuffer vertexBuffer : register(b0) {
@@ -108,16 +108,14 @@ impl ShaderProgram {
             let vs_blob = vs_blob.as_ref().unwrap();
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
-            dasc.dev()
-                .CreateVertexShader(std::slice::from_raw_parts(ptr as _, size), None)?
+            dasc.dev().CreateVertexShader(std::slice::from_raw_parts(ptr as _, size), None)?
         };
 
         let pix_shader = unsafe {
             let ps_blob = ps_blob.as_ref().unwrap();
             let ptr = ps_blob.GetBufferPointer();
             let size = ps_blob.GetBufferSize();
-            dasc.dev()
-                .CreatePixelShader(std::slice::from_raw_parts(ptr as _, size), None)?
+            dasc.dev().CreatePixelShader(std::slice::from_raw_parts(ptr as _, size), None)?
         };
 
         let layout = unsafe {
@@ -215,27 +213,26 @@ impl ShaderProgram {
         };
 
         let depth_stencil_state = unsafe {
-            dasc.dev()
-                .CreateDepthStencilState(&D3D11_DEPTH_STENCIL_DESC {
-                    DepthEnable: BOOL(0),
-                    DepthFunc: D3D11_COMPARISON_ALWAYS,
-                    DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
-                    StencilEnable: BOOL(0),
-                    StencilReadMask: 0,
-                    StencilWriteMask: 0,
-                    FrontFace: D3D11_DEPTH_STENCILOP_DESC {
-                        StencilFailOp: D3D11_STENCIL_OP_KEEP,
-                        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
-                        StencilPassOp: D3D11_STENCIL_OP_KEEP,
-                        StencilFunc: D3D11_COMPARISON_ALWAYS,
-                    },
-                    BackFace: D3D11_DEPTH_STENCILOP_DESC {
-                        StencilFailOp: D3D11_STENCIL_OP_KEEP,
-                        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
-                        StencilPassOp: D3D11_STENCIL_OP_KEEP,
-                        StencilFunc: D3D11_COMPARISON_ALWAYS,
-                    },
-                })?
+            dasc.dev().CreateDepthStencilState(&D3D11_DEPTH_STENCIL_DESC {
+                DepthEnable: BOOL(0),
+                DepthFunc: D3D11_COMPARISON_ALWAYS,
+                DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
+                StencilEnable: BOOL(0),
+                StencilReadMask: 0,
+                StencilWriteMask: 0,
+                FrontFace: D3D11_DEPTH_STENCILOP_DESC {
+                    StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                    StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+                    StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                    StencilFunc: D3D11_COMPARISON_ALWAYS,
+                },
+                BackFace: D3D11_DEPTH_STENCILOP_DESC {
+                    StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                    StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+                    StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                    StencilFunc: D3D11_COMPARISON_ALWAYS,
+                },
+            })?
         };
 
         Ok(ShaderProgram {
@@ -254,10 +251,8 @@ impl ShaderProgram {
         dasc.dev_ctx().PSSetShader(&self.pix_shader, &[]);
         dasc.dev_ctx().IASetInputLayout(&self.layout);
         dasc.dev_ctx().PSSetSamplers(0, &[Some(self.sampler.clone())]);
-        dasc.dev_ctx()
-            .OMSetBlendState(&self.blend_state, &[0f32; 4] as _, 0xFFFFFFFF);
-        dasc.dev_ctx()
-            .OMSetDepthStencilState(&self.depth_stencil_state, 0);
+        dasc.dev_ctx().OMSetBlendState(&self.blend_state, &[0f32; 4] as _, 0xFFFFFFFF);
+        dasc.dev_ctx().OMSetDepthStencilState(&self.depth_stencil_state, 0);
         dasc.dev_ctx().RSSetState(&self.rasterizer_state);
     }
 }

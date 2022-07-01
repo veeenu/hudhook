@@ -70,10 +70,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             null_mut(),
             LOAD_LIBRARY_SEARCH_SYSTEM32,
         );
-        std::mem::transmute(GetProcAddress(
-            module,
-            "DXGIGetDebugInterface\0".as_ptr() as _,
-        ))
+        std::mem::transmute(GetProcAddress(module, "DXGIGetDebugInterface\0".as_ptr() as _))
     };
 
     check_hresult(unsafe {
@@ -104,40 +101,31 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         }
 
         if let Err(e) = renderer.render(|ui| {
-            Window::new("Hello world")
-                .size([640.0, 480.0], Condition::Always)
-                .build(ui, || {
-                    ui.text("Hello world!");
-                    ui.text("こんにちは世界！");
-                    ui.text("This...is...imgui-rs!");
-                    ui.separator();
-                    let mouse_pos = ui.io().mouse_pos;
-                    ui.text(format!(
-                        "Mouse Position: ({:.1},{:.1})",
-                        mouse_pos[0], mouse_pos[1]
-                    ));
+            Window::new("Hello world").size([640.0, 480.0], Condition::Always).build(ui, || {
+                ui.text("Hello world!");
+                ui.text("こんにちは世界！");
+                ui.text("This...is...imgui-rs!");
+                ui.separator();
+                let mouse_pos = ui.io().mouse_pos;
+                ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
 
-                    imgui::ListBox::new("##listbox")
-                        .size([300., 150.])
-                        .build(ui, || {
-                            imgui::Selectable::new("test1").build(ui);
-                            imgui::Selectable::new("test2").build(ui);
-                            imgui::Selectable::new("test3").selected(true).build(ui);
-                            imgui::Selectable::new("test4").build(ui);
-                            imgui::Selectable::new("test5").build(ui);
-                        });
-
-                    imgui::ComboBox::new("##combo")
-                        .preview_value("test")
-                        .build(ui, || {
-                            imgui::Selectable::new("test1").build(ui);
-                            imgui::Selectable::new("test2").build(ui);
-                            imgui::Selectable::new("test3").selected(true).build(ui);
-                            imgui::Selectable::new("test4").build(ui);
-                            imgui::Selectable::new("test5").build(ui);
-                        });
-                    ui.open_popup("##combo");
+                imgui::ListBox::new("##listbox").size([300., 150.]).build(ui, || {
+                    imgui::Selectable::new("test1").build(ui);
+                    imgui::Selectable::new("test2").build(ui);
+                    imgui::Selectable::new("test3").selected(true).build(ui);
+                    imgui::Selectable::new("test4").build(ui);
+                    imgui::Selectable::new("test5").build(ui);
                 });
+
+                imgui::ComboBox::new("##combo").preview_value("test").build(ui, || {
+                    imgui::Selectable::new("test1").build(ui);
+                    imgui::Selectable::new("test2").build(ui);
+                    imgui::Selectable::new("test3").selected(true).build(ui);
+                    imgui::Selectable::new("test4").build(ui);
+                    imgui::Selectable::new("test5").build(ui);
+                });
+                ui.open_popup("##combo");
+            });
         }) {
             eprintln!("{}", e);
         }
@@ -149,7 +137,6 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     }
 }
 
-//
 // Winapi things
 //
 
@@ -159,10 +146,7 @@ fn handle_message(window: HWND) -> bool {
         if GetMessageA(msg.as_mut_ptr(), window, 0, 0) > 0 {
             TranslateMessage(msg.as_ptr());
             DispatchMessageA(msg.as_ptr());
-            msg.as_ptr()
-                .as_ref()
-                .map(|m| m.message != WM_QUIT)
-                .unwrap_or(true)
+            msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
         } else {
             false
         }
@@ -189,13 +173,13 @@ pub unsafe extern "system" fn window_proc(
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER,
             );
             EndPaint(hwnd, paint_struct.as_mut_ptr());
-        }
+        },
         winapi::um::winuser::WM_DESTROY => {
             PostQuitMessage(0);
-        }
+        },
         _ => {
             return DefWindowProcA(hwnd, msg, wParam, lParam);
-        }
+        },
     }
     0
 }

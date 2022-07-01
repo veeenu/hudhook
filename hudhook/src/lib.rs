@@ -36,17 +36,22 @@
 //!
 //! pub struct MyRenderLoop;
 //! impl RenderLoop for MyRenderLoop {
-//!   fn render(&self, ctx: hudhook::RenderContext) {
-//!    imgui::Window::new(im_str!("My first render loop"))
-//!     .position([0., 0.], imgui::Condition::FirstUseEver)
-//!     .size([320., 200.], imgui::Condition::FirstUseEver)
-//!     .build(ctx.frame, || {
-//!       ctx.frame.text(imgui::im_str!("Hello, hello!"));
-//!     });
-//!   }
+//!     fn render(&self, ctx: hudhook::RenderContext) {
+//!         imgui::Window::new(im_str!("My first render loop"))
+//!             .position([0., 0.], imgui::Condition::FirstUseEver)
+//!             .size([320., 200.], imgui::Condition::FirstUseEver)
+//!             .build(ctx.frame, || {
+//!                 ctx.frame.text(imgui::im_str!("Hello, hello!"));
+//!             });
+//!     }
 //!
-//!   fn is_visible(&self) -> bool { true }
-//!   fn is_capturing(&self) -> bool { true }
+//!     fn is_visible(&self) -> bool {
+//!         true
+//!     }
+//!
+//!     fn is_capturing(&self) -> bool {
+//!         true
+//!     }
 //! }
 //!
 //! hudhook!(Box::new(MyRenderLoop::new()))
@@ -57,13 +62,13 @@
 //! use hudhook::inject;
 //!
 //! fn main() {
-//!   let mut cur_exe = std::env::current_exe().unwrap();
-//!   cur_exe.push("..");
-//!   cur_exe.push("libmyhook.dll");
+//!     let mut cur_exe = std::env::current_exe().unwrap();
+//!     cur_exe.push("..");
+//!     cur_exe.push("libmyhook.dll");
 //!
-//!   let cur_dll = cur_exe.canonicalize().unwrap();
+//!     let cur_dll = cur_exe.canonicalize().unwrap();
 //!
-//!   inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
+//!     inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
 //! }
 //! ```
 //!
@@ -144,17 +149,17 @@ pub mod reexports {
 #[macro_export]
 macro_rules! hudhook {
     ($hooks:expr) => {
+        use std::cell::OnceCell;
+
         use hudhook::log::*;
         use hudhook::reexports::*;
         use hudhook::*;
 
-        use std::cell::OnceCell;
-
         // use std::lazy::SyncOnceCell;
         // use std::sync::Mutex;
 
-        // static DLL_MODULE: SyncOnceCell<Mutex<windows::Win32::Foundation::HINSTANCE>> =
-        //     SyncOnceCell::new();
+        // static DLL_MODULE: SyncOnceCell<Mutex<windows::Win32::Foundation::HINSTANCE>>
+        // =     SyncOnceCell::new();
 
         // fn hudhook_exit() {
         //     if let Some(hmodule) = DLL_MODULE.get() {

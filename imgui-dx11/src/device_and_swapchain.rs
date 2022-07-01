@@ -3,9 +3,10 @@ use std::ptr::null_mut;
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11RenderTargetView,
-    ID3D11Resource, ID3D11ShaderResourceView, D3D11_CREATE_DEVICE_DEBUG, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION, D3D11_VIEWPORT, D3D11_MAP_WRITE_DISCARD, ID3D11Buffer,
+    D3D11CreateDeviceAndSwapChain, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext,
+    ID3D11RenderTargetView, ID3D11Resource, ID3D11ShaderResourceView, D3D11_CREATE_DEVICE_DEBUG,
+    D3D11_CREATE_DEVICE_FLAG, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_WRITE_DISCARD, D3D11_SDK_VERSION,
+    D3D11_VIEWPORT,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING, DXGI_MODE_SCANLINE_ORDER,
@@ -45,19 +46,13 @@ impl DeviceAndSwapChain {
                         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                         Width: 0,
                         Height: 0,
-                        RefreshRate: DXGI_RATIONAL {
-                            Numerator: 0,
-                            Denominator: 0,
-                        },
+                        RefreshRate: DXGI_RATIONAL { Numerator: 0, Denominator: 0 },
                         ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER(0),
                         Scaling: DXGI_MODE_SCALING(0),
                     },
                     BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                     OutputWindow: hwnd,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 4,
-                        Quality: 0,
-                    },
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 4, Quality: 0 },
                     Windowed: BOOL(1),
                     SwapEffect: DXGI_SWAP_EFFECT(0),
                     Flags: 0,
@@ -105,12 +100,7 @@ impl DeviceAndSwapChain {
             }])
         };
 
-        DeviceAndSwapChain {
-            dev,
-            dev_ctx,
-            swap_chain,
-            back_buffer,
-        }
+        DeviceAndSwapChain { dev, dev_ctx, swap_chain, back_buffer }
     }
 
     pub(crate) fn setup_state(&self, draw_data: &imgui::DrawData) {
@@ -139,8 +129,7 @@ impl DeviceAndSwapChain {
 
     pub(crate) fn set_render_target(&self) {
         unsafe {
-            self.dev_ctx
-                .OMSetRenderTargets(&[Some(self.back_buffer.clone())], None);
+            self.dev_ctx.OMSetRenderTargets(&[Some(self.back_buffer.clone())], None);
         }
     }
 
@@ -161,14 +150,7 @@ impl DeviceAndSwapChain {
         F: FnOnce(&D3D11_MAPPED_SUBRESOURCE),
     {
         unsafe {
-            let ms = self.dev_ctx
-                .Map(
-                    ptr,
-                    0,
-                    D3D11_MAP_WRITE_DISCARD,
-                    0,
-                )
-                .expect("Map");
+            let ms = self.dev_ctx.Map(ptr, 0, D3D11_MAP_WRITE_DISCARD, 0).expect("Map");
 
             f(&ms);
 

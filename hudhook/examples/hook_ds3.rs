@@ -2,7 +2,6 @@ use std::ffi::CString;
 use std::ptr::null_mut;
 
 use hudhook::mh::LPVOID;
-
 use log::*;
 use simplelog::*;
 use winapi::shared::minwindef::{DWORD, MAX_PATH};
@@ -74,10 +73,7 @@ fn main() {
         )
     };
 
-    debug!(
-        "WriteProcessMemory: written {} bytes, returned {:x}",
-        bytes_written, res
-    );
+    debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res);
 
     let thread = unsafe {
         processthreadsapi::CreateRemoteThread(

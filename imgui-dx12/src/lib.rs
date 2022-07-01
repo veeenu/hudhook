@@ -1,9 +1,8 @@
-pub use imgui;
-
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 
+pub use imgui;
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawIdx, DrawVert, TextureId};
 use log::*;
@@ -64,10 +63,7 @@ impl FrameResources {
                 DepthOrArraySize: 1,
                 MipLevels: 1,
                 Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                 Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
@@ -103,10 +99,7 @@ impl FrameResources {
                 DepthOrArraySize: 1,
                 MipLevels: 1,
                 Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                 Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
@@ -158,9 +151,8 @@ impl RenderEngine {
     ) -> Self {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
 
-        let frame_resources = (0..num_frames_in_flight)
-            .map(|_| FrameResources::default())
-            .collect::<Vec<_>>();
+        let frame_resources =
+            (0..num_frames_in_flight).map(|_| FrameResources::default()).collect::<Vec<_>>();
 
         RenderEngine {
             dev,
@@ -193,12 +185,12 @@ impl RenderEngine {
                 display_pos[1] + display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);
@@ -214,18 +206,15 @@ impl RenderEngine {
         };
 
         unsafe {
-            cmd_list.IASetVertexBuffers(
-                0,
-                &[D3D12_VERTEX_BUFFER_VIEW {
-                    BufferLocation: frame_resources
-                        .vertex_buffer
-                        .as_ref()
-                        .unwrap()
-                        .GetGPUVirtualAddress(),
-                    SizeInBytes: (frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
-                    StrideInBytes: size_of::<DrawVert>() as _,
-                }],
-            )
+            cmd_list.IASetVertexBuffers(0, &[D3D12_VERTEX_BUFFER_VIEW {
+                BufferLocation: frame_resources
+                    .vertex_buffer
+                    .as_ref()
+                    .unwrap()
+                    .GetGPUVirtualAddress(),
+                SizeInBytes: (frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
+                StrideInBytes: size_of::<DrawVert>() as _,
+            }])
         };
 
         unsafe {
@@ -262,9 +251,7 @@ impl RenderEngine {
         frame_resources_idx: usize,
     ) -> Result<(), windows::core::Error> {
         let print_device_removed_reason = |e: windows::core::Error| -> windows::core::Error {
-            trace!("Device removed reason: {:?}", unsafe {
-                self.dev.GetDeviceRemovedReason()
-            });
+            trace!("Device removed reason: {:?}", unsafe { self.dev.GetDeviceRemovedReason() });
             e
         };
 
@@ -359,10 +346,10 @@ impl RenderEngine {
                         }
 
                         idx_offset += count;
-                    }
+                    },
                     DrawCmd::ResetRenderState => {
                         self.setup_render_state(draw_data, cmd_list, frame_resources_idx);
-                    }
+                    },
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
                         callback(cl.raw(), raw_cmd)
                     },
@@ -556,10 +543,7 @@ impl RenderEngine {
             PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
             SampleMask: u32::MAX,
             NumRenderTargets: 1,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
+            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
             Flags: D3D12_PIPELINE_STATE_FLAG_NONE,
             ..Default::default()
         };
@@ -608,10 +592,8 @@ impl RenderEngine {
             },
         ];
 
-        pso_desc.InputLayout = D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: elem_descs.as_ptr(),
-            NumElements: 3,
-        };
+        pso_desc.InputLayout =
+            D3D12_INPUT_LAYOUT_DESC { pInputElementDescs: elem_descs.as_ptr(), NumElements: 3 };
 
         pso_desc.BlendState.AlphaToCoverageEnable = BOOL::from(false);
         pso_desc.BlendState.RenderTarget[0] = D3D12_RENDER_TARGET_BLEND_DESC {
@@ -686,10 +668,7 @@ impl RenderEngine {
                     DepthOrArraySize: 1,
                     MipLevels: 1,
                     Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
-                    },
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                     Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
                     Flags: D3D12_RESOURCE_FLAG_NONE,
                 },
@@ -721,10 +700,7 @@ impl RenderEngine {
                     DepthOrArraySize: 1,
                     MipLevels: 1,
                     Format: DXGI_FORMAT_UNKNOWN,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
-                    },
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                     Flags: D3D12_RESOURCE_FLAG_NONE,
                 },
@@ -735,10 +711,7 @@ impl RenderEngine {
         }
         .unwrap();
 
-        let range = D3D12_RANGE {
-            Begin: 0,
-            End: upload_size as usize,
-        };
+        let range = D3D12_RANGE { Begin: 0, End: upload_size as usize };
         if let Some(ub) = upload_buffer.as_ref() {
             unsafe {
                 let mut ptr: *mut u8 = null_mut();
@@ -763,15 +736,11 @@ impl RenderEngine {
         }
         .unwrap();
 
-        let cmd_allocator: ID3D12CommandAllocator = unsafe {
-            self.dev
-                .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-        }
-        .unwrap();
+        let cmd_allocator: ID3D12CommandAllocator =
+            unsafe { self.dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
 
         let cmd_list: ID3D12GraphicsCommandList = unsafe {
-            self.dev
-                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator, None)
+            self.dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator, None)
         }
         .unwrap();
 
@@ -795,9 +764,7 @@ impl RenderEngine {
         let dst_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: p_texture.clone(),
             Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                SubresourceIndex: 0,
-            },
+            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
         };
 
         let barrier = D3D12_RESOURCE_BARRIER {

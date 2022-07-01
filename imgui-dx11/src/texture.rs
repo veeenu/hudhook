@@ -35,10 +35,7 @@ impl Texture {
                     MipLevels: 1,
                     ArraySize: 1,
                     Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
-                    },
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                     Usage: D3D11_USAGE_DEFAULT,
                     BindFlags: D3D11_BIND_SHADER_RESOURCE,
                     CPUAccessFlags: D3D11_CPU_ACCESS_FLAG(0),
@@ -53,19 +50,13 @@ impl Texture {
         };
 
         let tex_view = unsafe {
-            dasc.dev().CreateShaderResourceView(
-                _tex.clone(),
-                &D3D11_SHADER_RESOURCE_VIEW_DESC {
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
-                        Texture2D: D3D11_TEX2D_SRV {
-                            MostDetailedMip: 0,
-                            MipLevels: 1,
-                        },
-                    },
-                } as *const _,
-            )?
+            dasc.dev().CreateShaderResourceView(_tex.clone(), &D3D11_SHADER_RESOURCE_VIEW_DESC {
+                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+                Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                    Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
+                },
+            } as *const _)?
         };
 
         let _font_sampler = unsafe {
@@ -86,11 +77,7 @@ impl Texture {
         fonts.tex_id = imgui::TextureId::from(&tex_view as *const _ as usize);
         trace!("Texture view: {:x} id: {:x}", &tex_view as *const _ as usize, fonts.tex_id.id());
 
-        Ok(Texture {
-            _tex,
-            tex_view,
-            _font_sampler,
-        })
+        Ok(Texture { _tex, tex_view, _font_sampler })
     }
 
     pub(crate) fn tex_view(&self) -> ID3D11ShaderResourceView {

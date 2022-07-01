@@ -3,7 +3,6 @@ use std::mem;
 use std::ptr::null_mut;
 
 use hudhook::mh::LPVOID;
-
 use log::*;
 use simplelog::*;
 use winapi::shared::minwindef::{DWORD, HMODULE, MAX_PATH};

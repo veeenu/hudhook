@@ -1,14 +1,11 @@
-use crate::mh;
-
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, GetLastError};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -25,6 +22,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword};
+use crate::mh;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -64,9 +62,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
-    let trampoline = TRAMPOLINE
-        .get()
-        .expect("IDXGISwapChain::Present trampoline uninitialized");
+    let trampoline = TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
 
     let mut renderer = IMGUI_RENDERER
         .get_or_init(|| {
@@ -96,12 +92,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
 
             trace!("Renderer initialized");
 
-            Mutex::new(Box::new(ImguiRenderer {
-                engine,
-                render_loop,
-                wnd_proc,
-                flags,
-            }))
+            Mutex::new(Box::new(ImguiRenderer { engine, render_loop, wnd_proc, flags }))
         })
         .lock();
 
@@ -114,10 +105,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
         if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
             let mut io = ctx.io_mut();
 
-            io.display_size = [
-                (rect.right - rect.left) as f32,
-                (rect.bottom - rect.top) as f32,
-            ];
+            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
             let mut pos = POINT { x: 0, y: 0 };
 
@@ -127,8 +115,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
                     || IsChild(active_window, sd.OutputWindow).as_bool())
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool()
-                {
+                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
                     io.mouse_pos[0] = pos.x as _;
                     io.mouse_pos[1] = pos.y as _;
                 }
@@ -164,69 +151,63 @@ unsafe extern "system" fn imgui_wnd_proc(
                     if wparam < 256 {
                         io.keys_down[wparam] = true;
                     }
-                }
+                },
                 WM_KEYUP | WM_SYSKEYUP => {
                     if wparam < 256 {
                         io.keys_down[wparam] = false;
                     }
-                }
+                },
                 WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
                     // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[0] = true;
                     // return 1;
-                }
+                },
                 WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
                     // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[1] = true;
                     // return 1;
-                }
+                },
                 WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
                     // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[2] = true;
                     // return 1;
-                }
+                },
                 WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                    let btn = if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ {
-                        3
-                    } else {
-                        4
-                    };
+                    let btn =
+                        if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ { 3 } else { 4 };
                     // set_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     io.mouse_down[btn] = true;
                     // return 1;
-                }
+                },
                 WM_LBUTTONUP => {
                     io.mouse_down[0] = false;
                     // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     // return 1;
-                }
+                },
                 WM_RBUTTONUP => {
                     io.mouse_down[1] = false;
                     // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     // return 1;
-                }
+                },
                 WM_MBUTTONUP => {
                     io.mouse_down[2] = false;
                     // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
                     // return 1;
-                }
+                },
                 WM_XBUTTONUP => {
-                    let btn = if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ {
-                        3
-                    } else {
-                        4
-                    };
+                    let btn =
+                        if get_xbutton_wparam(wparam as _) == XBUTTON1.0 as _ { 3 } else { 4 };
                     io.mouse_down[btn] = false;
                     // release_capture(&hook.imgui_ctx.io().mouse_down, hwnd);
-                }
+                },
                 WM_MOUSEWHEEL => {
                     io.mouse_wheel +=
                         (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
-                }
+                },
                 WM_MOUSEHWHEEL => {
                     io.mouse_wheel_h +=
                         (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
-                }
+                },
                 WM_CHAR => io.add_input_character(char::from_u32(wparam as _).unwrap()),
                 WM_ACTIVATE => {
                     if loword(wparam as _) == WA_INACTIVE as _ {
@@ -235,23 +216,23 @@ unsafe extern "system" fn imgui_wnd_proc(
                         imgui_renderer.flags.focused = true;
                     }
                     return LRESULT(1);
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
             CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        }
+        },
         Some(None) => {
             debug!("Could not lock in WndProc");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        }
+        },
         None => {
             debug!("WndProc called before hook was set");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        }
+        },
     }
 }
 
@@ -268,10 +249,7 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     fn render(&mut self) {
-        if let Err(e) = self
-            .engine
-            .render(|ui| self.render_loop.render(ui, &self.flags))
-        {
+        if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui, &self.flags)) {
             error!("ImGui renderer error: {:?}", e);
         }
     }
@@ -284,7 +262,8 @@ impl ImguiRenderer {
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
-/// Holds information useful to the render loop which can't be retrieved from `imgui::Ui`.
+/// Holds information useful to the render loop which can't be retrieved from
+/// `imgui::Ui`.
 pub struct ImguiRenderLoopFlags {
     /// Whether the hooked program's window is currently focused.
     pub focused: bool,
@@ -386,7 +365,8 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     unsafe { std::mem::transmute(ret) }
 }
 
-/// Construct a `mh::Hook` that will render UI via the provided `ImguiRenderLoop`.
+/// Construct a `mh::Hook` that will render UI via the provided
+/// `ImguiRenderLoop`.
 ///
 /// # Safety
 ///
@@ -396,10 +376,7 @@ where
     T: ImguiRenderLoop + Send + Sync,
 {
     let dxgi_swap_chain_present_addr = get_present_addr() as *mut c_void;
-    debug!(
-        "IDXGISwapChain::Present = {:p}",
-        dxgi_swap_chain_present_addr
-    );
+    debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr);
 
     let mut trampoline: *mut c_void = null_mut();
 
@@ -413,8 +390,5 @@ where
     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
     TRAMPOLINE.get_or_init(|| std::mem::transmute(trampoline));
 
-    mh::Hook::new(
-        dxgi_swap_chain_present_addr,
-        imgui_dxgi_swap_chain_present_impl as *mut c_void,
-    )
+    mh::Hook::new(dxgi_swap_chain_present_addr, imgui_dxgi_swap_chain_present_impl as *mut c_void)
 }

@@ -87,20 +87,12 @@ impl StateBackup {
             );
             ctx.RSGetViewports(&mut r.viewports_count, &mut r.viewports as *mut _ as *mut _);
             ctx.RSGetState(&mut r.rasterizer_state);
-            ctx.OMGetBlendState(
-                &mut r.blend_state,
-                &mut r.blend_factor as _,
-                &mut r.sample_mask,
-            );
+            ctx.OMGetBlendState(&mut r.blend_state, &mut r.blend_factor as _, &mut r.sample_mask);
             ctx.OMGetDepthStencilState(&mut r.depth_stencil_state, &mut r.stencil_ref);
             ctx.PSGetShaderResources(0, &mut r.ps_shader_resource);
             r.ps_instances_count = 256;
             r.vs_instances_count = 256;
-            ctx.PSGetShader(
-                &mut r.pixel_shader,
-                &mut r.ps_instances[0],
-                &mut r.ps_instances_count,
-            );
+            ctx.PSGetShader(&mut r.pixel_shader, &mut r.ps_instances[0], &mut r.ps_instances_count);
             ctx.VSGetShader(
                 &mut r.vertex_shader,
                 &mut r.vs_instances[0],

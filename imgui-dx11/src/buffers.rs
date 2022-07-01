@@ -5,8 +5,8 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11Buffer, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
     D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_USAGE_DYNAMIC,
 };
-// use winapi::um::d3d11::*;
 
+// use winapi::um::d3d11::*;
 use crate::device_and_swapchain::DeviceAndSwapChain;
 
 pub(crate) struct Buffers {
@@ -42,13 +42,7 @@ impl Buffers {
         let vtx_buffer = Buffers::create_vertex_buffer(dasc, 1);
         let idx_buffer = Buffers::create_index_buffer(dasc, 1);
 
-        Buffers {
-            vtx_buffer,
-            idx_buffer,
-            mtx_buffer,
-            vtx_count: 1,
-            idx_count: 1,
-        }
+        Buffers { vtx_buffer, idx_buffer, mtx_buffer, vtx_count: 1, idx_count: 1 }
     }
 
     pub(crate) fn set_constant_buffer(&mut self, dasc: &DeviceAndSwapChain, rect: [f32; 4]) {

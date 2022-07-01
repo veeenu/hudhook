@@ -18,7 +18,8 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowThreadProcessId};
 
-/// Inject the DLL stored at `dll_path` in the process that owns the window with title `title`.
+/// Inject the DLL stored at `dll_path` in the process that owns the window with
+/// title `title`.
 pub fn inject(title: &str, dll_path: PathBuf) {
     let title = U16CString::from_str(title).unwrap();
     let hwnd = unsafe { FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr())) };
@@ -68,10 +69,7 @@ pub fn inject(title: &str, dll_path: PathBuf) {
         )
     };
 
-    debug!(
-        "WriteProcessMemory: written {} bytes, returned {:x}",
-        bytes_written, res.0
-    );
+    debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res.0);
 
     let thread = unsafe {
         CreateRemoteThread(

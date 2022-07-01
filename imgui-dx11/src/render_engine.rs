@@ -1,19 +1,17 @@
-use crate::buffers::Buffers;
-use crate::device_and_swapchain::*;
-use crate::shader_program::ShaderProgram;
-use crate::state_backup::StateBackup;
-use crate::texture::Texture;
-
 use imgui::internal::RawWrapper;
 use imgui::{DrawCmd, DrawVert};
 use log::trace;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-use windows::Win32::Graphics::Direct3D11::{
-    ID3D11Device, ID3D11DeviceContext
-};
+use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32_UINT};
 use windows::Win32::Graphics::Dxgi::IDXGISwapChain;
+
+use crate::buffers::Buffers;
+use crate::device_and_swapchain::*;
+use crate::shader_program::ShaderProgram;
+use crate::state_backup::StateBackup;
+use crate::texture::Texture;
 
 pub struct RenderEngine {
     ctx: imgui::Context,
@@ -30,13 +28,7 @@ impl RenderEngine {
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
-        RenderEngine {
-            ctx,
-            dasc,
-            shader_program,
-            buffers,
-            texture,
-        }
+        RenderEngine { ctx, dasc, shader_program, buffers, texture }
     }
 
     pub fn new_with_ptrs(
@@ -49,13 +41,7 @@ impl RenderEngine {
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
-        RenderEngine {
-            ctx,
-            dasc,
-            shader_program,
-            buffers,
-            texture,
-        }
+        RenderEngine { ctx, dasc, shader_program, buffers, texture }
     }
 
     pub fn ctx(&mut self) -> &mut imgui::Context {
@@ -79,10 +65,8 @@ impl RenderEngine {
         let state_backup = StateBackup::backup(self.dasc.dev_ctx());
 
         if let Some(mut rect) = self.dasc.get_window_rect() {
-            self.ctx.io_mut().display_size = [
-                (rect.right - rect.left) as f32,
-                (rect.bottom - rect.top) as f32,
-            ];
+            self.ctx.io_mut().display_size =
+                [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
             rect.right -= rect.left;
             rect.bottom -= rect.top;
             rect.top = 0;
@@ -108,8 +92,7 @@ impl RenderEngine {
             let dev_ctx = self.dasc.dev_ctx();
 
             trace!("Setting up buffers");
-            self.buffers
-                .set_constant_buffer(&self.dasc, [x, y, x + width, y + height]);
+            self.buffers.set_constant_buffer(&self.dasc, [x, y, x + width, y + height]);
             self.buffers.set_buffers(&self.dasc, draw_data.draw_lists());
 
             dev_ctx.IASetVertexBuffers(
@@ -157,16 +140,16 @@ impl RenderEngine {
                             dev_ctx.DrawIndexed(count as u32, idx_offset as _, vtx_offset as _);
 
                             idx_offset += count;
-                        }
+                        },
                         DrawCmd::ResetRenderState => {
                             trace!("Resetting render state");
                             self.dasc.setup_state(draw_data);
                             self.shader_program.set_state(&self.dasc);
-                        }
+                        },
                         DrawCmd::RawCallback { callback, raw_cmd } => {
                             trace!("Executing raw callback");
                             callback(cl.raw(), raw_cmd)
-                        }
+                        },
                     }
                 }
                 vtx_offset += cl.vtx_buffer().len();
