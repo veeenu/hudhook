@@ -9,7 +9,6 @@ documentation = "https://veeenu.github.io/hudhook"
 license = "MIT"
 license-file = "LICENSE"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
-# links = "minhook"
 
 [[example]]
 name = "hook_you"
