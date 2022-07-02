@@ -42,6 +42,12 @@ trait Renderer {
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags);
+    fn into_hook(self) -> Vec<RawDetour>
+    where
+        Self: Send + Sync + Sized + 'static,
+    {
+        vec![unsafe { hook_imgui(self) }]
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -365,7 +371,7 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     unsafe { std::mem::transmute(ret) }
 }
 
-/// Construct a `mh::Hook` that will render UI via the provided
+/// Construct a `RawDetour` that will render UI via the provided
 /// `ImguiRenderLoop`.
 ///
 /// # Safety

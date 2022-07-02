@@ -57,6 +57,12 @@ trait Renderer {
 pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut imgui_dx12::imgui::Ui, flags: &ImguiRenderLoopFlags);
     fn initialize(&mut self, _ctx: &mut imgui_dx12::imgui::Context) {}
+    fn into_hook(self) -> Vec<RawDetour>
+    where
+        Self: Send + Sync + Sized + 'static,
+    {
+        unsafe { hook_imgui(self) }
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -661,7 +667,7 @@ pub fn disable_dxgi_debug() {
 /// # Safety
 ///
 /// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> [RawDetour; 3]
+pub unsafe fn hook_imgui<T: 'static>(t: T) -> Vec<RawDetour>
 where
     T: ImguiRenderLoop + Send + Sync,
 {
@@ -721,7 +727,7 @@ where
         )
     });
 
-    [
+    vec![
         hook_dscp, hook_cqecl, hook_rbuf
     ]
 
