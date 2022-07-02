@@ -49,12 +49,12 @@ impl RenderLoop for HelloWorld {
     }
 }
 
-hudhook!(|| [
-    dx11::hook_imgui(HelloWorld {
+hudhook!(
+    HelloWorld {
         start: Instant::now(),
         counter: 1000.
-    }),
-]);
+    }.into_hook(),
+);
 ```
 
 ```rust
