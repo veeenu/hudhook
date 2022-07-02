@@ -256,18 +256,3 @@ impl ShaderProgram {
         dasc.dev_ctx().RSSetState(&self.rasterizer_state);
     }
 }
-
-// impl Drop for ShaderProgram {
-//     fn drop(&mut self) {
-//         unsafe {
-//             self.layout.as_ref().Release();
-//             self.vtx_shader.as_ref().Release();
-//             self.pix_shader.as_ref().Release();
-//
-//             self.sampler.as_ref().Release();
-//             self.blend_state.as_ref().Release();
-//             self.depth_stencil_state.as_ref().Release();
-//             self.rasterizer_state.as_ref().Release();
-//         }
-//     }
-// }

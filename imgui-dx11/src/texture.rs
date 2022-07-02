@@ -84,13 +84,3 @@ impl Texture {
         self.tex_view.clone()
     }
 }
-
-// impl Drop for Texture {
-//     fn drop(&mut self) {
-//         unsafe {
-//             self.tex.as_ref().Release();
-//             self.tex_view.as_ref().Release();
-//             self.font_sampler.as_ref().Release();
-//         }
-//     }
-// }

@@ -170,14 +170,3 @@ impl DeviceAndSwapChain {
         self.swap_chain.clone()
     }
 }
-
-// impl Drop for DeviceAndSwapChain {
-//     fn drop(&mut self) {
-//         unsafe {
-//             self.back_buffer.as_ref().Release();
-//             self.swap_chain.as_ref().Release();
-//             self.dev_ctx.as_ref().Release();
-//             self.dev.as_ref().Release();
-//         }
-//     }
-// }
