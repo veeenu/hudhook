@@ -27,4 +27,4 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-hudhook::hudhook!(|| { [hudhook::hooks::dx11::hook_imgui(HookYou::new())] });
+hudhook::hudhook!(HookYou::new().into_hook());

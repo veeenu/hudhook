@@ -6,7 +6,6 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_USAGE_DYNAMIC,
 };
 
-// use winapi::um::d3d11::*;
 use crate::device_and_swapchain::DeviceAndSwapChain;
 
 pub(crate) struct Buffers {

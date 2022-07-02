@@ -1,19 +1,20 @@
 use std::ffi::CString;
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
-use hudhook::mh::LPVOID;
 use log::*;
 use simplelog::*;
-use winapi::shared::minwindef::{DWORD, MAX_PATH};
-use winapi::um::errhandlingapi::GetLastError;
-use winapi::um::handleapi::CloseHandle;
-use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
-use winapi::um::minwinbase::LPSECURITY_ATTRIBUTES;
-use winapi::um::synchapi::WaitForSingleObject;
-use winapi::um::winbase::INFINITE;
-use winapi::um::winnt::{MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE, PROCESS_ALL_ACCESS};
-use winapi::um::winuser::{FindWindowA, GetWindowThreadProcessId};
-use winapi::um::{memoryapi, processthreadsapi};
+use windows::core::PCSTR;
+use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, MAX_PATH};
+use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+use windows::Win32::System::Memory::{
+    VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
+};
+use windows::Win32::System::Threading::{
+    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, PROCESS_ALL_ACCESS,
+};
+use windows::Win32::System::WindowsProgramming::INFINITE;
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, GetWindowThreadProcessId};
 
 fn main() {
     simplelog::TermLogger::init(
@@ -24,14 +25,14 @@ fn main() {
     )
     .ok();
     let title = CString::new("DARK SOULS III").unwrap();
-    let hwnd = unsafe { FindWindowA(null_mut(), title.as_ptr() as *const i8) };
+    let hwnd = unsafe { FindWindowA(None, PCSTR(title.as_ptr() as _)) };
 
-    if hwnd == null_mut() {
-        error!("FindWindowA returned NULL: {}", unsafe { GetLastError() });
+    if hwnd.is_invalid() {
+        error!("FindWindowA returned NULL: {}", unsafe { GetLastError().0 });
         return;
     }
 
-    let mut pid: DWORD = 0;
+    let mut pid = 0u32;
     unsafe { GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _) };
 
     println!("{:?}", pid);
@@ -45,18 +46,22 @@ fn main() {
     let kernel32 = CString::new("Kernel32").unwrap();
     let loadlibraryw = CString::new("LoadLibraryW").unwrap();
 
-    let proc_addr =
-        unsafe { GetProcAddress(GetModuleHandleA(kernel32.as_ptr()), loadlibraryw.as_ptr()) };
+    let proc_addr = unsafe {
+        GetProcAddress(
+            GetModuleHandleA(PCSTR(kernel32.as_ptr() as _)),
+            PCSTR(loadlibraryw.as_ptr() as _),
+        )
+    };
 
     let dll_path =
         widestring::WideCString::from_os_str(dll_path.canonicalize().unwrap().as_os_str()).unwrap();
 
-    let hproc = unsafe { processthreadsapi::OpenProcess(PROCESS_ALL_ACCESS, 0, pid) };
+    let hproc = unsafe { OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid) };
     let dllp = unsafe {
-        memoryapi::VirtualAllocEx(
+        VirtualAllocEx(
             hproc,
-            0 as LPVOID,
-            MAX_PATH * std::mem::size_of::<u16>(),
+            null(),
+            (MAX_PATH as usize) * std::mem::size_of::<u16>(),
             MEM_RESERVE | MEM_COMMIT,
             PAGE_READWRITE,
         )
@@ -64,35 +69,35 @@ fn main() {
 
     let mut bytes_written = 0usize;
     let res = unsafe {
-        memoryapi::WriteProcessMemory(
+        WriteProcessMemory(
             hproc,
             dllp,
             dll_path.as_ptr() as *const std::ffi::c_void,
-            MAX_PATH * std::mem::size_of::<u16>(),
+            (MAX_PATH as usize) * std::mem::size_of::<u16>(),
             (&mut bytes_written) as *mut _,
         )
     };
 
-    debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res);
+    debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res.0);
 
     let thread = unsafe {
-        processthreadsapi::CreateRemoteThread(
+        CreateRemoteThread(
             hproc,
-            0 as LPSECURITY_ATTRIBUTES,
+            null(),
             0,
             Some(std::mem::transmute(proc_addr)),
             dllp,
             0,
-            std::ptr::null_mut::<DWORD>(),
+            null_mut(),
         )
     };
 
     unsafe {
         WaitForSingleObject(thread, INFINITE);
         let mut ec = 0u32;
-        processthreadsapi::GetExitCodeThread(thread, &mut ec as *mut DWORD);
+        GetExitCodeThread(thread, &mut ec);
         CloseHandle(thread);
-        memoryapi::VirtualFreeEx(hproc, dllp, 0, MEM_RELEASE);
+        VirtualFreeEx(hproc, dllp, 0, MEM_RELEASE);
         CloseHandle(hproc);
     };
 }
