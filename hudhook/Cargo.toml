@@ -6,7 +6,8 @@ description = "A graphics API hook with dear imgui render loop. Supports DirectX
 homepage = "https://github.com/veeenu/hudhook"
 repository = "https://github.com/veeenu/hudhook"
 documentation = "https://veeenu.github.io/hudhook"
-license-file = "LICENSE.md"
+license = "MIT"
+license-file = "LICENSE"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 # links = "minhook"
 
