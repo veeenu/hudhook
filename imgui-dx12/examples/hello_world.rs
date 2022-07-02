@@ -100,18 +100,12 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         BufferDesc: DXGI_MODE_DESC {
             Width: 100,
             Height: 100,
-            RefreshRate: DXGI_RATIONAL {
-                Numerator: 60,
-                Denominator: 1,
-            },
+            RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
             ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
             Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
         },
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            Quality: 0,
-        },
+        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
         BufferCount: 2,
         OutputWindow: hwnd,
@@ -185,12 +179,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         unsafe {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _)
-                    .unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _)
-                    .unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 println!(
                     "{}",
@@ -209,40 +201,31 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         let ui = ctx.frame();
         {
             let ui = &ui;
-            Window::new("Hello world")
-                .size([640.0, 480.0], Condition::Always)
-                .build(&ui, || {
-                    ui.text("Hello world!");
-                    ui.text("こんにちは世界！");
-                    ui.text("This...is...imgui-rs!");
-                    ui.separator();
-                    let mouse_pos = ui.io().mouse_pos;
-                    ui.text(format!(
-                        "Mouse Position: ({:.1},{:.1})",
-                        mouse_pos[0], mouse_pos[1]
-                    ));
+            Window::new("Hello world").size([640.0, 480.0], Condition::Always).build(&ui, || {
+                ui.text("Hello world!");
+                ui.text("こんにちは世界！");
+                ui.text("This...is...imgui-rs!");
+                ui.separator();
+                let mouse_pos = ui.io().mouse_pos;
+                ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
 
-                    imgui::ListBox::new("##listbox")
-                        .size([300., 150.])
-                        .build(ui, || {
-                            imgui::Selectable::new("test1").build(ui);
-                            imgui::Selectable::new("test2").build(ui);
-                            imgui::Selectable::new("test3").selected(true).build(ui);
-                            imgui::Selectable::new("test4").build(ui);
-                            imgui::Selectable::new("test5").build(ui);
-                        });
-
-                    imgui::ComboBox::new("##combo")
-                        .preview_value("test")
-                        .build(ui, || {
-                            imgui::Selectable::new("test1").build(ui);
-                            imgui::Selectable::new("test2").build(ui);
-                            imgui::Selectable::new("test3").selected(true).build(ui);
-                            imgui::Selectable::new("test4").build(ui);
-                            imgui::Selectable::new("test5").build(ui);
-                        });
-                    ui.open_popup("##combo");
+                imgui::ListBox::new("##listbox").size([300., 150.]).build(ui, || {
+                    imgui::Selectable::new("test1").build(ui);
+                    imgui::Selectable::new("test2").build(ui);
+                    imgui::Selectable::new("test3").selected(true).build(ui);
+                    imgui::Selectable::new("test4").build(ui);
+                    imgui::Selectable::new("test5").build(ui);
                 });
+
+                imgui::ComboBox::new("##combo").preview_value("test").build(ui, || {
+                    imgui::Selectable::new("test1").build(ui);
+                    imgui::Selectable::new("test2").build(ui);
+                    imgui::Selectable::new("test3").selected(true).build(ui);
+                    imgui::Selectable::new("test4").build(ui);
+                    imgui::Selectable::new("test5").build(ui);
+                });
+                ui.open_popup("##combo");
+            });
         };
         trace!("Render draw data");
         renderer.render_draw_data(ui.render(), &command_list, unsafe {
@@ -258,7 +241,6 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     }
 }
 
-//
 // Winapi things
 //
 
@@ -268,10 +250,7 @@ fn handle_message(window: HWND) -> bool {
         if GetMessageA(msg.as_mut_ptr(), window, 0, 0).as_bool() {
             TranslateMessage(msg.as_ptr());
             DispatchMessageA(msg.as_ptr());
-            msg.as_ptr()
-                .as_ref()
-                .map(|m| m.message != WM_QUIT)
-                .unwrap_or(true)
+            msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
         } else {
             false
         }
@@ -297,13 +276,13 @@ pub unsafe extern "system" fn window_proc(
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER,
             );
             EndPaint(hwnd, paint_struct.as_mut_ptr());
-        }
+        },
         WM_DESTROY => {
             PostQuitMessage(0);
-        }
+        },
         _ => {
             return DefWindowProcA(hwnd, msg, w_param, l_param);
-        }
+        },
     }
     LRESULT(0)
 }

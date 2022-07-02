@@ -30,26 +30,37 @@
 //! executable will be very minimal and used to inject the DLL into the
 //! target process.
 //!
+//! #### Building the render loop
+//!
+//! Implement the [`RenderLoop`] trait
+//!
 //! ```no_run
 //! // lib.rs
+//! use hudhook::hooks::dx11;
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
-//! impl RenderLoop for MyRenderLoop {
-//!   fn render(&self, ctx: hudhook::RenderContext) {
-//!    imgui::Window::new(im_str!("My first render loop"))
-//!     .position([0., 0.], imgui::Condition::FirstUseEver)
-//!     .size([320., 200.], imgui::Condition::FirstUseEver)
-//!     .build(ctx.frame, || {
-//!       ctx.frame.text(imgui::im_str!("Hello, hello!"));
-//!     });
-//!   }
 //!
-//!   fn is_visible(&self) -> bool { true }
-//!   fn is_capturing(&self) -> bool { true }
+//! impl dx11::ImguiRenderLoop for MyRenderLoop {
+//!     fn render(&self, ctx: hudhook::RenderContext) {
+//!         imgui::Window::new(im_str!("My first render loop"))
+//!             .position([0., 0.], imgui::Condition::FirstUseEver)
+//!             .size([320., 200.], imgui::Condition::FirstUseEver)
+//!             .build(ctx.frame, || {
+//!                 ctx.frame.text(imgui::im_str!("Hello, hello!"));
+//!             });
+//!     }
+//!
+//!     fn is_visible(&self) -> bool {
+//!         true
+//!     }
+//!
+//!     fn is_capturing(&self) -> bool {
+//!         true
+//!     }
 //! }
 //!
-//! hudhook!(Box::new(MyRenderLoop::new()))
+//! hudhook!(MyRenderLoop.into_hook())
 //! ```
 //!
 //! ```no_run
@@ -57,13 +68,13 @@
 //! use hudhook::inject;
 //!
 //! fn main() {
-//!   let mut cur_exe = std::env::current_exe().unwrap();
-//!   cur_exe.push("..");
-//!   cur_exe.push("libmyhook.dll");
+//!     let mut cur_exe = std::env::current_exe().unwrap();
+//!     cur_exe.push("..");
+//!     cur_exe.push("libmyhook.dll");
 //!
-//!   let cur_dll = cur_exe.canonicalize().unwrap();
+//!     let cur_dll = cur_exe.canonicalize().unwrap();
 //!
-//!   inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
+//!     inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
 //! }
 //! ```
 //!
@@ -88,13 +99,12 @@
 
 pub mod hooks;
 pub mod inject;
-pub mod mh;
 
 pub mod utils {
     /// Allocate a Windows console.
     pub fn alloc_console() {
         unsafe {
-            winapi::um::consoleapi::AllocConsole();
+            crate::reexports::AllocConsole();
         }
     }
 
@@ -115,69 +125,59 @@ pub mod utils {
     /// Free the previously allocated Windows console.
     pub fn free_console() {
         unsafe {
-            winapi::um::wincon::FreeConsole();
+            crate::reexports::FreeConsole();
         }
     }
 }
 
 pub use log;
-pub use winapi::um::winnt::{
-    DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
-};
+
+pub mod reexports {
+    pub use detour::RawDetour;
+    pub use windows::Win32::Foundation::HINSTANCE;
+    pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
+    pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
+}
 
 /// Entry point for the library.
 ///
 /// Example usage:
 /// ```no_run
 /// pub struct MyRenderLoop;
+///
 /// impl RenderLoop for MyRenderLoop {
 ///   fn render(&self, frame: imgui::Ui, flags: &ImguiRenderLoopFlags) { ... }
 /// }
 ///
-/// hudhook!(|| {
-///     [hudhook::hooks::dx11::hook_imgui(RenderLoop {}),]
-/// });
+/// hudhook!(MyRenderLoop.into_hook());
 /// ```
 #[macro_export]
 macro_rules! hudhook {
     ($hooks:expr) => {
-        use hudhook::log::*;
-        use hudhook::*;
-
         use std::cell::OnceCell;
-        // use std::lazy::SyncOnceCell;
-        // use std::sync::Mutex;
 
-        // static DLL_MODULE: SyncOnceCell<Mutex<windows::Win32::Foundation::HINSTANCE>> =
-        //     SyncOnceCell::new();
-
-        // fn hudhook_exit() {
-        //     if let Some(hmodule) = DLL_MODULE.get() {
-        //         unsafe {
-        //             windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread(
-        //                 (*hmodule.lock().unwrap()),
-        //                 0,
-        //             )
-        //         };
-        //     }
-        // }
+        use hudhook::log::*;
+        use hudhook::reexports::*;
+        use hudhook::*;
 
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: windows::Win32::Foundation::HINSTANCE,
+            hmodule: HINSTANCE,
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
-            static mut HOOKS: OnceCell<mh::Hooks> = OnceCell::new();
+            static mut HOOKS: OnceCell<Vec<RawDetour>> = OnceCell::new();
 
             if reason == DLL_PROCESS_ATTACH {
                 trace!("DllMain()");
-                // if DLL_MODULE.set(Mutex::new(hmodule)).is_err() {
-                //     debug!("Couldn't store DLL module");
-                // }
                 std::thread::spawn(move || {
-                    let hooks = hudhook::mh::Hooks::new($hooks);
+                    let hooks: Vec<RawDetour> = { $hooks };
+                    for hook in &hooks {
+                        if let Err(e) = hook.enable() {
+                            error!("Couldn't enable hook: {e}");
+                        }
+                    }
                     HOOKS.set(hooks).ok();
                 });
             } else if reason == DLL_PROCESS_DETACH {
@@ -188,7 +188,11 @@ macro_rules! hudhook {
                 // This branch will then get called.
                 trace!("Unapplying hooks");
                 if let Some(hooks) = HOOKS.get() {
-                    hooks.unapply();
+                    hooks.iter().for_each(|hook| {
+                        if let Err(e) = hook.disable() {
+                            error!("Error disabling hook: {e}");
+                        }
+                    });
                 }
             }
         }

@@ -5,9 +5,6 @@ use std::ptr::null_mut;
 
 use log::*;
 
-pub use winapi::shared::minwindef::LPVOID;
-pub use winapi::shared::ntdef::{LPCSTR, LPCWSTR};
-
 #[allow(non_camel_case_types)]
 #[must_use]
 #[repr(C)]
@@ -48,16 +45,20 @@ pub enum MH_STATUS {
 extern "system" {
     pub fn MH_Initialize() -> MH_STATUS;
     pub fn MH_Uninitialize() -> MH_STATUS;
-    pub fn MH_CreateHook(pTarget: LPVOID, pDetour: LPVOID, ppOriginal: *mut LPVOID) -> MH_STATUS;
-    pub fn MH_EnableHook(pTarget: LPVOID) -> MH_STATUS;
-    pub fn MH_QueueEnableHook(pTarget: LPVOID) -> MH_STATUS;
-    pub fn MH_DisableHook(pTarget: LPVOID) -> MH_STATUS;
-    pub fn MH_QueueDisableHook(pTarget: LPVOID) -> MH_STATUS;
+    pub fn MH_CreateHook(
+        pTarget: *mut c_void,
+        pDetour: *mut c_void,
+        ppOriginal: *mut *mut c_void,
+    ) -> MH_STATUS;
+    pub fn MH_EnableHook(pTarget: *mut c_void) -> MH_STATUS;
+    pub fn MH_QueueEnableHook(pTarget: *mut c_void) -> MH_STATUS;
+    pub fn MH_DisableHook(pTarget: *mut c_void) -> MH_STATUS;
+    pub fn MH_QueueDisableHook(pTarget: *mut c_void) -> MH_STATUS;
     pub fn MH_ApplyQueued() -> MH_STATUS;
 }
 
-/// Structure that holds original address, hook function address, and trampoline address
-/// for a given hook.
+/// Structure that holds original address, hook function address, and trampoline
+/// address for a given hook.
 pub struct Hook {
     addr: *mut c_void,
     hook_impl: *mut c_void,
@@ -66,14 +67,8 @@ pub struct Hook {
 
 impl Hook {
     /// # Safety
-    ///
-    ///
     pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Hook {
-        Hook {
-            addr,
-            hook_impl,
-            trampoline: null_mut(),
-        }
+        Hook { addr, hook_impl, trampoline: null_mut() }
     }
 
     pub fn trampoline(&self) -> *mut c_void {
