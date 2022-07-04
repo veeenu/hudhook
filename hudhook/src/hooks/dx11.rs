@@ -2,9 +2,11 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
 use detour::RawDetour;
+use imgui::Key;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
@@ -91,8 +93,32 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
             trace!("Initializing imgui context");
             let imgui_ctx = engine.ctx();
             imgui_ctx.set_ini_filename(None);
-            imgui_ctx.io_mut().nav_active = true;
-            imgui_ctx.io_mut().nav_visible = true;
+            let mut io = imgui_ctx.io_mut();
+            io.nav_active = true;
+            io.nav_visible = true;
+            
+            // Initialize keys
+            io[Key::Tab] = VK_TAB.0 as _;
+            io[Key::LeftArrow] = VK_LEFT.0 as _;
+            io[Key::RightArrow] = VK_RIGHT.0 as _;
+            io[Key::UpArrow] = VK_UP.0 as _;
+            io[Key::DownArrow] = VK_DOWN.0 as _;
+            io[Key::PageUp] = VK_PRIOR.0 as _;
+            io[Key::PageDown] = VK_NEXT.0 as _;
+            io[Key::Home] = VK_HOME.0 as _;
+            io[Key::End] = VK_END.0 as _;
+            io[Key::Insert] = VK_INSERT.0 as _;
+            io[Key::Delete] = VK_DELETE.0 as _;
+            io[Key::Backspace] = VK_BACK.0 as _;
+            io[Key::Space] = VK_SPACE.0 as _;
+            io[Key::Enter] = VK_RETURN.0 as _;
+            io[Key::Escape] = VK_ESCAPE.0 as _;
+            io[Key::A] = VK_A.0 as _;
+            io[Key::C] = VK_C.0 as _;
+            io[Key::V] = VK_V.0 as _;
+            io[Key::X] = VK_X.0 as _;
+            io[Key::Y] = VK_Y.0 as _;
+            io[Key::Z] = VK_Z.0 as _;
 
             let flags = ImguiRenderLoopFlags { focused: true };
 
