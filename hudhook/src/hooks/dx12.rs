@@ -249,12 +249,14 @@ unsafe extern "system" fn imgui_wnd_proc(
                     io.mouse_down[btn] = false;
                 },
                 WM_MOUSEWHEEL => {
-                    io.mouse_wheel +=
-                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
+                    let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _); 
+                    let wheel_delta = WHEEL_DELTA as f32;
+                    io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
                 },
                 WM_MOUSEHWHEEL => {
-                    io.mouse_wheel_h +=
-                        (get_wheel_delta_wparam(wparam as _) as f32) / (WHEEL_DELTA as f32);
+                    let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _); 
+                    let wheel_delta = WHEEL_DELTA as f32;
+                    io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
                 },
                 WM_CHAR => io.add_input_character(wparam as u8 as char),
                 WM_ACTIVATE => {
@@ -268,12 +270,17 @@ unsafe extern "system" fn imgui_wnd_proc(
                 _ => {},
             }
 
+            let want_capture = io.want_capture_mouse || io.want_capture_keyboard;
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
-            trace!("Leaving WndProc");
-
-            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+            if want_capture {
+                trace!("Leaving WndProc via capturing");
+                LRESULT(1)
+            } else {
+                trace!("Leaving WndProc via CallWindowProcW");
+                CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+            }
         },
         Some(None) => {
             debug!("Could not lock in WndProc");
@@ -764,4 +771,3 @@ impl Hooks for ImguiDX12Hooks {
         DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
     }
 }
-
