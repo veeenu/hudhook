@@ -21,7 +21,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{get_wheel_delta_wparam, hiword, loword};
+use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -57,11 +57,11 @@ trait Renderer {
 pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut imgui_dx12::imgui::Ui, flags: &ImguiRenderLoopFlags);
     fn initialize(&mut self, _ctx: &mut imgui_dx12::imgui::Context) {}
-    fn into_hook(self) -> Vec<RawDetour>
+    fn into_hook(self) -> Box<dyn Hooks>
     where
         Self: Send + Sync + Sized + 'static,
     {
-        unsafe { hook_imgui(self) }
+        Box::new(ImguiDX12Hooks::new(self))
     }
 }
 
@@ -153,7 +153,7 @@ unsafe extern "system" fn imgui_resize_buffers_impl(
         TRAMPOLINE.get().expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
 
     if let Some(mutex) = IMGUI_RENDERER.take() {
-        mutex.lock().cleanup(swap_chain.clone());
+        mutex.lock().cleanup(Some(swap_chain.clone()));
     };
 
     COMMAND_QUEUE_GUARD.take();
@@ -175,7 +175,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
         IMGUI_RENDERER.get_or_init(|| Mutex::new(Box::new(ImguiRenderer::new(swap_chain.clone()))));
 
     {
-        renderer.lock().render(swap_chain.clone());
+        renderer.lock().render(Some(swap_chain.clone()));
     }
 
     trace!("Invoking IDXGISwapChain3::Present trampoline");
@@ -294,6 +294,7 @@ struct ImguiRenderer {
     renderer_heap: ID3D12DescriptorHeap,
     command_queue: Option<ID3D12CommandQueue>,
     command_list: ID3D12GraphicsCommandList,
+    swap_chain: IDXGISwapChain3,
 }
 
 impl ImguiRenderer {
@@ -415,10 +416,21 @@ impl ImguiRenderer {
             _rtv_heap: rtv_heap,
             renderer_heap,
             frame_contexts,
+            swap_chain,
         }
     }
 
-    fn render(&mut self, swap_chain: IDXGISwapChain3) -> Option<()> {
+    fn store_swap_chain(&mut self, swap_chain: Option<IDXGISwapChain3>) -> IDXGISwapChain3 {
+        if let Some(swap_chain) = swap_chain {
+            self.swap_chain = swap_chain;
+        }
+
+        self.swap_chain.clone()
+    }
+
+    fn render(&mut self, swap_chain: Option<IDXGISwapChain3>) -> Option<()> {
+        let swap_chain = self.store_swap_chain(swap_chain);
+
         trace!("Rendering started");
         let sd = unsafe { swap_chain.GetDesc() }.unwrap();
         let mut rect: RECT = Default::default();
@@ -520,7 +532,8 @@ impl ImguiRenderer {
         None
     }
 
-    unsafe fn cleanup(&mut self, swap_chain: IDXGISwapChain3) {
+    unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain3>) {
+        let swap_chain = self.store_swap_chain(swap_chain);
         let desc = swap_chain.GetDesc().unwrap();
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
     }
@@ -608,11 +621,6 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
 
     let command_queue: ID3D12CommandQueue =
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
-    // let command_alloc: ID3D12CommandAllocator =
-    //     unsafe { dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-    // }.unwrap(); let command_list: ID3D12CommandList =
-    //     unsafe { dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-    // &command_alloc, None) }         .unwrap();
 
     let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
         BufferDesc: DXGI_MODE_DESC {
@@ -661,13 +669,59 @@ pub fn disable_dxgi_debug() {
     DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
 }
 
+pub struct ImguiDX12Hooks {
+    hook_dscp: RawDetour,
+    hook_cqecl: RawDetour,
+    hook_rbuf: RawDetour,
+}
+
+impl ImguiDX12Hooks {
+    pub fn new<T: 'static>(t: T) -> Self
+    where
+        T: ImguiRenderLoop + Send + Sync,
+    {
+        let (hook_dscp, hook_cqecl, hook_rbuf) = unsafe { hook_imgui(t) };
+
+        Self { hook_dscp, hook_cqecl, hook_rbuf }
+    }
+}
+
+impl Hooks for ImguiDX12Hooks {
+    unsafe fn hook(&self) {
+        for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
+            if let Err(e) = hook.enable() {
+                error!("Couldn't enable hook: {e}");
+            }
+        }
+    }
+
+    unsafe fn unhook(&mut self) {
+        trace!("Disabling hooks...");
+        for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
+            if let Err(e) = hook.disable() {
+                error!("Couldn't disable hook: {e}");
+            }
+        }
+
+        trace!("Cleaning up renderer...");
+        if let Some(renderer) = IMGUI_RENDERER.take() {
+            renderer.lock().cleanup(None);
+        }
+
+        drop(IMGUI_RENDER_LOOP.take());
+        drop(COMMAND_QUEUE_GUARD.take());
+
+        DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Construct a `mh::Hook` that will render UI via the provided
 /// `ImguiRenderLoop`.
 ///
 /// # Safety
 ///
 /// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> Vec<RawDetour>
+unsafe fn hook_imgui<T: 'static>(t: T) -> (RawDetour, RawDetour, RawDetour)
 where
     T: ImguiRenderLoop + Send + Sync,
 {
@@ -705,5 +759,5 @@ where
         )
     });
 
-    vec![hook_dscp, hook_cqecl, hook_rbuf]
+    (hook_dscp, hook_cqecl, hook_rbuf)
 }

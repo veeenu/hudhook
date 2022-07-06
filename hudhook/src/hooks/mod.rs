@@ -1,6 +1,11 @@
 pub mod dx11;
 pub mod dx12;
 
+pub trait Hooks {
+    unsafe fn hook(&self);
+    unsafe fn unhook(&mut self);
+}
+
 #[inline]
 pub fn loword(l: u32) -> u16 {
     (l & 0xffff) as u16

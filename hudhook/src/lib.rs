@@ -101,10 +101,16 @@ pub mod hooks;
 pub mod inject;
 
 pub mod utils {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
+
     /// Allocate a Windows console.
     pub fn alloc_console() {
-        unsafe {
-            crate::reexports::AllocConsole();
+        if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
+            unsafe {
+                crate::reexports::AllocConsole();
+            }
         }
     }
 
@@ -124,8 +130,10 @@ pub mod utils {
 
     /// Free the previously allocated Windows console.
     pub fn free_console() {
-        unsafe {
-            crate::reexports::FreeConsole();
+        if CONSOLE_ALLOCATED.swap(false, Ordering::SeqCst) {
+            unsafe {
+                crate::reexports::FreeConsole();
+            }
         }
     }
 }
@@ -137,6 +145,47 @@ pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;
     pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
+}
+
+pub mod global_state {
+    use std::cell::OnceCell;
+    use std::thread;
+
+    use windows::Win32::Foundation::HINSTANCE;
+    use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
+
+    use crate::{hooks, utils};
+
+    static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
+    static mut HOOKS: OnceCell<Box<dyn hooks::Hooks>> = OnceCell::new();
+
+    pub fn set_module(module: HINSTANCE) {
+        unsafe {
+            MODULE.set(module).unwrap();
+        }
+    }
+
+    pub fn get_module() -> HINSTANCE {
+        unsafe { MODULE.get().unwrap().clone() }
+    }
+
+    pub fn set_hooks(hooks: Box<dyn hooks::Hooks>) {
+        unsafe { HOOKS.set(hooks).ok() };
+    }
+
+    pub fn eject() {
+        thread::spawn(|| unsafe {
+            utils::free_console();
+
+            if let Some(mut hooks) = HOOKS.take() {
+                hooks.unhook();
+            }
+
+            if let Some(module) = MODULE.take() {
+                FreeLibraryAndExitThread(module, 0);
+            }
+        });
+    }
 }
 
 /// Entry point for the library.
@@ -154,8 +203,6 @@ pub mod reexports {
 #[macro_export]
 macro_rules! hudhook {
     ($hooks:expr) => {
-        use std::cell::OnceCell;
-
         use hudhook::log::*;
         use hudhook::reexports::*;
         use hudhook::*;
@@ -167,18 +214,20 @@ macro_rules! hudhook {
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
-            static mut HOOKS: OnceCell<Vec<RawDetour>> = OnceCell::new();
-
             if reason == DLL_PROCESS_ATTACH {
+                hudhook::global_state::set_module(hmodule);
+
                 trace!("DllMain()");
                 std::thread::spawn(move || {
-                    let hooks: Vec<RawDetour> = { $hooks };
-                    for hook in &hooks {
-                        if let Err(e) = hook.enable() {
-                            error!("Couldn't enable hook: {e}");
-                        }
-                    }
-                    HOOKS.set(hooks).ok();
+                    let hooks: Box<dyn hooks::Hooks> = { $hooks };
+                    hooks.hook();
+                    hudhook::global_state::set_hooks(hooks);
+                    // let hooks: Vec<RawDetour> = { $hooks };
+                    // for hook in &hooks {
+                    //     if let Err(e) = hook.enable() {
+                    //         error!("Couldn't enable hook: {e}");
+                    //     }
+                    // }
                 });
             } else if reason == DLL_PROCESS_DETACH {
                 // TODO trigger drops on exit:
@@ -186,14 +235,15 @@ macro_rules! hudhook {
                 // - Wait for a render loop to be complete
                 // - Call FreeLibraryAndExitThread from a utility function
                 // This branch will then get called.
-                trace!("Unapplying hooks");
-                if let Some(hooks) = HOOKS.get() {
-                    hooks.iter().for_each(|hook| {
-                        if let Err(e) = hook.disable() {
-                            error!("Error disabling hook: {e}");
-                        }
-                    });
-                }
+                // trace!("Unapplying hooks");
+                // if let Some(mut hooks) = HOOKS.take() {
+                //     hooks.unhook();
+                //     // hooks.iter().for_each(|hook| {
+                //     //     if let Err(e) = hook.disable() {
+                //     //         error!("Error disabling hook: {e}");
+                //     //     }
+                //     // });
+                // }
             }
         }
     };
