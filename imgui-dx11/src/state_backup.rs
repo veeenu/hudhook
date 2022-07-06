@@ -92,12 +92,12 @@ impl StateBackup {
             ctx.PSGetShaderResources(0, &mut r.ps_shader_resource);
             r.ps_instances_count = 256;
             r.vs_instances_count = 256;
-            ctx.PSGetShader(&mut r.pixel_shader, &mut r.ps_instances as *mut _, &mut r.ps_instances_count);
-            ctx.VSGetShader(
-                &mut r.vertex_shader,
-                &mut r.vs_instances,
-                &mut r.vs_instances_count,
+            ctx.PSGetShader(
+                &mut r.pixel_shader,
+                &mut r.ps_instances as *mut _,
+                &mut r.ps_instances_count,
             );
+            ctx.VSGetShader(&mut r.vertex_shader, &mut r.vs_instances, &mut r.vs_instances_count);
             ctx.VSGetConstantBuffers(0, &mut r.vertex_constant_buffer);
             ctx.IAGetPrimitiveTopology(&mut r.primitive_topology);
             ctx.IAGetIndexBuffer(

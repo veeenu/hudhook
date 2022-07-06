@@ -6,7 +6,6 @@ use imgui::Key;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::core::{Interface, HRESULT, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
@@ -22,6 +21,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword};
@@ -96,7 +96,7 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
             let mut io = imgui_ctx.io_mut();
             io.nav_active = true;
             io.nav_visible = true;
-            
+
             // Initialize keys
             io[Key::Tab] = VK_TAB.0 as _;
             io[Key::LeftArrow] = VK_LEFT.0 as _;

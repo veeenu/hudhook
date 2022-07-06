@@ -17,9 +17,7 @@ use windows::Win32::System::Threading::{
     CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, PROCESS_ALL_ACCESS,
 };
 use windows::Win32::System::WindowsProgramming::INFINITE;
-use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowA, GetWindowThreadProcessId,
-};
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, GetWindowThreadProcessId};
 
 fn main() {
     simplelog::TermLogger::init(
