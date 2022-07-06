@@ -1,3 +1,5 @@
+//! Facilities for injecting compiled DLLs into target processes.
+
 use std::ffi::CString;
 use std::mem::size_of;
 use std::path::PathBuf;

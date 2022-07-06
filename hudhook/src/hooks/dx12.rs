@@ -1,9 +1,11 @@
+//! Hook for DirectX 12 applications.
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use detour::RawDetour;
+use imgui::{Context, Ui};
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -55,13 +57,17 @@ trait Renderer {
 
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
-    fn render(&mut self, ui: &mut imgui_dx12::imgui::Ui, flags: &ImguiRenderLoopFlags);
-    fn initialize(&mut self, _ctx: &mut imgui_dx12::imgui::Context) {}
+    /// Called once at the first occurrence of the hook. Implement this to
+    /// initialize your data.
+    fn initialize(&mut self, _ctx: &mut Context) {}
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
+
     fn into_hook(self) -> Box<dyn Hooks>
     where
         Self: Send + Sync + Sized + 'static,
     {
-        Box::new(ImguiDX12Hooks::new(self))
+        Box::new(unsafe { ImguiDX12Hooks::new(self) })
     }
 }
 
@@ -677,11 +683,54 @@ pub struct ImguiDX12Hooks {
 }
 
 impl ImguiDX12Hooks {
-    pub fn new<T: 'static>(t: T) -> Self
+    /// Construct a set of [`RawDetour`]s that will render UI via the provided
+    /// [`ImguiRenderLoop`].
+    ///
+    /// The following functions are hooked:
+    /// - `IDXGISwapChain::Present`
+    /// - `IDXGISwapChain::ResizeBuffers`
+    /// - `ID3D12CommandQueue::ExecuteCommandLists`
+    ///
+    /// # Safety
+    ///
+    /// yolo
+    pub unsafe fn new<T: 'static>(t: T) -> Self
     where
         T: ImguiRenderLoop + Send + Sync,
     {
-        let (hook_dscp, hook_cqecl, hook_rbuf) = unsafe { hook_imgui(t) };
+        let (dxgi_swap_chain_present_addr, execute_command_lists_addr, resize_buffers_addr) =
+            get_present_addr();
+        trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
+        trace!(
+            "ID3D12CommandQueue::ExecuteCommandLists = {:p}",
+            execute_command_lists_addr as *const c_void
+        );
+        trace!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *const c_void);
+
+        let hook_dscp = RawDetour::new(
+            dxgi_swap_chain_present_addr as *const _,
+            imgui_dxgi_swap_chain_present_impl as *const _,
+        )
+        .expect("IDXGISwapChain::Present hook");
+
+        let hook_cqecl = RawDetour::new(
+            execute_command_lists_addr as *const _,
+            imgui_execute_command_lists_impl as *const _,
+        )
+        .expect("ID3D12CommandQueue::ExecuteCommandLists hook");
+
+        let hook_rbuf =
+            RawDetour::new(resize_buffers_addr as *const _, imgui_resize_buffers_impl as *const _)
+                .expect("IDXGISwapChain::ResizeBuffers hook");
+
+        IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
+        TRAMPOLINE.get_or_init(|| {
+            (
+                std::mem::transmute(hook_dscp.trampoline()),
+                std::mem::transmute(hook_cqecl.trampoline()),
+                std::mem::transmute(hook_rbuf.trampoline()),
+            )
+        });
 
         Self { hook_dscp, hook_cqecl, hook_rbuf }
     }
@@ -716,49 +765,3 @@ impl Hooks for ImguiDX12Hooks {
     }
 }
 
-/// Construct a set of [`RawDetour`]s that will render UI via the provided
-/// [`ImguiRenderLoop`].
-///
-/// # Safety
-///
-/// yolo
-unsafe fn hook_imgui<T: 'static>(t: T) -> (RawDetour, RawDetour, RawDetour)
-where
-    T: ImguiRenderLoop + Send + Sync,
-{
-    let (dxgi_swap_chain_present_addr, execute_command_lists_addr, resize_buffers_addr) =
-        get_present_addr();
-    trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
-    trace!(
-        "ID3D12CommandQueue::ExecuteCommandLists = {:p}",
-        execute_command_lists_addr as *const c_void
-    );
-    trace!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *const c_void);
-
-    let hook_dscp = RawDetour::new(
-        dxgi_swap_chain_present_addr as *const _,
-        imgui_dxgi_swap_chain_present_impl as *const _,
-    )
-    .expect("IDXGISwapChain::Present hook");
-
-    let hook_cqecl = RawDetour::new(
-        execute_command_lists_addr as *const _,
-        imgui_execute_command_lists_impl as *const _,
-    )
-    .expect("ID3D12CommandQueue::ExecuteCommandLists hook");
-
-    let hook_rbuf =
-        RawDetour::new(resize_buffers_addr as *const _, imgui_resize_buffers_impl as *const _)
-            .expect("IDXGISwapChain::ResizeBuffers hook");
-
-    IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-    TRAMPOLINE.get_or_init(|| {
-        (
-            std::mem::transmute(hook_dscp.trampoline()),
-            std::mem::transmute(hook_cqecl.trampoline()),
-            std::mem::transmute(hook_rbuf.trampoline()),
-        )
-    });
-
-    (hook_dscp, hook_cqecl, hook_rbuf)
-}

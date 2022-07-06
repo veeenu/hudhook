@@ -44,12 +44,14 @@ trait Renderer {
 
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
+    /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
-    fn into_hook(self) -> Vec<RawDetour>
+
+    fn into_hook(self) -> Box<dyn Hooks>
     where
         Self: Send + Sync + Sized + 'static,
     {
-        vec![unsafe { hook_imgui(self) }]
+        Box::new(unsafe { ImguiDX11Hooks::new(self) })
     }
 }
 
@@ -419,6 +421,12 @@ pub struct ImguiDX11Hooks {
 }
 
 impl ImguiDX11Hooks {
+    /// Construct a [`RawDetour`] that will render UI via the provided
+    /// `ImguiRenderLoop`.
+    ///
+    /// # Safety
+    ///
+    /// yolo
     pub unsafe fn new<T: 'static>(t: T) -> Self
     where
         T: ImguiRenderLoop + Send + Sync,
@@ -465,27 +473,21 @@ impl Hooks for ImguiDX11Hooks {
     }
 }
 
-/// Construct a [`RawDetour` that will render UI via the provided
-/// `ImguiRenderLoop`.
-///
-/// # Safety
-///
-/// yolo
-unsafe fn hook_imgui<T: 'static>(t: T) -> RawDetour
-where
-    T: ImguiRenderLoop + Send + Sync,
-{
-    let dxgi_swap_chain_present_addr = get_present_addr();
-    debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
-
-    let hook = RawDetour::new(
-        dxgi_swap_chain_present_addr as *const _,
-        imgui_dxgi_swap_chain_present_impl as *const _,
-    )
-    .expect("Create detour");
-
-    IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-    TRAMPOLINE.get_or_init(|| std::mem::transmute(hook.trampoline()));
-
-    hook
-}
+// unsafe fn hook_imgui<T: 'static>(t: T) -> RawDetour
+// where
+//     T: ImguiRenderLoop + Send + Sync,
+// {
+//     let dxgi_swap_chain_present_addr = get_present_addr();
+//     debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
+// 
+//     let hook = RawDetour::new(
+//         dxgi_swap_chain_present_addr as *const _,
+//         imgui_dxgi_swap_chain_present_impl as *const _,
+//     )
+//     .expect("Create detour");
+// 
+//     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
+//     TRAMPOLINE.get_or_init(|| std::mem::transmute(hook.trampoline()));
+// 
+//     hook
+// }
