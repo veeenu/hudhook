@@ -473,21 +473,3 @@ impl Hooks for ImguiDX11Hooks {
     }
 }
 
-// unsafe fn hook_imgui<T: 'static>(t: T) -> RawDetour
-// where
-//     T: ImguiRenderLoop + Send + Sync,
-// {
-//     let dxgi_swap_chain_present_addr = get_present_addr();
-//     debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
-// 
-//     let hook = RawDetour::new(
-//         dxgi_swap_chain_present_addr as *const _,
-//         imgui_dxgi_swap_chain_present_impl as *const _,
-//     )
-//     .expect("Create detour");
-// 
-//     IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-//     TRAMPOLINE.get_or_init(|| std::mem::transmute(hook.trampoline()));
-// 
-//     hook
-// }
