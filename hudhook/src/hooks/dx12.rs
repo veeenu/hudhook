@@ -669,6 +669,7 @@ pub fn disable_dxgi_debug() {
     DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
 }
 
+/// Stores hook detours and implements the [`Hooks`] trait.
 pub struct ImguiDX12Hooks {
     hook_dscp: RawDetour,
     hook_cqecl: RawDetour,
@@ -715,8 +716,8 @@ impl Hooks for ImguiDX12Hooks {
     }
 }
 
-/// Construct a `mh::Hook` that will render UI via the provided
-/// `ImguiRenderLoop`.
+/// Construct a set of [`RawDetour`]s that will render UI via the provided
+/// [`ImguiRenderLoop`].
 ///
 /// # Safety
 ///
