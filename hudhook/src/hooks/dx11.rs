@@ -2,7 +2,8 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
 use detour::RawDetour;
-use imgui::Key;
+use imgui::{Key, Ui};
+use imgui_dx11::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -24,7 +25,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword};
+use super::{get_wheel_delta_wparam, get_xbutton_wparam, loword, Hooks};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -43,12 +44,14 @@ trait Renderer {
 
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
-    fn render(&mut self, ui: &mut imgui_dx11::imgui::Ui, flags: &ImguiRenderLoopFlags);
-    fn into_hook(self) -> Vec<RawDetour>
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
+
+    fn into_hook(self) -> Box<dyn Hooks>
     where
         Self: Send + Sync + Sized + 'static,
     {
-        vec![unsafe { hook_imgui(self) }]
+        Box::new(unsafe { ImguiDX11Hooks::new(self) })
     }
 }
 
@@ -63,7 +66,7 @@ static TRAMPOLINE: OnceCell<DXGISwapChainPresentType> = OnceCell::new();
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
@@ -73,91 +76,10 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     let trampoline = TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
 
     let mut renderer = IMGUI_RENDERER
-        .get_or_init(|| {
-            trace!("Initializing renderer");
-
-            let dev: ID3D11Device = p_this.GetDevice().expect("GetDevice");
-            let mut dev_ctx: Option<ID3D11DeviceContext> = None;
-            dev.GetImmediateContext(&mut dev_ctx);
-            let dev_ctx = dev_ctx.unwrap();
-            let sd = p_this.GetDesc().expect("GetDesc");
-
-            let mut engine = imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, p_this.clone());
-            let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-                sd.OutputWindow,
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as isize,
-            ));
-
-            trace!("Initializing imgui context");
-            let imgui_ctx = engine.ctx();
-            imgui_ctx.set_ini_filename(None);
-            let mut io = imgui_ctx.io_mut();
-            io.nav_active = true;
-            io.nav_visible = true;
-
-            // Initialize keys
-            io[Key::Tab] = VK_TAB.0 as _;
-            io[Key::LeftArrow] = VK_LEFT.0 as _;
-            io[Key::RightArrow] = VK_RIGHT.0 as _;
-            io[Key::UpArrow] = VK_UP.0 as _;
-            io[Key::DownArrow] = VK_DOWN.0 as _;
-            io[Key::PageUp] = VK_PRIOR.0 as _;
-            io[Key::PageDown] = VK_NEXT.0 as _;
-            io[Key::Home] = VK_HOME.0 as _;
-            io[Key::End] = VK_END.0 as _;
-            io[Key::Insert] = VK_INSERT.0 as _;
-            io[Key::Delete] = VK_DELETE.0 as _;
-            io[Key::Backspace] = VK_BACK.0 as _;
-            io[Key::Space] = VK_SPACE.0 as _;
-            io[Key::Enter] = VK_RETURN.0 as _;
-            io[Key::Escape] = VK_ESCAPE.0 as _;
-            io[Key::A] = VK_A.0 as _;
-            io[Key::C] = VK_C.0 as _;
-            io[Key::V] = VK_V.0 as _;
-            io[Key::X] = VK_X.0 as _;
-            io[Key::Y] = VK_Y.0 as _;
-            io[Key::Z] = VK_Z.0 as _;
-
-            let flags = ImguiRenderLoopFlags { focused: true };
-
-            trace!("Renderer initialized");
-
-            Mutex::new(Box::new(ImguiRenderer { engine, render_loop, wnd_proc, flags }))
-        })
+        .get_or_init(|| Mutex::new(Box::new(ImguiRenderer::new(p_this.clone()))))
         .lock();
 
-    {
-        trace!("Present impl: Rendering");
-        let ctx = (*renderer).ctx();
-        let sd = p_this.GetDesc().expect("GetDesc");
-        let mut rect: RECT = Default::default();
-
-        if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
-            let mut io = ctx.io_mut();
-
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
-            let mut pos = POINT { x: 0, y: 0 };
-
-            let active_window = GetForegroundWindow();
-            if !active_window.is_invalid()
-                && (active_window == sd.OutputWindow
-                    || IsChild(active_window, sd.OutputWindow).as_bool())
-            {
-                let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
-                }
-            }
-        } else {
-            trace!("GetWindowRect error: {:x}", GetLastError().0);
-        }
-    }
-
-    (*renderer).render();
+    renderer.render(Some(p_this.clone()));
     drop(renderer);
 
     trace!("Invoking IDXGISwapChain::Present trampoline");
@@ -273,17 +195,114 @@ unsafe extern "system" fn imgui_wnd_proc(
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct ImguiRenderer {
-    engine: imgui_dx11::RenderEngine,
+    engine: RenderEngine,
     render_loop: Box<dyn ImguiRenderLoop>,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
+    swap_chain: IDXGISwapChain,
 }
 
 impl ImguiRenderer {
-    fn render(&mut self) {
+    unsafe fn new(swap_chain: IDXGISwapChain) -> Self {
+        trace!("Initializing renderer");
+
+        let dev: ID3D11Device = swap_chain.GetDevice().expect("GetDevice");
+        let mut dev_ctx: Option<ID3D11DeviceContext> = None;
+        dev.GetImmediateContext(&mut dev_ctx);
+        let dev_ctx = dev_ctx.unwrap();
+        let sd = swap_chain.GetDesc().expect("GetDesc");
+
+        let mut engine = RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone());
+        let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            sd.OutputWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as isize,
+        ));
+
+        trace!("Initializing imgui context");
+        let imgui_ctx = engine.ctx();
+        imgui_ctx.set_ini_filename(None);
+        let mut io = imgui_ctx.io_mut();
+        io.nav_active = true;
+        io.nav_visible = true;
+
+        // Initialize keys
+        io[Key::Tab] = VK_TAB.0 as _;
+        io[Key::LeftArrow] = VK_LEFT.0 as _;
+        io[Key::RightArrow] = VK_RIGHT.0 as _;
+        io[Key::UpArrow] = VK_UP.0 as _;
+        io[Key::DownArrow] = VK_DOWN.0 as _;
+        io[Key::PageUp] = VK_PRIOR.0 as _;
+        io[Key::PageDown] = VK_NEXT.0 as _;
+        io[Key::Home] = VK_HOME.0 as _;
+        io[Key::End] = VK_END.0 as _;
+        io[Key::Insert] = VK_INSERT.0 as _;
+        io[Key::Delete] = VK_DELETE.0 as _;
+        io[Key::Backspace] = VK_BACK.0 as _;
+        io[Key::Space] = VK_SPACE.0 as _;
+        io[Key::Enter] = VK_RETURN.0 as _;
+        io[Key::Escape] = VK_ESCAPE.0 as _;
+        io[Key::A] = VK_A.0 as _;
+        io[Key::C] = VK_C.0 as _;
+        io[Key::V] = VK_V.0 as _;
+        io[Key::X] = VK_X.0 as _;
+        io[Key::Y] = VK_Y.0 as _;
+        io[Key::Z] = VK_Z.0 as _;
+
+        let flags = ImguiRenderLoopFlags { focused: true };
+
+        trace!("Renderer initialized");
+        ImguiRenderer { engine, render_loop, wnd_proc, flags, swap_chain }
+    }
+
+    unsafe fn render(&mut self, swap_chain: Option<IDXGISwapChain>) {
+        trace!("Present impl: Rendering");
+
+        let swap_chain = self.store_swap_chain(swap_chain);
+        let ctx = self.ctx();
+        let sd = swap_chain.GetDesc().expect("GetDesc");
+        let mut rect: RECT = Default::default();
+
+        if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
+            let mut io = ctx.io_mut();
+
+            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+
+            let mut pos = POINT { x: 0, y: 0 };
+
+            let active_window = GetForegroundWindow();
+            if !active_window.is_invalid()
+                && (active_window == sd.OutputWindow
+                    || IsChild(active_window, sd.OutputWindow).as_bool())
+            {
+                let gcp = GetCursorPos(&mut pos as *mut _);
+                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
+                    io.mouse_pos[0] = pos.x as _;
+                    io.mouse_pos[1] = pos.y as _;
+                }
+            }
+        } else {
+            trace!("GetWindowRect error: {:x}", GetLastError().0);
+        }
+
         if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui, &self.flags)) {
             error!("ImGui renderer error: {:?}", e);
         }
+    }
+
+    fn store_swap_chain(&mut self, swap_chain: Option<IDXGISwapChain>) -> IDXGISwapChain {
+        if let Some(swap_chain) = swap_chain {
+            self.swap_chain = swap_chain;
+        }
+
+        self.swap_chain.clone()
+    }
+
+    unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain>) {
+        let swap_chain = self.store_swap_chain(swap_chain);
+        let desc = swap_chain.GetDesc().unwrap();
+        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
     }
 
     fn ctx(&mut self) -> &mut imgui_dx11::imgui::Context {
@@ -397,27 +416,60 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     unsafe { std::mem::transmute(ret) }
 }
 
-/// Construct a `RawDetour` that will render UI via the provided
-/// `ImguiRenderLoop`.
-///
-/// # Safety
-///
-/// yolo
-pub unsafe fn hook_imgui<T: 'static>(t: T) -> RawDetour
-where
-    T: ImguiRenderLoop + Send + Sync,
-{
-    let dxgi_swap_chain_present_addr = get_present_addr();
-    debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
-
-    let hook = RawDetour::new(
-        dxgi_swap_chain_present_addr as *const _,
-        imgui_dxgi_swap_chain_present_impl as *const _,
-    )
-    .expect("Create detour");
-
-    IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-    TRAMPOLINE.get_or_init(|| std::mem::transmute(hook.trampoline()));
-
-    hook
+pub struct ImguiDX11Hooks {
+    hook_present: RawDetour,
 }
+
+impl ImguiDX11Hooks {
+    /// Construct a [`RawDetour`] that will render UI via the provided
+    /// `ImguiRenderLoop`.
+    ///
+    /// # Safety
+    ///
+    /// yolo
+    pub unsafe fn new<T: 'static>(t: T) -> Self
+    where
+        T: ImguiRenderLoop + Send + Sync,
+    {
+        let dxgi_swap_chain_present_addr = get_present_addr();
+        debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
+
+        let hook_present = RawDetour::new(
+            dxgi_swap_chain_present_addr as *const _,
+            imgui_dxgi_swap_chain_present_impl as *const _,
+        )
+        .expect("Create detour");
+
+        IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
+        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+
+        Self { hook_present }
+    }
+}
+
+impl Hooks for ImguiDX11Hooks {
+    unsafe fn hook(&self) {
+        for hook in [&self.hook_present] {
+            if let Err(e) = hook.enable() {
+                error!("Couldn't enable hook: {e}");
+            }
+        }
+    }
+
+    unsafe fn unhook(&mut self) {
+        trace!("Disabling hooks...");
+        for hook in [&self.hook_present] {
+            if let Err(e) = hook.disable() {
+                error!("Couldn't disable hook: {e}");
+            }
+        }
+
+        trace!("Cleaning up renderer...");
+        if let Some(renderer) = IMGUI_RENDERER.take() {
+            renderer.lock().cleanup(None);
+        }
+
+        drop(IMGUI_RENDER_LOOP.take());
+    }
+}
+
