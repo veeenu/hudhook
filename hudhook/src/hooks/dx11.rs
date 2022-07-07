@@ -24,10 +24,8 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::hooks::common::ImguiRendererCommon;
-
-use super::common::{WndProcResult, imgui_wnd_proc_impl};
 use super::Hooks;
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererCommon, WndProcResult};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -99,7 +97,13 @@ unsafe extern "system" fn imgui_wnd_proc(
 ) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
-            let WndProcResult(want_capture, optional_result) = imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), &mut *imgui_renderer);
+            let WndProcResult(want_capture, optional_result) = imgui_wnd_proc_impl(
+                hwnd,
+                umsg,
+                WPARAM(wparam),
+                LPARAM(lparam),
+                &mut *imgui_renderer,
+            );
 
             if let Some(lresult) = optional_result {
                 return lresult;
@@ -166,7 +170,7 @@ impl ImguiRenderer {
         let mut renderer = ImguiRenderer { engine, render_loop, wnd_proc, flags, swap_chain };
 
         ImguiRendererCommon::init_io(&mut renderer);
-        
+
         renderer
     }
 
@@ -404,4 +408,3 @@ impl Hooks for ImguiDX11Hooks {
         drop(IMGUI_RENDER_LOOP.take());
     }
 }
-
