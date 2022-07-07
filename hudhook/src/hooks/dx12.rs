@@ -20,10 +20,12 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
+use crate::hooks::common::ImguiRendererCommon;
+use crate::hooks::common::{WndProcType, imgui_wnd_proc_impl, WndProcResult};
+
+use super::Hooks;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -42,9 +44,6 @@ type ResizeBuffersType = unsafe extern "system" fn(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Data structures and traits
@@ -208,69 +207,12 @@ unsafe extern "system" fn imgui_wnd_proc(
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
-            let ctx = &mut imgui_renderer.ctx;
-            let mut io = ctx.io_mut();
+            let WndProcResult(want_capture, optional_result) = imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), &mut *imgui_renderer);
 
-            match umsg {
-                WM_KEYDOWN | WM_SYSKEYDOWN => {
-                    if wparam < 256 {
-                        io.keys_down[wparam as usize] = true;
-                    }
-                },
-                WM_KEYUP | WM_SYSKEYUP => {
-                    if wparam < 256 {
-                        io.keys_down[wparam as usize] = false;
-                    }
-                },
-                WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-                    io.mouse_down[0] = true;
-                },
-                WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-                    io.mouse_down[1] = true;
-                },
-                WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-                    io.mouse_down[2] = true;
-                },
-                WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                    let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
-                    io.mouse_down[btn] = true;
-                },
-                WM_LBUTTONUP => {
-                    io.mouse_down[0] = false;
-                },
-                WM_RBUTTONUP => {
-                    io.mouse_down[1] = false;
-                },
-                WM_MBUTTONUP => {
-                    io.mouse_down[2] = false;
-                },
-                WM_XBUTTONUP => {
-                    let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
-                    io.mouse_down[btn] = false;
-                },
-                WM_MOUSEWHEEL => {
-                    let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _); 
-                    let wheel_delta = WHEEL_DELTA as f32;
-                    io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
-                },
-                WM_MOUSEHWHEEL => {
-                    let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _); 
-                    let wheel_delta = WHEEL_DELTA as f32;
-                    io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
-                },
-                WM_CHAR => io.add_input_character(wparam as u8 as char),
-                WM_ACTIVATE => {
-                    if loword(wparam as _) == WA_INACTIVE as u16 {
-                        imgui_renderer.flags.focused = false;
-                    } else {
-                        imgui_renderer.flags.focused = true;
-                    }
-                    return LRESULT(1);
-                },
-                _ => {},
+            if let Some(lresult) = optional_result {
+                return lresult;
             }
 
-            let want_capture = io.want_capture_mouse || io.want_capture_keyboard;
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
@@ -386,40 +328,13 @@ impl ImguiRenderer {
 
         ctx.set_ini_filename(None);
 
-        {
-            let io = ctx.io_mut();
-            io.nav_active = true;
-            io.nav_visible = true;
-            io.key_map[imgui::Key::Tab as usize] = VK_TAB.0 as _;
-            io.key_map[imgui::Key::LeftArrow as usize] = VK_LEFT.0 as _;
-            io.key_map[imgui::Key::RightArrow as usize] = VK_RIGHT.0 as _;
-            io.key_map[imgui::Key::UpArrow as usize] = VK_UP.0 as _;
-            io.key_map[imgui::Key::DownArrow as usize] = VK_DOWN.0 as _;
-            io.key_map[imgui::Key::PageUp as usize] = VK_PRIOR.0 as _;
-            io.key_map[imgui::Key::PageDown as usize] = VK_NEXT.0 as _;
-            io.key_map[imgui::Key::Home as usize] = VK_HOME.0 as _;
-            io.key_map[imgui::Key::End as usize] = VK_END.0 as _;
-            io.key_map[imgui::Key::Insert as usize] = VK_INSERT.0 as _;
-            io.key_map[imgui::Key::Delete as usize] = VK_DELETE.0 as _;
-            io.key_map[imgui::Key::Backspace as usize] = VK_BACK.0 as _;
-            io.key_map[imgui::Key::Space as usize] = VK_SPACE.0 as _;
-            io.key_map[imgui::Key::KeyPadEnter as usize] = VK_RETURN.0 as _;
-            io.key_map[imgui::Key::Escape as usize] = VK_ESCAPE.0 as _;
-            io.key_map[imgui::Key::KeyPadEnter as usize] = VK_RETURN.0 as _;
-            io.key_map[imgui::Key::A as usize] = 'A' as u32;
-            io.key_map[imgui::Key::C as usize] = 'C' as u32;
-            io.key_map[imgui::Key::V as usize] = 'V' as u32;
-            io.key_map[imgui::Key::X as usize] = 'X' as u32;
-            io.key_map[imgui::Key::Y as usize] = 'Y' as u32;
-            io.key_map[imgui::Key::Z as usize] = 'Z' as u32;
-        }
 
         let flags = ImguiRenderLoopFlags { focused: true };
 
         IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
 
         debug!("Done init");
-        ImguiRenderer {
+        let mut renderer = ImguiRenderer {
             ctx,
             command_queue: None,
             command_list,
@@ -430,7 +345,11 @@ impl ImguiRenderer {
             renderer_heap,
             frame_contexts,
             swap_chain,
-        }
+        };
+
+        ImguiRendererCommon::init_io(&mut renderer);
+
+        renderer
     }
 
     fn store_swap_chain(&mut self, swap_chain: Option<IDXGISwapChain3>) -> IDXGISwapChain3 {
@@ -549,6 +468,24 @@ impl ImguiRenderer {
         let swap_chain = self.store_swap_chain(swap_chain);
         let desc = swap_chain.GetDesc().unwrap();
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
+    }
+}
+
+impl ImguiRendererCommon for ImguiRenderer {
+    fn io_mut(&mut self) -> &mut imgui::Io {
+        self.ctx.io_mut()
+    }
+
+    fn set_focus(&mut self, focus: bool) {
+        self.flags.focused = focus;
+    }
+
+    fn is_focus(&self) -> bool {
+        self.flags.focused
+    }
+
+    fn get_wnd_proc(&self) -> WndProcType {
+        self.wnd_proc
     }
 }
 

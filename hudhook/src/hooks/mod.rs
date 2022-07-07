@@ -7,6 +7,7 @@
 
 pub mod dx11;
 pub mod dx12;
+pub(crate) mod common;
 
 /// Generic trait for platform-specific hooks.
 pub trait Hooks {
