@@ -23,7 +23,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::ImguiRendererCommon;
-use crate::hooks::common::{WndProcType, imgui_wnd_proc_impl, WndProcResult};
+use crate::hooks::common::{WndProcType, imgui_wnd_proc_impl};
 
 use super::Hooks;
 
@@ -206,17 +206,14 @@ unsafe extern "system" fn imgui_wnd_proc(
     trace!("Entering WndProc {:x} {:x} {:x} {:x}", hwnd.0, umsg, wparam, lparam);
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(mut imgui_renderer)) => {
-            let WndProcResult(_want_capture, optional_result) = imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), &mut *imgui_renderer);
-
-            if let Some(lresult) = optional_result {
-                return lresult;
-            }
-
-            let wnd_proc = imgui_renderer.wnd_proc;
-            drop(imgui_renderer);
-
-            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+        Some(Some(imgui_renderer)) => {
+            imgui_wnd_proc_impl(
+                hwnd,
+                umsg,
+                WPARAM(wparam),
+                LPARAM(lparam),
+                imgui_renderer,
+            )
         },
         Some(None) => {
             debug!("Could not lock in WndProc");

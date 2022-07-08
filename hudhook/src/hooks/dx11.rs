@@ -25,7 +25,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::Hooks;
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererCommon, WndProcResult};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererCommon};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -96,23 +96,14 @@ unsafe extern "system" fn imgui_wnd_proc(
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(mut imgui_renderer)) => {
-            let WndProcResult(_want_capture, optional_result) = imgui_wnd_proc_impl(
+        Some(Some(imgui_renderer)) => {
+            imgui_wnd_proc_impl(
                 hwnd,
                 umsg,
                 WPARAM(wparam),
                 LPARAM(lparam),
-                &mut *imgui_renderer,
-            );
-
-            if let Some(lresult) = optional_result {
-                return lresult;
-            }
-
-            let wnd_proc = imgui_renderer.wnd_proc;
-            drop(imgui_renderer);
-
-            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+                imgui_renderer,
+            )
         },
         Some(None) => {
             debug!("Could not lock in WndProc");

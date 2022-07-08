@@ -1,4 +1,5 @@
 use imgui::*;
+use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
@@ -43,16 +44,14 @@ pub trait ImguiRendererCommon {
     }
 }
 
-pub struct WndProcResult(pub bool, pub Option<LRESULT>);
-
 #[must_use]
 pub(crate) fn imgui_wnd_proc_impl(
-    _hwnd: HWND,
+    hwnd: HWND,
     umsg: u32,
     WPARAM(wparam): WPARAM,
-    LPARAM(_lparam): LPARAM,
-    imgui_renderer: &mut Box<impl ImguiRendererCommon>,
-) -> WndProcResult {
+    LPARAM(lparam): LPARAM,
+    mut imgui_renderer: MutexGuard<Box<impl ImguiRendererCommon>>,
+) -> LRESULT {
     let mut io = imgui_renderer.io_mut();
     match umsg {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -108,10 +107,13 @@ pub(crate) fn imgui_wnd_proc_impl(
             } else {
                 imgui_renderer.set_focus(true);
             }
-            return WndProcResult(bool::default(), Some(LRESULT(1)));
+            return LRESULT(1);
         },
         _ => {},
     };
 
-    return WndProcResult(io.want_capture_mouse || io.want_capture_keyboard, None);
+    let wnd_proc = imgui_renderer.get_wnd_proc();
+    drop(imgui_renderer);
+
+    unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
 }
