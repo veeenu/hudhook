@@ -4,10 +4,10 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-pub type WndProcType =
+pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-pub trait ImguiRendererCommon {
+pub(crate) trait ImguiRendererCommon {
     fn io_mut(&mut self) -> &mut imgui::Io;
     fn set_focus(&mut self, focus: bool);
     fn is_focus(&self) -> bool;
