@@ -270,17 +270,12 @@ unsafe extern "system" fn imgui_wnd_proc(
                 _ => {},
             }
 
-            let want_capture = io.want_capture_mouse || io.want_capture_keyboard;
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
-            if want_capture {
-                trace!("Leaving WndProc via capturing");
-                LRESULT(1)
-            } else {
-                trace!("Leaving WndProc via CallWindowProcW");
-                CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            }
+            trace!("Leaving WndProc");
+
+            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         },
         Some(None) => {
             debug!("Could not lock in WndProc");
