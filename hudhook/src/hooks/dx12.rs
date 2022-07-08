@@ -207,7 +207,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(mut imgui_renderer)) => {
-            let WndProcResult(want_capture, optional_result) = imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), &mut *imgui_renderer);
+            let WndProcResult(_want_capture, optional_result) = imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), &mut *imgui_renderer);
 
             if let Some(lresult) = optional_result {
                 return lresult;
@@ -216,13 +216,7 @@ unsafe extern "system" fn imgui_wnd_proc(
             let wnd_proc = imgui_renderer.wnd_proc;
             drop(imgui_renderer);
 
-            if want_capture {
-                trace!("Leaving WndProc via capturing");
-                LRESULT(1)
-            } else {
-                trace!("Leaving WndProc via CallWindowProcW");
-                CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            }
+            CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
         },
         Some(None) => {
             debug!("Could not lock in WndProc");
