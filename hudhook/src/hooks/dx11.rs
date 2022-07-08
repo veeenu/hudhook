@@ -97,13 +97,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 ) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(imgui_renderer)) => {
-            imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-            )
+            imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), imgui_renderer)
         },
         Some(None) => {
             debug!("Could not lock in WndProc");
