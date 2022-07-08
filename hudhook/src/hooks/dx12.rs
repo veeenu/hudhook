@@ -23,7 +23,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::Hooks;
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererCommon, WndProcType};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererInterface, WndProcType};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -329,7 +329,7 @@ impl ImguiRenderer {
             swap_chain,
         };
 
-        ImguiRendererCommon::init_io(&mut renderer);
+        ImguiRendererInterface::setup_io(&mut renderer);
 
         renderer
     }
@@ -453,7 +453,7 @@ impl ImguiRenderer {
     }
 }
 
-impl ImguiRendererCommon for ImguiRenderer {
+impl ImguiRendererInterface for ImguiRenderer {
     fn io_mut(&mut self) -> &mut imgui::Io {
         self.ctx.io_mut()
     }

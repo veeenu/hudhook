@@ -25,7 +25,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::Hooks;
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererCommon};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererInterface};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -148,7 +148,7 @@ impl ImguiRenderer {
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { engine, render_loop, wnd_proc, flags, swap_chain };
 
-        ImguiRendererCommon::init_io(&mut renderer);
+        ImguiRendererInterface::setup_io(&mut renderer);
 
         renderer
     }
@@ -207,7 +207,7 @@ impl ImguiRenderer {
     }
 }
 
-impl crate::hooks::common::ImguiRendererCommon for ImguiRenderer {
+impl ImguiRendererInterface for ImguiRenderer {
     fn io_mut(&mut self) -> &mut imgui::Io {
         self.ctx().io_mut()
     }
@@ -220,7 +220,7 @@ impl crate::hooks::common::ImguiRendererCommon for ImguiRenderer {
         self.flags.focused
     }
 
-    fn get_wnd_proc(&self) -> crate::hooks::common::WndProcType {
+    fn get_wnd_proc(&self) -> WndProcType {
         self.wnd_proc
     }
 }

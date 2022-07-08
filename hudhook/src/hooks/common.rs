@@ -1,20 +1,22 @@
-use imgui::*;
+use imgui::Key;
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
+use super::{get_wheel_delta_wparam, hiword, loword};
+
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-pub(crate) trait ImguiRendererCommon {
+pub(crate) trait ImguiRendererInterface {
     fn io_mut(&mut self) -> &mut imgui::Io;
     fn set_focus(&mut self, focus: bool);
     fn is_focus(&self) -> bool;
     fn get_wnd_proc(&self) -> WndProcType;
 
-    fn init_io(&mut self) {
-        let mut io = ImguiRendererCommon::io_mut(self);
+    fn setup_io(&mut self) {
+        let mut io = ImguiRendererInterface::io_mut(self);
 
         io.nav_active = true;
         io.nav_visible = true;
@@ -50,7 +52,7 @@ pub(crate) fn imgui_wnd_proc_impl(
     umsg: u32,
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
-    mut imgui_renderer: MutexGuard<Box<impl ImguiRendererCommon>>,
+    mut imgui_renderer: MutexGuard<Box<impl ImguiRendererInterface>>,
 ) -> LRESULT {
     let mut io = imgui_renderer.io_mut();
     match umsg {
@@ -74,7 +76,7 @@ pub(crate) fn imgui_wnd_proc_impl(
             io.mouse_down[2] = true;
         },
         WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            let btn = if super::hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
             io.mouse_down[btn] = true;
         },
         WM_LBUTTONUP => {
@@ -87,22 +89,22 @@ pub(crate) fn imgui_wnd_proc_impl(
             io.mouse_down[2] = false;
         },
         WM_XBUTTONUP => {
-            let btn = if super::hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
             io.mouse_down[btn] = false;
         },
         WM_MOUSEWHEEL => {
-            let wheel_delta_wparam = super::get_wheel_delta_wparam(wparam as _);
+            let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
             io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_MOUSEHWHEEL => {
-            let wheel_delta_wparam = super::get_wheel_delta_wparam(wparam as _);
+            let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
         WM_ACTIVATE => {
-            if super::loword(wparam as _) == WA_INACTIVE as u16 {
+            if loword(wparam as _) == WA_INACTIVE as u16 {
                 imgui_renderer.set_focus(false);
             } else {
                 imgui_renderer.set_focus(true);
