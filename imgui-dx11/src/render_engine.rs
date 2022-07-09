@@ -1,5 +1,5 @@
 use imgui::internal::RawWrapper;
-use imgui::{DrawCmd, DrawVert};
+use imgui::{Context, DrawCmd, DrawData, DrawVert};
 use log::trace;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -14,7 +14,6 @@ use crate::state_backup::StateBackup;
 use crate::texture::Texture;
 
 pub struct RenderEngine {
-    ctx: imgui::Context,
     dasc: DeviceAndSwapChain,
     shader_program: ShaderProgram,
     buffers: Buffers,
@@ -22,30 +21,25 @@ pub struct RenderEngine {
 }
 
 impl RenderEngine {
-    pub fn new(hwnd: HWND) -> Self {
-        let mut ctx = imgui::Context::create();
+    pub fn new(hwnd: HWND, ctx: &mut Context) -> Self {
         let dasc = DeviceAndSwapChain::new(hwnd);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
-        RenderEngine { ctx, dasc, shader_program, buffers, texture }
+        RenderEngine { dasc, shader_program, buffers, texture }
     }
 
     pub fn new_with_ptrs(
         dev: ID3D11Device,
         dev_ctx: ID3D11DeviceContext,
         swap_chain: IDXGISwapChain,
+        ctx: &mut Context,
     ) -> Self {
-        let mut ctx = imgui::Context::create();
         let dasc = DeviceAndSwapChain::new_with_ptrs(dev, dev_ctx, swap_chain);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
-        RenderEngine { ctx, dasc, shader_program, buffers, texture }
-    }
-
-    pub fn ctx(&mut self) -> &mut imgui::Context {
-        &mut self.ctx
+        RenderEngine { dasc, shader_program, buffers, texture }
     }
 
     pub fn dev(&self) -> ID3D11Device {
@@ -60,26 +54,13 @@ impl RenderEngine {
         self.dasc.swap_chain()
     }
 
-    pub fn render<F: FnOnce(&mut imgui::Ui)>(&mut self, f: F) -> Result<(), String> {
+    pub fn get_window_rect(&self) -> Option<RECT> {
+        self.dasc.get_window_rect()
+    }
+
+    pub fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<(), String> {
         trace!("Rendering started");
         let state_backup = StateBackup::backup(self.dasc.dev_ctx());
-
-        if let Some(mut rect) = self.dasc.get_window_rect() {
-            self.ctx.io_mut().display_size =
-                [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-            rect.right -= rect.left;
-            rect.bottom -= rect.top;
-            rect.top = 0;
-            rect.left = 0;
-            self.dasc.set_viewport(rect);
-            self.dasc.set_render_target();
-        }
-        trace!("Set shader program state");
-        unsafe { self.shader_program.set_state(&self.dasc) };
-
-        let mut ui = self.ctx.frame();
-        f(&mut ui);
-        let draw_data = ui.render();
 
         let [x, y] = draw_data.display_pos;
         let [width, height] = draw_data.display_size;
@@ -87,6 +68,11 @@ impl RenderEngine {
         if width <= 0. && height <= 0. {
             return Err(format!("Insufficient display size {} x {}", width, height));
         }
+
+        let rect = RECT { left: 0, right: width as i32, top: 0, bottom: height as i32 };
+        self.dasc.set_viewport(rect);
+        self.dasc.set_render_target();
+        unsafe { self.shader_program.set_state(&self.dasc) };
 
         unsafe {
             let dev_ctx = self.dasc.dev_ctx();

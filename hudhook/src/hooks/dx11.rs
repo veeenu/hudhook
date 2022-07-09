@@ -2,20 +2,21 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
 use detour::RawDetour;
-use imgui::Ui;
+use imgui::{Context, Ui};
 use imgui_dx11::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
     D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
 };
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
@@ -24,11 +25,20 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use super::Hooks;
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererInterface};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
+
+type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
+    This: IDXGISwapChain,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT;
 
 type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -59,7 +69,8 @@ pub trait ImguiRenderLoop {
 // Global singletons
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static TRAMPOLINE: OnceCell<DXGISwapChainPresentType> = OnceCell::new();
+static TRAMPOLINE: OnceCell<(DXGISwapChainPresentType, DXGISwapChainResizeBuffersType)> =
+    OnceCell::new();
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Hook entry points
@@ -73,7 +84,8 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
-    let trampoline = TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
+    let (trampoline, _) =
+        TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
 
     let mut renderer = IMGUI_RENDERER
         .get_or_init(|| Mutex::new(Box::new(ImguiRenderer::new(p_this.clone()))))
@@ -87,6 +99,25 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     trace!("Trampoline returned {:?}", r);
 
     r
+}
+
+unsafe extern "system" fn imgui_resize_buffers_impl(
+    swap_chain: IDXGISwapChain,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT {
+    trace!("IDXGISwapChain::ResizeBuffers invoked");
+    let (_, trampoline) =
+        TRAMPOLINE.get().expect("IDXGISwapChain::ResizeBuffer trampoline uninitialized");
+
+    if let Some(mutex) = IMGUI_RENDERER.take() {
+        mutex.lock().cleanup(Some(swap_chain.clone()));
+    };
+
+    trampoline(swap_chain, buffer_count, width, height, new_format, flags)
 }
 
 unsafe extern "system" fn imgui_wnd_proc(
@@ -115,8 +146,8 @@ unsafe extern "system" fn imgui_wnd_proc(
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct ImguiRenderer {
+    ctx: Context,
     engine: RenderEngine,
-    render_loop: Box<dyn ImguiRenderLoop>,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     swap_chain: IDXGISwapChain,
@@ -124,6 +155,13 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain) -> Self {
+        trace!("Initializing imgui context");
+
+        let mut ctx = Context::create();
+        ctx.set_ini_filename(None);
+
+        let flags = ImguiRenderLoopFlags { focused: true };
+
         trace!("Initializing renderer");
 
         let dev: ID3D11Device = swap_chain.GetDevice().expect("GetDevice");
@@ -132,23 +170,17 @@ impl ImguiRenderer {
         let dev_ctx = dev_ctx.unwrap();
         let sd = swap_chain.GetDesc().expect("GetDesc");
 
-        let mut engine = RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone());
-        let render_loop = IMGUI_RENDER_LOOP.take().unwrap();
+        let engine = RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
 
-        trace!("Initializing imgui context");
-        let imgui_ctx = engine.ctx();
-        imgui_ctx.set_ini_filename(None);
-        let flags = ImguiRenderLoopFlags { focused: true };
-
         trace!("Renderer initialized");
-        let mut renderer = ImguiRenderer { engine, render_loop, wnd_proc, flags, swap_chain };
+        let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
 
-        ImguiRendererInterface::setup_io(&mut renderer);
+        ImguiWindowsEventHandler::setup_io(&mut renderer);
 
         renderer
     }
@@ -157,12 +189,11 @@ impl ImguiRenderer {
         trace!("Present impl: Rendering");
 
         let swap_chain = self.store_swap_chain(swap_chain);
-        let ctx = self.ctx();
         let sd = swap_chain.GetDesc().expect("GetDesc");
-        let mut rect: RECT = Default::default();
 
-        if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
-            let mut io = ctx.io_mut();
+        // if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
+        if let Some(rect) = self.engine.get_window_rect() {
+            let mut io = self.ctx_mut().io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
@@ -183,7 +214,14 @@ impl ImguiRenderer {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
 
-        if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui, &self.flags)) {
+        let ctx = &mut self.ctx;
+        let mut ui = ctx.frame();
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
+        let draw_data = ui.render();
+
+        if let Err(e) = self.engine.render_draw_data(draw_data) {
+            // if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui,
+            // &self.flags)) {
             error!("ImGui renderer error: {:?}", e);
         }
     }
@@ -202,25 +240,33 @@ impl ImguiRenderer {
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
     }
 
-    fn ctx(&mut self) -> &mut imgui_dx11::imgui::Context {
-        self.engine.ctx()
+    fn ctx(&self) -> &imgui_dx11::imgui::Context {
+        &self.ctx
+    }
+
+    fn ctx_mut(&mut self) -> &mut imgui_dx11::imgui::Context {
+        &mut self.ctx
     }
 }
 
-impl ImguiRendererInterface for ImguiRenderer {
+impl ImguiWindowsEventHandler for ImguiRenderer {
+    fn io(&self) -> &imgui::Io {
+        self.ctx().io()
+    }
+
     fn io_mut(&mut self) -> &mut imgui::Io {
-        self.ctx().io_mut()
+        self.ctx_mut().io_mut()
     }
 
-    fn get_focus_mut(&mut self) -> &mut bool {
-        &mut self.flags.focused
-    }
-
-    fn get_focus(&self) -> bool {
+    fn focus(&self) -> bool {
         self.flags.focused
     }
 
-    fn get_wnd_proc(&self) -> WndProcType {
+    fn focus_mut(&mut self) -> &mut bool {
+        &mut self.flags.focused
+    }
+
+    fn wnd_proc(&self) -> WndProcType {
         self.wnd_proc
     }
 }
@@ -243,7 +289,7 @@ pub struct ImguiRenderLoopFlags {
 ///
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
-fn get_present_addr() -> DXGISwapChainPresentType {
+fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
     trace!("Getting IDXGISwapChain::Present addr...");
 
     unsafe extern "system" fn def_window_proc(
@@ -322,17 +368,21 @@ fn get_present_addr() -> DXGISwapChainPresentType {
         .expect("D3D11CreateDeviceAndSwapChain failed")
     };
 
-    let ret = unsafe { p_swap_chain.unwrap().vtable().Present };
+    let swap_chain = p_swap_chain.unwrap();
+
+    let present_ptr = unsafe { swap_chain.vtable().Present };
+    let resize_buffers_ptr = unsafe { swap_chain.vtable().ResizeBuffers };
 
     unsafe {
         DestroyWindow(hwnd);
     }
 
-    unsafe { std::mem::transmute(ret) }
+    unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
 }
 
 pub struct ImguiDX11Hooks {
     hook_present: RawDetour,
+    hook_resize_buffers: RawDetour,
 }
 
 impl ImguiDX11Hooks {
@@ -346,25 +396,35 @@ impl ImguiDX11Hooks {
     where
         T: ImguiRenderLoop + Send + Sync,
     {
-        let dxgi_swap_chain_present_addr = get_present_addr();
-        debug!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *mut c_void);
+        let (present_addr, resize_buffers_addr) = get_present_addr();
+        debug!("IDXGISwapChain::Present = {:p}", present_addr as *mut c_void);
+        debug!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *mut c_void);
 
         let hook_present = RawDetour::new(
-            dxgi_swap_chain_present_addr as *const _,
+            present_addr as *const _,
             imgui_dxgi_swap_chain_present_impl as *const _,
         )
         .expect("Create detour");
 
-        IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+        let hook_resize_buffers =
+            RawDetour::new(resize_buffers_addr as *const _, imgui_resize_buffers_impl as *const _)
+                .expect("Create detour");
 
-        Self { hook_present }
+        IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
+        TRAMPOLINE.get_or_init(|| {
+            (
+                std::mem::transmute(hook_present.trampoline()),
+                std::mem::transmute(hook_resize_buffers.trampoline()),
+            )
+        });
+
+        Self { hook_present, hook_resize_buffers }
     }
 }
 
 impl Hooks for ImguiDX11Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_present] {
+        for hook in [&self.hook_present, &self.hook_resize_buffers] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -373,7 +433,7 @@ impl Hooks for ImguiDX11Hooks {
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        for hook in [&self.hook_present] {
+        for hook in [&self.hook_present, &self.hook_resize_buffers] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }

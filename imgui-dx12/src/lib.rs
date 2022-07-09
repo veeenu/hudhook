@@ -4,7 +4,7 @@ use std::ptr::{null, null_mut};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
-use imgui::{BackendFlags, DrawCmd, DrawIdx, DrawVert, TextureId};
+use imgui::{BackendFlags, DrawCmd, DrawIdx, DrawVert, TextureId, DrawData};
 use log::*;
 use memoffset::offset_of;
 use windows::core::PCSTR;
@@ -246,7 +246,7 @@ impl RenderEngine {
 
     pub fn render_draw_data(
         &mut self,
-        draw_data: &imgui::DrawData,
+        draw_data: &DrawData,
         cmd_list: &ID3D12GraphicsCommandList,
         frame_resources_idx: usize,
     ) -> Result<(), windows::core::Error> {

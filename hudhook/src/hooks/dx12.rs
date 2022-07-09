@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use detour::RawDetour;
 use imgui::{Context, Ui};
+use imgui_dx12::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -23,7 +24,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::Hooks;
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiRendererInterface, WndProcType};
+use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -143,27 +144,6 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     trampoline(cmd_queue, num_command_lists, command_lists);
 }
 
-unsafe extern "system" fn imgui_resize_buffers_impl(
-    swap_chain: IDXGISwapChain3,
-    buffer_count: u32,
-    width: u32,
-    height: u32,
-    new_format: DXGI_FORMAT,
-    flags: u32,
-) -> HRESULT {
-    trace!("IDXGISwapChain3::ResizeBuffers invoked");
-    let (_, _, trampoline) =
-        TRAMPOLINE.get().expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
-
-    if let Some(mutex) = IMGUI_RENDERER.take() {
-        mutex.lock().cleanup(Some(swap_chain.clone()));
-    };
-
-    COMMAND_QUEUE_GUARD.take();
-
-    trampoline(swap_chain, buffer_count, width, height, new_format, flags)
-}
-
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     swap_chain: IDXGISwapChain3,
     sync_interval: u32,
@@ -195,6 +175,27 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     r
 }
 
+unsafe extern "system" fn imgui_resize_buffers_impl(
+    swap_chain: IDXGISwapChain3,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT {
+    trace!("IDXGISwapChain3::ResizeBuffers invoked");
+    let (_, _, trampoline) =
+        TRAMPOLINE.get().expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
+
+    if let Some(mutex) = IMGUI_RENDERER.take() {
+        mutex.lock().cleanup(Some(swap_chain.clone()));
+    };
+
+    COMMAND_QUEUE_GUARD.take();
+
+    trampoline(swap_chain, buffer_count, width, height, new_format, flags)
+}
+
 unsafe extern "system" fn imgui_wnd_proc(
     hwnd: HWND,
     umsg: u32,
@@ -223,8 +224,8 @@ unsafe extern "system" fn imgui_wnd_proc(
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct ImguiRenderer {
-    ctx: imgui_dx12::imgui::Context,
-    engine: imgui_dx12::RenderEngine,
+    ctx: Context,
+    engine: RenderEngine,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     frame_contexts: Vec<FrameContext>,
@@ -291,10 +292,10 @@ impl ImguiRenderer {
             })
             .collect();
 
-        let mut ctx = imgui::Context::create();
+        let mut ctx = Context::create();
         let cpu_desc = renderer_heap.GetCPUDescriptorHandleForHeapStart();
         let gpu_desc = renderer_heap.GetGPUDescriptorHandleForHeapStart();
-        let engine = imgui_dx12::RenderEngine::new(
+        let engine = RenderEngine::new(
             &mut ctx,
             dev,
             desc.BufferCount,
@@ -329,7 +330,7 @@ impl ImguiRenderer {
             swap_chain,
         };
 
-        ImguiRendererInterface::setup_io(&mut renderer);
+        ImguiWindowsEventHandler::setup_io(&mut renderer);
 
         renderer
     }
@@ -453,20 +454,24 @@ impl ImguiRenderer {
     }
 }
 
-impl ImguiRendererInterface for ImguiRenderer {
+impl ImguiWindowsEventHandler for ImguiRenderer {
+    fn io(&self) -> &imgui::Io {
+        self.ctx.io()
+    }
+
     fn io_mut(&mut self) -> &mut imgui::Io {
         self.ctx.io_mut()
     }
 
-    fn get_focus_mut(&mut self) -> &mut bool {
-        &mut self.flags.focused
-    }
-
-    fn get_focus(&self) -> bool {
+    fn focus(&self) -> bool {
         self.flags.focused
     }
 
-    fn get_wnd_proc(&self) -> WndProcType {
+    fn focus_mut(&mut self) -> &mut bool {
+        &mut self.flags.focused
+    }
+
+    fn wnd_proc(&self) -> WndProcType {
         self.wnd_proc
     }
 }
