@@ -9,14 +9,17 @@ use super::{get_wheel_delta_wparam, hiword, loword};
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-pub(crate) trait ImguiRendererInterface {
+pub(crate) trait ImguiWindowsEventHandler {
+    fn io(&self) -> &imgui::Io;
     fn io_mut(&mut self) -> &mut imgui::Io;
-    fn get_focus_mut(&mut self) -> &mut bool;
-    fn get_focus(&self) -> bool;
-    fn get_wnd_proc(&self) -> WndProcType;
+
+    fn focus(&self) -> bool;
+    fn focus_mut(&mut self) -> &mut bool;
+
+    fn wnd_proc(&self) -> WndProcType;
 
     fn setup_io(&mut self) {
-        let mut io = ImguiRendererInterface::io_mut(self);
+        let mut io = ImguiWindowsEventHandler::io_mut(self);
 
         io.nav_active = true;
         io.nav_visible = true;
@@ -52,7 +55,7 @@ pub(crate) fn imgui_wnd_proc_impl(
     umsg: u32,
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
-    mut imgui_renderer: MutexGuard<Box<impl ImguiRendererInterface>>,
+    mut imgui_renderer: MutexGuard<Box<impl ImguiWindowsEventHandler>>,
 ) -> LRESULT {
     let mut io = imgui_renderer.io_mut();
     match umsg {
@@ -104,17 +107,13 @@ pub(crate) fn imgui_wnd_proc_impl(
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
         WM_ACTIVATE => {
-            if loword(wparam as _) == WA_INACTIVE as u16 {
-                *imgui_renderer.get_focus_mut() = false;
-            } else {
-                *imgui_renderer.get_focus_mut() = true;
-            }
+            *imgui_renderer.focus_mut() = loword(wparam as _) != WA_INACTIVE as u16;
             return LRESULT(1);
         },
         _ => {},
     };
 
-    let wnd_proc = imgui_renderer.get_wnd_proc();
+    let wnd_proc = imgui_renderer.wnd_proc();
     drop(imgui_renderer);
 
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
