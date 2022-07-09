@@ -11,8 +11,8 @@ pub(crate) type WndProcType =
 
 pub(crate) trait ImguiRendererInterface {
     fn io_mut(&mut self) -> &mut imgui::Io;
-    fn set_focus(&mut self, focus: bool);
-    fn is_focus(&self) -> bool;
+    fn get_focus_mut(&mut self) -> &mut bool;
+    fn get_focus(&self) -> bool;
     fn get_wnd_proc(&self) -> WndProcType;
 
     fn setup_io(&mut self) {
@@ -105,9 +105,9 @@ pub(crate) fn imgui_wnd_proc_impl(
         WM_CHAR => io.add_input_character(wparam as u8 as char),
         WM_ACTIVATE => {
             if loword(wparam as _) == WA_INACTIVE as u16 {
-                imgui_renderer.set_focus(false);
+                *imgui_renderer.get_focus_mut() = false;
             } else {
-                imgui_renderer.set_focus(true);
+                *imgui_renderer.get_focus_mut() = true;
             }
             return LRESULT(1);
         },

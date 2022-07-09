@@ -458,11 +458,11 @@ impl ImguiRendererInterface for ImguiRenderer {
         self.ctx.io_mut()
     }
 
-    fn set_focus(&mut self, focus: bool) {
-        self.flags.focused = focus;
+    fn get_focus_mut(&mut self) -> &mut bool {
+        &mut self.flags.focused
     }
 
-    fn is_focus(&self) -> bool {
+    fn get_focus(&self) -> bool {
         self.flags.focused
     }
 
