@@ -5,6 +5,7 @@
 //!
 //! [`imgui`]: https://docs.rs/imgui/0.8.0/imgui/
 
+pub(crate) mod common;
 pub mod dx11;
 pub mod dx12;
 
