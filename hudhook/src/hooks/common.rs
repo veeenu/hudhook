@@ -129,16 +129,27 @@ where
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
 }
 
-pub enum HookBackend {
-    DX11,
-    DX12
-}
-
 /// Holds information useful to the render loop which can't be retrieved from
 /// `imgui::Ui`.
 pub struct ImguiRenderLoopFlags {
     /// Whether the hooked program's window is currently focused.
     pub focused: bool,
+}
+
+pub trait HookableBackend: Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self;
+}
+
+impl HookableBackend for ImguiDX11Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiDX11Hooks::new(t) }
+    }
+}
+
+impl HookableBackend for ImguiDX12Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiDX12Hooks::new(t) }
+    }
 }
 
 /// Implement your `imgui` rendering logic via this trait.
@@ -153,12 +164,10 @@ pub trait ImguiRenderLoop {
     // parent window.
     fn should_block_messages(&self) -> bool { false }
 
-    fn into_hook(self, backend: HookBackend) -> Box<dyn Hooks>
+    fn into_hook<T>(self) -> Box<T>
     where
+        T: HookableBackend,
         Self: Send + Sync + Sized + 'static {
-            match backend {
-                HookBackend::DX11 => Box::new(unsafe { ImguiDX11Hooks::new(self) }),
-                HookBackend::DX12 => Box::new(unsafe { ImguiDX12Hooks::new(self) }),
-            }
+                Box::<T>::new(HookableBackend::from_struct(self))
     }
 }

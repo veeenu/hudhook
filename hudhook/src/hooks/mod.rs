@@ -9,6 +9,8 @@ pub(crate) mod common;
 pub mod dx11;
 pub mod dx12;
 
+pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
+
 /// Generic trait for platform-specific hooks.
 pub trait Hooks {
     /// Find the hook target functions addresses, initialize the data, create
