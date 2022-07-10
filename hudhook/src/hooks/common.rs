@@ -1,10 +1,12 @@
-use imgui::Key;
+use imgui::{Key, Context, Ui};
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-use super::{get_wheel_delta_wparam, hiword, loword};
+use super::dx11::ImguiDX11Hooks;
+use super::dx12::ImguiDX12Hooks;
+use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -56,6 +58,7 @@ pub(crate) fn imgui_wnd_proc_impl(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
     mut imgui_renderer: MutexGuard<Box<impl ImguiWindowsEventHandler>>,
+    imgui_render_loop: &Box<dyn ImguiRenderLoop + Send + Sync>
 ) -> LRESULT {
     let mut io = imgui_renderer.io_mut();
     match umsg {
@@ -116,5 +119,43 @@ pub(crate) fn imgui_wnd_proc_impl(
     let wnd_proc = imgui_renderer.wnd_proc();
     drop(imgui_renderer);
 
+    if imgui_render_loop.should_block_messages() {
+        return LRESULT(1);
+    }
+
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
+}
+
+pub enum HookBackend {
+    DX11,
+    DX12
+}
+
+/// Holds information useful to the render loop which can't be retrieved from
+/// `imgui::Ui`.
+pub struct ImguiRenderLoopFlags {
+    /// Whether the hooked program's window is currently focused.
+    pub focused: bool,
+}
+
+/// Implement your `imgui` rendering logic via this trait.
+pub trait ImguiRenderLoop {
+    /// Called once at the first occurrence of the hook. Implement this to
+    /// initialize your data.
+    fn initialize(&mut self, _ctx: &mut Context) {}
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
+
+    // If this function returns true, the WndProc function will not call the procedure of the
+    // parent window.
+    fn should_block_messages(&self) -> bool { false }
+
+    fn into_hook(self, backend: HookBackend) -> Box<dyn Hooks>
+    where
+        Self: Send + Sync + Sized + 'static {
+            match backend {
+                HookBackend::DX11 => Box::new(unsafe { ImguiDX11Hooks::new(self) }),
+                HookBackend::DX12 => Box::new(unsafe { ImguiDX12Hooks::new(self) }),
+            }
+    }
 }

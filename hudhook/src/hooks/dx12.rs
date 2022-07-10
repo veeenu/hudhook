@@ -5,7 +5,7 @@ use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use detour::RawDetour;
-use imgui::{Context, Ui};
+use imgui::Context;
 use imgui_dx12::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
@@ -24,7 +24,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::Hooks;
-use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
+use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType, ImguiRenderLoop, ImguiRenderLoopFlags};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -51,22 +51,6 @@ type ResizeBuffersType = unsafe extern "system" fn(
 trait Renderer {
     /// Invoked once per frame.
     fn render(&mut self);
-}
-
-/// Implement your `imgui` rendering logic via this trait.
-pub trait ImguiRenderLoop {
-    /// Called once at the first occurrence of the hook. Implement this to
-    /// initialize your data.
-    fn initialize(&mut self, _ctx: &mut Context) {}
-    /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
-
-    fn into_hook(self) -> Box<dyn Hooks>
-    where
-        Self: Send + Sync + Sized + 'static,
-    {
-        Box::new(unsafe { ImguiDX12Hooks::new(self) })
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -205,9 +189,13 @@ unsafe extern "system" fn imgui_wnd_proc(
     trace!("Entering WndProc {:x} {:x} {:x} {:x}", hwnd.0, umsg, wparam, lparam);
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(imgui_renderer)) => {
-            imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), imgui_renderer)
-        },
+        Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
+                hwnd,
+                umsg,
+                WPARAM(wparam),
+                LPARAM(lparam),
+                imgui_renderer,
+                IMGUI_RENDER_LOOP.get().unwrap()),
         Some(None) => {
             debug!("Could not lock in WndProc");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
@@ -479,12 +467,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
-/// Holds information useful to the render loop which can't be retrieved from
-/// `imgui::Ui`.
-pub struct ImguiRenderLoopFlags {
-    /// Whether the hooked program's window is currently focused.
-    pub focused: bool,
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function address finders
