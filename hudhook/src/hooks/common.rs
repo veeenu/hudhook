@@ -52,14 +52,17 @@ pub(crate) trait ImguiWindowsEventHandler {
 }
 
 #[must_use]
-pub(crate) fn imgui_wnd_proc_impl(
+pub(crate) fn imgui_wnd_proc_impl<T>(
     hwnd: HWND,
     umsg: u32,
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
     mut imgui_renderer: MutexGuard<Box<impl ImguiWindowsEventHandler>>,
-    imgui_render_loop: &Box<dyn ImguiRenderLoop + Send + Sync>
-) -> LRESULT {
+    imgui_render_loop: T,
+) -> LRESULT
+where
+    T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
+{
     let mut io = imgui_renderer.io_mut();
     match umsg {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -119,7 +122,7 @@ pub(crate) fn imgui_wnd_proc_impl(
     let wnd_proc = imgui_renderer.wnd_proc();
     drop(imgui_renderer);
 
-    if imgui_render_loop.should_block_messages() {
+    if imgui_render_loop.as_ref().should_block_messages() {
         return LRESULT(1);
     }
 
