@@ -1,4 +1,4 @@
-use imgui::{Key, Context, Ui};
+use imgui::{Context, Key, Ui, Io};
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -120,9 +120,11 @@ where
     };
 
     let wnd_proc = imgui_renderer.wnd_proc();
+    let should_block_messages =
+        imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
     drop(imgui_renderer);
 
-    if imgui_render_loop.as_ref().should_block_messages() {
+    if should_block_messages {
         return LRESULT(1);
     }
 
@@ -160,14 +162,17 @@ pub trait ImguiRenderLoop {
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
 
-    // If this function returns true, the WndProc function will not call the procedure of the
-    // parent window.
-    fn should_block_messages(&self) -> bool { false }
+    /// If this function returns true, the WndProc function will not call the
+    /// procedure of the parent window.
+    fn should_block_messages(&self, _io: &Io) -> bool {
+        false
+    }
 
     fn into_hook<T>(self) -> Box<T>
     where
         T: HookableBackend,
-        Self: Send + Sync + Sized + 'static {
-                Box::<T>::new(HookableBackend::from_struct(self))
+        Self: Send + Sync + Sized + 'static,
+    {
+        Box::<T>::new(HookableBackend::from_struct(self))
     }
 }
