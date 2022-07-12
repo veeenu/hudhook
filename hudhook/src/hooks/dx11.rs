@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::ptr::{null, null_mut};
 
 use detour::RawDetour;
-use imgui::{Context, Ui};
+use imgui::Context;
 use imgui_dx11::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
@@ -25,7 +25,7 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
+use super::common::{imgui_wnd_proc_impl, ImguiRenderLoop, ImguiWindowsEventHandler, ImguiRenderLoopFlags};
 use super::Hooks;
 
 type DXGISwapChainPresentType =
@@ -50,19 +50,6 @@ type WndProcType =
 trait Renderer {
     /// Invoked once per frame.
     fn render(&mut self);
-}
-
-/// Implement your `imgui` rendering logic via this trait.
-pub trait ImguiRenderLoop {
-    /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
-
-    fn into_hook(self) -> Box<dyn Hooks>
-    where
-        Self: Send + Sync + Sized + 'static,
-    {
-        Box::new(unsafe { ImguiDX11Hooks::new(self) })
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -127,9 +114,13 @@ unsafe extern "system" fn imgui_wnd_proc(
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(imgui_renderer)) => {
-            imgui_wnd_proc_impl(hwnd, umsg, WPARAM(wparam), LPARAM(lparam), imgui_renderer)
-        },
+        Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
+                hwnd,
+                umsg,
+                WPARAM(wparam),
+                LPARAM(lparam),
+                imgui_renderer,
+                IMGUI_RENDER_LOOP.get().unwrap()),
         Some(None) => {
             debug!("Could not lock in WndProc");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
@@ -274,13 +265,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
-/// Holds information useful to the render loop which can't be retrieved from
-/// `imgui::Ui`.
-pub struct ImguiRenderLoopFlags {
-    /// Whether the hooked program's window is currently focused.
-    pub focused: bool,
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function address finders
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -394,7 +378,7 @@ impl ImguiDX11Hooks {
     /// yolo
     pub unsafe fn new<T: 'static>(t: T) -> Self
     where
-        T: ImguiRenderLoop + Send + Sync,
+        T: Send + Sync + ImguiRenderLoop,
     {
         let (present_addr, resize_buffers_addr) = get_present_addr();
         debug!("IDXGISwapChain::Present = {:p}", present_addr as *mut c_void);

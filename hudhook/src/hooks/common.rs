@@ -1,10 +1,12 @@
-use imgui::Key;
+use imgui::{Key, Context, Ui};
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-use super::{get_wheel_delta_wparam, hiword, loword};
+use super::dx11::ImguiDX11Hooks;
+use super::dx12::ImguiDX12Hooks;
+use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -50,13 +52,17 @@ pub(crate) trait ImguiWindowsEventHandler {
 }
 
 #[must_use]
-pub(crate) fn imgui_wnd_proc_impl(
+pub(crate) fn imgui_wnd_proc_impl<T>(
     hwnd: HWND,
     umsg: u32,
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
     mut imgui_renderer: MutexGuard<Box<impl ImguiWindowsEventHandler>>,
-) -> LRESULT {
+    imgui_render_loop: T,
+) -> LRESULT
+where
+    T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
+{
     let mut io = imgui_renderer.io_mut();
     match umsg {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -116,5 +122,52 @@ pub(crate) fn imgui_wnd_proc_impl(
     let wnd_proc = imgui_renderer.wnd_proc();
     drop(imgui_renderer);
 
+    if imgui_render_loop.as_ref().should_block_messages() {
+        return LRESULT(1);
+    }
+
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
+}
+
+/// Holds information useful to the render loop which can't be retrieved from
+/// `imgui::Ui`.
+pub struct ImguiRenderLoopFlags {
+    /// Whether the hooked program's window is currently focused.
+    pub focused: bool,
+}
+
+pub trait HookableBackend: Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self;
+}
+
+impl HookableBackend for ImguiDX11Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiDX11Hooks::new(t) }
+    }
+}
+
+impl HookableBackend for ImguiDX12Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiDX12Hooks::new(t) }
+    }
+}
+
+/// Implement your `imgui` rendering logic via this trait.
+pub trait ImguiRenderLoop {
+    /// Called once at the first occurrence of the hook. Implement this to
+    /// initialize your data.
+    fn initialize(&mut self, _ctx: &mut Context) {}
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
+
+    // If this function returns true, the WndProc function will not call the procedure of the
+    // parent window.
+    fn should_block_messages(&self) -> bool { false }
+
+    fn into_hook<T>(self) -> Box<T>
+    where
+        T: HookableBackend,
+        Self: Send + Sync + Sized + 'static {
+                Box::<T>::new(HookableBackend::from_struct(self))
+    }
 }
