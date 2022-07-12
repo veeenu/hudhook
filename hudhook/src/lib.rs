@@ -129,7 +129,6 @@
 //!     inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
 //! }
 //! ```
-//!
 // //! ### Memory manipulation
 // //!
 // //! In an initialization step:

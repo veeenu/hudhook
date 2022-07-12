@@ -25,7 +25,9 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{imgui_wnd_proc_impl, ImguiRenderLoop, ImguiWindowsEventHandler, ImguiRenderLoopFlags};
+use super::common::{
+    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+};
 use super::Hooks;
 
 type DXGISwapChainPresentType =
@@ -115,12 +117,13 @@ unsafe extern "system" fn imgui_wnd_proc(
 ) -> LRESULT {
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-                IMGUI_RENDER_LOOP.get().unwrap()),
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            imgui_renderer,
+            IMGUI_RENDER_LOOP.get().unwrap(),
+        ),
         Some(None) => {
             debug!("Could not lock in WndProc");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))

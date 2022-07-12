@@ -23,8 +23,11 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use super::common::{
+    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+    WndProcType,
+};
 use super::Hooks;
-use super::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType, ImguiRenderLoop, ImguiRenderLoopFlags};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -190,12 +193,13 @@ unsafe extern "system" fn imgui_wnd_proc(
 
     match IMGUI_RENDERER.get().map(Mutex::try_lock) {
         Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-                IMGUI_RENDER_LOOP.get().unwrap()),
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            imgui_renderer,
+            IMGUI_RENDER_LOOP.get().unwrap(),
+        ),
         Some(None) => {
             debug!("Could not lock in WndProc");
             DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
@@ -466,7 +470,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
 
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function address finders

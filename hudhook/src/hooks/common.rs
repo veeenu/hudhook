@@ -1,4 +1,4 @@
-use imgui::{Context, Key, Ui, Io};
+use imgui::{Context, Io, Key, Ui};
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;

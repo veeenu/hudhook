@@ -4,7 +4,7 @@ use std::ptr::{null, null_mut};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
-use imgui::{BackendFlags, DrawCmd, DrawIdx, DrawVert, TextureId, DrawData};
+use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use log::*;
 use memoffset::offset_of;
 use windows::core::PCSTR;
