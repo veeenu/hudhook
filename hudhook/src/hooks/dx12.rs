@@ -132,6 +132,12 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
         .get_or_try_init(|| {
             let desc = cmd_queue.GetDesc();
             trace!("CommandQueue description: {:?}", desc);
+
+            if desc.Type.0 != 0 {
+                trace!("Skipping CommandQueue");
+                return Err(())
+            }
+
             if let Some(renderer) = IMGUI_RENDERER.get() {
                 trace!("cmd_queue ptr was set");
                 renderer.lock().command_queue = Some(cmd_queue.clone());
