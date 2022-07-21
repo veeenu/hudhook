@@ -20,7 +20,6 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
-
 #![cfg(windows)]
 #![deny(missing_docs)]
 //! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/*/imgui/) rust bindings.
@@ -33,10 +32,22 @@ use imgui::{
     internal::RawWrapper, BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx,
     TextureId, Textures,
 };
-use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, D3DRECT};
+use windows::Win32::Graphics::Direct3D9::{
+    IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9,
+    IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA,
+    D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32,
+    D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRECT,
+    D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND,
+    D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND,
+    D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD,
+    D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2,
+    D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION,
+    D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9,
+};
 
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
+use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
 use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
@@ -52,12 +63,12 @@ const TRUE: u32 = 1;
 const VERTEX_BUF_ADD_CAPACITY: usize = 5000;
 const INDEX_BUF_ADD_CAPACITY: usize = 10000;
 
+///Reexport of windows::core::Result<T>
+pub type Result<T> =  windows::core::Result<T>;
+
 static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
     Anonymous: D3DMATRIX_0 {
-        m: [
-            1.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 1.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 1.0f32,
-            0.0f32, 0.0f32, 0.0f32, 0.0f32, 1.0f32,
-        ],
+        m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
     },
 };
 
@@ -85,7 +96,7 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self, ()> {
+    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self> {
         let font_tex =
             IDirect3DBaseTexture9::from(Self::create_font_texture(ctx.fonts(), &device)?);
 
@@ -113,8 +124,7 @@ impl Renderer {
     pub unsafe fn new_raw(
         im_ctx: &mut imgui::Context,
         device: IDirect3DDevice9,
-    ) -> Result<Self, ()> {
-        let device = device;
+    ) -> Result<Self> {
         Self::new(im_ctx, device)
     }
 
@@ -139,7 +149,7 @@ impl Renderer {
     /// will return `DXGI_ERROR_INVALID_CALL` and immediately stop rendering.
     ///
     /// [`Ui`]: https://docs.rs/imgui/*/imgui/struct.Ui.html
-    pub fn render(&mut self, draw_data: &DrawData) -> Result<(), ()> {
+    pub fn render(&mut self, draw_data: &DrawData) -> Result<()> {
         if draw_data.display_size[0] < 0.0 || draw_data.display_size[1] < 0.0 {
             return Ok(());
         }
@@ -161,7 +171,7 @@ impl Renderer {
         }
     }
 
-    unsafe fn render_impl(&mut self, draw_data: &DrawData) -> Result<(), ()> {
+    unsafe fn render_impl(&mut self, draw_data: &DrawData) -> Result<()> {
         let clip_off = draw_data.display_pos;
         let clip_scale = draw_data.framebuffer_scale;
         let mut vertex_offset = 0;
@@ -179,7 +189,7 @@ impl Renderer {
                             let texture = if texture_id.id() == FONT_TEX_ID {
                                 &self.font_tex
                             } else {
-                                self.textures.get(texture_id).ok_or(())?
+                                self.textures.get(texture_id).ok_or(DXGI_ERROR_INVALID_CALL)?
                             };
                             self.device.SetTexture(0, texture).unwrap();
                             last_tex = texture_id;
@@ -192,14 +202,16 @@ impl Renderer {
                             bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
                         };
                         self.device.SetScissorRect(&r).unwrap();
-                        self.device.DrawIndexedPrimitive(
-                            D3DPT_TRIANGLELIST,
-                            vertex_offset as i32,
-                            0,
-                            draw_list.vtx_buffer().len() as u32,
-                            index_offset as u32,
-                            count as u32 / 3,
-                        ).unwrap();
+                        self.device
+                            .DrawIndexedPrimitive(
+                                D3DPT_TRIANGLELIST,
+                                vertex_offset as i32,
+                                0,
+                                draw_list.vtx_buffer().len() as u32,
+                                index_offset as u32,
+                                count as u32 / 3,
+                            )
+                            .unwrap();
                         index_offset += count;
                     },
                     DrawCmd::ResetRenderState => self.set_render_state(draw_data),
@@ -287,39 +299,37 @@ impl Renderer {
         ib: &IDirect3DIndexBuffer9,
         vtx_count: usize,
         idx_count: usize,
-    ) -> Result<(&'v mut [CustomVertex], &'i mut [DrawIdx]), ()> {
+    ) -> Result<(&'v mut [CustomVertex], &'i mut [DrawIdx])> {
         let mut vtx_dst: *mut CustomVertex = ptr::null_mut();
         let mut idx_dst: *mut DrawIdx = ptr::null_mut();
-        match vb.Lock(
+
+
+        vb.Lock(
             0,
             (vtx_count * mem::size_of::<CustomVertex>()) as u32,
             &mut vtx_dst as *mut _ as _,
             D3DLOCK_DISCARD as u32,
-        ) {
+        )?;
+
+        match ib.Lock(
+            0,
+            (idx_count * mem::size_of::<DrawIdx>()) as u32,
+            &mut idx_dst as *mut _ as _,
+            D3DLOCK_DISCARD as u32,
+        )
+        {
             Ok(_) => {
-                match ib.Lock(
-                    0,
-                    (idx_count * mem::size_of::<DrawIdx>()) as u32,
-                    &mut idx_dst as *mut _ as _,
-                    D3DLOCK_DISCARD as u32,
-                ) {
-                    Ok(()) => Ok((
-                        slice::from_raw_parts_mut(vtx_dst, vtx_count),
-                        slice::from_raw_parts_mut(idx_dst, idx_count),
-                    )),
-                    Err(_) => {
-                        vb.Unlock().unwrap();
-                        Err(())
-                    },
+                Ok((slice::from_raw_parts_mut(vtx_dst, vtx_count), slice::from_raw_parts_mut(idx_dst, idx_count),))
+            }
+            Err(e) =>
+                {
+                    vb.Unlock().unwrap();
+                    Err(e)
                 }
-            },
-            Err(_) => Err(()),
         }
     }
 
-    unsafe fn write_buffers(&mut self, draw_data: &DrawData) -> Result<(), ()> {
-        //let (vb, ib) = (&mut *self.vertex_buffer, &mut *self.index_buffer.0);
-
+    unsafe fn write_buffers(&mut self, draw_data: &DrawData) -> Result<()> {
         let (mut vtx_dst, mut idx_dst) = Self::lock_buffers(
             &self.vertex_buffer.0,
             &self.index_buffer.0,
@@ -343,12 +353,9 @@ impl Renderer {
         }
         self.vertex_buffer.0.Unlock().unwrap();
         self.index_buffer.0.Unlock().unwrap();
-        self.device.SetStreamSource(
-            0,
-            &self.vertex_buffer.0,
-            0,
-            mem::size_of::<CustomVertex>() as u32,
-        ).unwrap();
+        self.device
+            .SetStreamSource(0, &self.vertex_buffer.0, 0, mem::size_of::<CustomVertex>() as u32)
+            .unwrap();
         self.device.SetIndices(&self.index_buffer.0).unwrap();
         self.device.SetFVF(D3DFVF_CUSTOMVERTEX).unwrap();
         Ok(())
@@ -357,40 +364,36 @@ impl Renderer {
     unsafe fn create_vertex_buffer(
         device: &IDirect3DDevice9,
         vtx_count: usize,
-    ) -> Result<(IDirect3DVertexBuffer9, usize), ()> {
+    ) -> Result<(IDirect3DVertexBuffer9, usize)> {
         let len = vtx_count + VERTEX_BUF_ADD_CAPACITY;
         let mut vertex_buffer: Option<IDirect3DVertexBuffer9> = None;
-        match device.CreateVertexBuffer(
+        device.CreateVertexBuffer(
             (len * mem::size_of::<CustomVertex>()) as u32,
             (D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY) as u32,
             D3DFVF_CUSTOMVERTEX,
             D3DPOOL_DEFAULT,
             &mut vertex_buffer,
             ptr::null_mut(),
-        ) {
-            Ok(_) => Ok((vertex_buffer.unwrap(), len)),
-            _ => Err(()),
-        }
+        )?;
+        Ok((vertex_buffer.unwrap(), len))
     }
 
     unsafe fn create_index_buffer(
         device: &IDirect3DDevice9,
         idx_count: usize,
-    ) -> Result<(IDirect3DIndexBuffer9, usize), ()> {
+    ) -> Result<(IDirect3DIndexBuffer9, usize)> {
         let len = idx_count + INDEX_BUF_ADD_CAPACITY;
         let mut index_buffer: Option<IDirect3DIndexBuffer9> = None;
 
-        match device.CreateIndexBuffer(
+        device.CreateIndexBuffer(
             (len * mem::size_of::<DrawIdx>()) as u32,
             (D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY) as u32,
             if mem::size_of::<DrawIdx>() == 2 { D3DFMT_INDEX16 } else { D3DFMT_INDEX32 },
             D3DPOOL_DEFAULT,
             &mut index_buffer,
             ptr::null_mut(),
-        ) {
-            Ok(_) => Ok((index_buffer.unwrap(), len)),
-            _ => Err(()),
-        }
+        )?;
+        Ok((index_buffer.unwrap(), len))
     }
 
     // FIXME, imgui hands us an rgba texture while we make dx9 think it receives an
@@ -398,11 +401,11 @@ impl Renderer {
     unsafe fn create_font_texture(
         mut fonts: imgui::FontAtlasRefMut<'_>,
         device: &IDirect3DDevice9,
-    ) -> Result<IDirect3DTexture9, ()> {
+    ) -> Result<IDirect3DTexture9> {
         let texture = fonts.build_rgba32_texture();
         let mut texture_handle: Option<IDirect3DTexture9> = None;
 
-        match device.CreateTexture(
+        device.CreateTexture(
             texture.width,
             texture.height,
             1,
@@ -411,37 +414,30 @@ impl Renderer {
             D3DPOOL_DEFAULT,
             &mut texture_handle,
             ptr::null_mut(),
-        ) {
-            Ok(_) => {
-                let mut locked_rect: D3DLOCKED_RECT =
-                    D3DLOCKED_RECT { Pitch: 0, pBits: ptr::null_mut() };
-                let result_texture = texture_handle.unwrap();
+        )?;
 
-                match result_texture.LockRect(0, &mut locked_rect, ptr::null_mut(), 0) {
-                    Ok(_) => {
-                        let bits = locked_rect.pBits as *mut u8;
-                        let pitch = locked_rect.Pitch as usize;
-                        let height = texture.height as usize;
-                        let width = texture.width as usize;
+        let mut locked_rect: D3DLOCKED_RECT =
+            D3DLOCKED_RECT { Pitch: 0, pBits: ptr::null_mut() };
+        let result_texture = texture_handle.unwrap();
 
-                        for y in 0..height {
-                            let d3d9_memory = bits.add(pitch * y);
-                            let pixels = texture.data.as_ptr();
-                            let pixels = pixels.add((width * 4) * y);
-                            std::ptr::copy(pixels, d3d9_memory, width * 4);
-                        }
+        result_texture.LockRect(0, &mut locked_rect, ptr::null_mut(), 0)?;
 
-                        result_texture.UnlockRect(0).unwrap();
-                        fonts.tex_id = TextureId::from(FONT_TEX_ID);
-                        Ok(result_texture)
-                    },
-                    _ => Err(()),
-                }
-            },
-            _ => Err(()),
+        let bits = locked_rect.pBits as *mut u8;
+        let pitch = locked_rect.Pitch as usize;
+        let height = texture.height as usize;
+        let width = texture.width as usize;
+
+        for y in 0..height {
+            let d3d9_memory = bits.add(pitch * y);
+            let pixels = texture.data.as_ptr();
+            let pixels = pixels.add((width * 4) * y);
+            std::ptr::copy(pixels, d3d9_memory, width * 4);
         }
-    }
 
+        result_texture.UnlockRect(0).unwrap();
+        fonts.tex_id = TextureId::from(FONT_TEX_ID);
+        Ok(result_texture)
+    }
 
     ///IDirect3DDevice9 wrapper
     #[allow(non_snake_case)]
@@ -452,24 +448,21 @@ impl Renderer {
         flags: u32,
         color: u32,
         z: f32,
-        stencil: u32
-    ) -> Result<(), ()>
-    {
-        match self.device.Clear(count ,prects, flags, color, z, stencil){Ok(_) => Ok(()), _ => Err(())}
+        stencil: u32,
+    ) -> Result<()> {
+        self.device.Clear(count, prects, flags, color, z, stencil)
     }
 
     ///IDirect3DDevice9 wrapper
     #[allow(non_snake_case)]
-    pub unsafe fn BeginScene(&self) -> Result<(), ()>
-    {
-        match self.device.BeginScene(){Ok(_) => Ok(()), _ => Err(())}
+    pub unsafe fn BeginScene(&self) -> Result<()> {
+        self.device.BeginScene()
     }
 
     ///IDirect3DDevice9 wrapper
     #[allow(non_snake_case)]
-    pub unsafe fn EndScene(&self) -> Result<(), ()>
-    {
-        match self.device.EndScene(){Ok(_) => Ok(()), _ => Err(())}
+    pub unsafe fn EndScene(&self) -> Result<()> {
+        self.device.EndScene()
     }
 
     ///IDirect3DDevice9 wrapper
@@ -479,22 +472,22 @@ impl Renderer {
         psourcerect: *const RECT,
         pdestrect: *const RECT,
         hdestwindowoverride: P0,
-        pdirtyregion: *const RGNDATA
-    ) -> Result<(), ()> where
-        P0: windows::core::IntoParam<'a, windows::Win32::Foundation::HWND>,
+        pdirtyregion: *const RGNDATA,
+    ) -> Result<()>
+        where
+            P0: windows::core::IntoParam<'a, windows::Win32::Foundation::HWND>,
     {
-        match self.device.Present(psourcerect, pdestrect, hdestwindowoverride, pdirtyregion){Ok(_) => Ok(()), _ => Err(())}
+        self.device.Present(psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
     }
-
 }
 
 struct StateBackup(IDirect3DStateBlock9);
 
 impl StateBackup {
-    unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self, ()> {
+    unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
         match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => Ok(StateBackup(state_block)),
-            _ => Err(()),
+            Err(e) => Err(e),
         }
     }
 }

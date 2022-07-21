@@ -1,3 +1,25 @@
+//Based on https://github.com/Veykril/imgui-dx9-renderer
+//
+//Copyright (c) 2019 Lukas Wirth
+//
+//Permission is hereby granted, free of charge, to any person obtaining a copy
+//of this software and associated documentation files (the "Software"), to deal
+//in the Software without restriction, including without limitation the rights
+//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//copies of the Software, and to permit persons to whom the Software is
+//furnished to do so, subject to the following conditions:
+//
+//The above copyright notice and this permission notice shall be included in all
+//copies or substantial portions of the Software.
+//
+//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//SOFTWARE.
+
 use std::{ptr, time::Instant};
 
 use imgui::{FontConfig, FontSource};
@@ -101,7 +123,9 @@ fn main() {
         },
         Event::RedrawRequested(_) => {
             unsafe {
-                renderer.Clear(0, ptr::null_mut(), D3DCLEAR_TARGET as u32, 0xFFAA_AAAA, 1.0, 0).unwrap();
+                renderer
+                    .Clear(0, ptr::null_mut(), D3DCLEAR_TARGET as u32, 0xFFAA_AAAA, 1.0, 0)
+                    .unwrap();
                 renderer.BeginScene().unwrap();
             }
 
@@ -125,9 +149,6 @@ fn main() {
         },
         Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
             *control_flow = winit::event_loop::ControlFlow::Exit
-        },
-        Event::LoopDestroyed => {
-            //d9.Release();
         },
         event => {
             platform.handle_event(imgui.io_mut(), &window, &event);
