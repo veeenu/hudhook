@@ -5,11 +5,11 @@ use imgui::Context;
 use log::{error};
 use parking_lot::Mutex;
 use windows::core::{HRESULT, Interface, PCSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, Direct3DCreate9, IDirect3DDevice9};
 use windows::Win32::Graphics::Gdi::{HBRUSH, RGNDATA};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DestroyWindow, HCURSOR, HICON, HMENU, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
+use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DestroyWindow, GetCursorPos, GetForegroundWindow, HCURSOR, HICON, HMENU, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
 use crate::hooks::common::{ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 
@@ -27,6 +27,44 @@ type Dx9PresentFn = unsafe extern "system" fn(
 
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
 {
+    unsafe extern "system" fn def_window_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        DefWindowProcA(hwnd, msg, wparam, lparam)
+    }
+
+    let mut imgui_renderer = IMGUI_RENDERER.get_or_init(|| {
+        let mut context = imgui::Context::create();
+        context.set_ini_filename(None);
+        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
+
+        Mutex::new(Box::new(
+            ImguiRenderer
+            {
+                ctx: context,
+                renderer,
+                wnd_proc: def_window_proc,
+                flags: ImguiRenderLoopFlags { focused: false }
+            }
+        ))
+    }).lock();
+
+   imgui_renderer.render();
+
+
+
+        //Ok(imgui_renderer) =>
+        //{
+        //    let r = imgui_renderer.unwrap();
+        //    r.renderer.render(r.ctx);
+        //}
+        //_ => error!("Failed to acquire imgui_renderer lock")
+
+
+
 
 
     let (trampoline_end_scene, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
@@ -57,13 +95,43 @@ static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn)> = OnceCell::new();
 struct ImguiRenderer
 {
     ctx: Context,
-    //engine: RenderEngine,
+    renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
 }
 
 impl ImguiRenderer
 {
+    unsafe fn render(&mut self)
+    {
+
+
+        {
+            let mut io = self.ctx.io_mut();
+            let rect = self.renderer.get_window_rect();
+            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+        }
+
+
+        let mut pos = POINT { x: 0, y: 0 };
+
+        //let active_window = GetForegroundWindow();
+
+        //let gcp = GetCursorPos(&mut pos as *mut _);
+        //if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
+        //    io.mouse_pos[0] = pos.x as _;
+        //    io.mouse_pos[1] = pos.y as _;
+        //}
+
+
+        //let ctx = &mut self.ctx;
+        let mut ui = self.ctx.frame();
+
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
+        let draw_data = ui.render();
+        self.renderer.render(draw_data).unwrap();
+    }
+
     unsafe fn cleanup(&mut self){}
 }
 

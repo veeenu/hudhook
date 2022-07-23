@@ -21,6 +21,7 @@ console = "0.15.0"
 detour = "0.8.1"
 dialoguer = "0.9.0"
 imgui = "0.8.0"
+imgui-dx9  = { path = "../imgui-dx9"  }
 imgui-dx11 = { path = "../imgui-dx11" }
 imgui-dx12 = { path = "../imgui-dx12" }
 log = "0.4.16"
