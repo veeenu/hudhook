@@ -20,6 +20,7 @@
 //OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //SOFTWARE.
 
+
 #![cfg(windows)]
 #![deny(missing_docs)]
 //! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/*/imgui/) rust bindings.
@@ -36,13 +37,13 @@ use windows::Win32::Graphics::Direct3D9::{
     IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9,
     IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA,
     D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32,
-    D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRECT,
-    D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND,
-    D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND,
-    D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD,
-    D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2,
-    D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION,
-    D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9,
+    D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE,
+    D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE,
+    D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE,
+    D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR,
+    D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP,
+    D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW,
+    D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9,
 };
 
 use windows::Win32::Foundation::RECT;
@@ -51,8 +52,6 @@ use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
 use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
-
-use windows::Win32::Graphics::Gdi::RGNDATA;
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -64,7 +63,7 @@ const VERTEX_BUF_ADD_CAPACITY: usize = 5000;
 const INDEX_BUF_ADD_CAPACITY: usize = 10000;
 
 ///Reexport of windows::core::Result<T>
-pub type Result<T> =  windows::core::Result<T>;
+pub type Result<T> = windows::core::Result<T>;
 
 static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
     Anonymous: D3DMATRIX_0 {
@@ -121,10 +120,7 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new_raw(
-        im_ctx: &mut imgui::Context,
-        device: IDirect3DDevice9,
-    ) -> Result<Self> {
+    pub unsafe fn new_raw(im_ctx: &mut imgui::Context, device: IDirect3DDevice9) -> Result<Self> {
         Self::new(im_ctx, device)
     }
 
@@ -295,14 +291,13 @@ impl Renderer {
     }
 
     unsafe fn lock_buffers<'v, 'i>(
-        vb: &IDirect3DVertexBuffer9,
-        ib: &IDirect3DIndexBuffer9,
+        vb: &'v mut IDirect3DVertexBuffer9,
+        ib: &'i mut IDirect3DIndexBuffer9,
         vtx_count: usize,
         idx_count: usize,
     ) -> Result<(&'v mut [CustomVertex], &'i mut [DrawIdx])> {
         let mut vtx_dst: *mut CustomVertex = ptr::null_mut();
         let mut idx_dst: *mut DrawIdx = ptr::null_mut();
-
 
         vb.Lock(
             0,
@@ -316,23 +311,22 @@ impl Renderer {
             (idx_count * mem::size_of::<DrawIdx>()) as u32,
             &mut idx_dst as *mut _ as _,
             D3DLOCK_DISCARD as u32,
-        )
-        {
-            Ok(_) => {
-                Ok((slice::from_raw_parts_mut(vtx_dst, vtx_count), slice::from_raw_parts_mut(idx_dst, idx_count),))
-            }
-            Err(e) =>
-                {
-                    vb.Unlock().unwrap();
-                    Err(e)
-                }
+        ) {
+            Ok(_) => Ok((
+                slice::from_raw_parts_mut(vtx_dst, vtx_count),
+                slice::from_raw_parts_mut(idx_dst, idx_count),
+            )),
+            Err(e) => {
+                vb.Unlock().unwrap();
+                Err(e)
+            },
         }
     }
 
     unsafe fn write_buffers(&mut self, draw_data: &DrawData) -> Result<()> {
         let (mut vtx_dst, mut idx_dst) = Self::lock_buffers(
-            &self.vertex_buffer.0,
-            &self.index_buffer.0,
+            &mut self.vertex_buffer.0,
+            &mut self.index_buffer.0,
             draw_data.total_vtx_count as usize,
             draw_data.total_idx_count as usize,
         )?;
@@ -416,8 +410,7 @@ impl Renderer {
             ptr::null_mut(),
         )?;
 
-        let mut locked_rect: D3DLOCKED_RECT =
-            D3DLOCKED_RECT { Pitch: 0, pBits: ptr::null_mut() };
+        let mut locked_rect: D3DLOCKED_RECT = D3DLOCKED_RECT { Pitch: 0, pBits: ptr::null_mut() };
         let result_texture = texture_handle.unwrap();
 
         result_texture.LockRect(0, &mut locked_rect, ptr::null_mut(), 0)?;
@@ -437,47 +430,6 @@ impl Renderer {
         result_texture.UnlockRect(0).unwrap();
         fonts.tex_id = TextureId::from(FONT_TEX_ID);
         Ok(result_texture)
-    }
-
-    ///IDirect3DDevice9 wrapper
-    #[allow(non_snake_case)]
-    pub unsafe fn Clear(
-        &self,
-        count: u32,
-        prects: *const D3DRECT,
-        flags: u32,
-        color: u32,
-        z: f32,
-        stencil: u32,
-    ) -> Result<()> {
-        self.device.Clear(count, prects, flags, color, z, stencil)
-    }
-
-    ///IDirect3DDevice9 wrapper
-    #[allow(non_snake_case)]
-    pub unsafe fn BeginScene(&self) -> Result<()> {
-        self.device.BeginScene()
-    }
-
-    ///IDirect3DDevice9 wrapper
-    #[allow(non_snake_case)]
-    pub unsafe fn EndScene(&self) -> Result<()> {
-        self.device.EndScene()
-    }
-
-    ///IDirect3DDevice9 wrapper
-    #[allow(non_snake_case)]
-    pub unsafe fn Present<'a, P0>(
-        &self,
-        psourcerect: *const RECT,
-        pdestrect: *const RECT,
-        hdestwindowoverride: P0,
-        pdirtyregion: *const RGNDATA,
-    ) -> Result<()>
-        where
-            P0: windows::core::IntoParam<'a, windows::Win32::Foundation::HWND>,
-    {
-        self.device.Present(psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
     }
 }
 
