@@ -6,7 +6,12 @@
 //! [`imgui`]: https://docs.rs/imgui/0.8.0/imgui/
 
 pub(crate) mod common;
+pub mod dx9;
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 pub mod dx11;
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 pub mod dx12;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -34,6 +39,7 @@ fn get_wheel_delta_wparam(wparam: u32) -> u16 {
     hiword(wparam) as u16
 }
 
+#[allow(dead_code)]
 #[inline]
 fn get_xbutton_wparam(wparam: u32) -> u16 {
     hiword(wparam)
