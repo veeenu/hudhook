@@ -42,6 +42,7 @@ use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use log::{debug, error, info, trace};
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -51,6 +52,8 @@ const TRUE: u32 = 1;
 
 const VERTEX_BUF_ADD_CAPACITY: usize = 5000;
 const INDEX_BUF_ADD_CAPACITY: usize = 10000;
+
+const D3DTS_WORLDMATRIX: D3DTRANSFORMSTATETYPE = D3DTRANSFORMSTATETYPE(256);
 
 ///Reexport of windows::core::Result<T>
 pub type Result<T> = windows::core::Result<T>;
@@ -76,6 +79,13 @@ pub struct Renderer {
     vertex_buffer: (IDirect3DVertexBuffer9, usize),
     index_buffer: (IDirect3DIndexBuffer9, usize),
     textures: Textures<IDirect3DBaseTexture9>,
+}
+
+impl Drop for Renderer
+{
+    fn drop(&mut self) {
+        todo!()
+    }
 }
 
 impl Renderer {
@@ -169,11 +179,14 @@ impl Renderer {
                     Self::create_index_buffer(&self.device, draw_data.total_idx_count as usize)?;
             }
 
-            let _state_guard = StateBackup::backup(&self.device)?;
+            let state = StateBackup::backup(&self.device)?;
 
             self.set_render_state(draw_data);
             self.write_buffers(draw_data)?;
-            self.render_impl(draw_data)
+            self.render_impl(draw_data)?;
+
+            state.restore(&self.device)?;
+            Ok(())
         }
     }
 
@@ -207,6 +220,7 @@ impl Renderer {
                             right: ((clip_rect[2] - clip_off[0]) * clip_scale[0]) as i32,
                             bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
                         };
+                        info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
                         self.device.SetScissorRect(&r).unwrap();
                         self.device
                             .DrawIndexedPrimitive(
@@ -234,6 +248,8 @@ impl Renderer {
     unsafe fn set_render_state(&mut self, draw_data: &DrawData) {
         let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
         let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
+
+        info!("fb size {}, {}", fb_width, fb_height);
 
         let vp = D3DVIEWPORT9 {
             X: 0,
@@ -272,6 +288,9 @@ impl Renderer {
         let r = draw_data.display_pos[0] + draw_data.display_size[0] + 0.5;
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
+
+        info!("l {} r {} t {} b {}", l,r,t,b);
+
         let mat_projection = D3DMATRIX {
             Anonymous: D3DMATRIX_0 {
                 m: [
@@ -295,7 +314,7 @@ impl Renderer {
             },
         };
 
-        device.SetTransform(D3DTRANSFORMSTATETYPE(0), &MAT_IDENTITY).unwrap();
+        device.SetTransform(D3DTS_WORLDMATRIX, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_VIEW, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_PROJECTION, &mat_projection).unwrap();
     }
@@ -443,20 +462,45 @@ impl Renderer {
     }
 }
 
-struct StateBackup(IDirect3DStateBlock9);
+struct StateBackup
+{
+    state_block: IDirect3DStateBlock9,
+    mat_world: D3DMATRIX,
+    mat_view: D3DMATRIX,
+    mat_projection: D3DMATRIX,
+}
 
 impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
-        match device.CreateStateBlock(D3DSBT_ALL) {
-            Ok(state_block) => Ok(StateBackup(state_block)),
+        match device.CreateStateBlock(D3DSBT_ALL)
+        {
+            Ok(state_block) => {
+                let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+                let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+                let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+
+                device.GetTransform(D3DTS_WORLDMATRIX   , &mut mat_world)?;
+                device.GetTransform(D3DTS_VIEW          , &mut mat_view)?;
+                device.GetTransform(D3DTS_PROJECTION    , &mut mat_projection)?;
+
+                Ok(StateBackup{
+                    state_block,
+                    mat_world,
+                    mat_view,
+                    mat_projection,
+                })
+            },
             Err(e) => Err(e),
         }
     }
-}
 
-impl Drop for StateBackup {
-    #[inline]
-    fn drop(&mut self) {
-        unsafe { self.0.Apply().unwrap() };
+    unsafe fn restore(&self, device: &IDirect3DDevice9) -> Result<()>
+    {
+        self.state_block.Apply().unwrap();
+        device.SetTransform(D3DTS_WORLDMATRIX, &self.mat_world)?;
+        device.SetTransform(D3DTS_VIEW, &self.mat_view)?;
+        device.SetTransform(D3DTS_PROJECTION, &self.mat_projection)?;
+        Ok(())
     }
 }
+

@@ -1,9 +1,11 @@
 use once_cell::sync::OnceCell;
 use std::ptr::null;
+use std::cell::RefCell;
 use detour::RawDetour;
 use imgui::Context;
 use log::{debug, error, info, trace};
-use parking_lot::Mutex;
+use parking_lot::lock_api::MutexGuard;
+use parking_lot::{Mutex, RawMutex};
 use windows::core::{HRESULT, Interface, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, Direct3DCreate9, IDirect3DDevice9};
@@ -20,8 +22,9 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 
 
-
 type Dx9EndSceneFn = unsafe extern "system" fn(this: IDirect3DDevice9,) -> HRESULT;
+
+type Dx9ResetFn = unsafe extern "system" fn(this: IDirect3DDevice9, *const D3DPRESENT_PARAMETERS) -> HRESULT;
 
 type Dx9PresentFn = unsafe extern "system" fn(
     this: IDirect3DDevice9,
@@ -31,14 +34,45 @@ type Dx9PresentFn = unsafe extern "system" fn(
     pdirtyregion: *const RGNDATA
 ) -> HRESULT;
 
+
+
+
+
 type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
+unsafe extern "system" fn imgui_dx9_reset_impl(this: IDirect3DDevice9, present_params: *const D3DPRESENT_PARAMETERS) -> HRESULT
+{
+    info!("reset: {}, {}", (*present_params).BackBufferWidth, (*present_params).BackBufferHeight);
+
+    //Drop the renderer so that it is re-initialized on the next call to EndScene
+    if IMGUI_RENDERER.is_some()
+    {
+        let mut renderer = IMGUI_RENDERER.take();
+        IMGUI_RENDERER = None;
+        drop(renderer);
+    }
+
+
+    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    return trampoline_reset(this, present_params);
+}
+
+
+
+
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
 {
-    info!("end scene");
+    //let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
+    //this.GetCreationParameters(&mut creation_parameters).unwrap();
 
-    let mut imgui_renderer = IMGUI_RENDERER.get_or_init(|| {
+    info!("end scene");
+    //info!("AdapterOrdinal {}", creation_parameters.AdapterOrdinal);
+    //info!("hFocusWindow {}", creation_parameters.hFocusWindow.0);
+    //info!("BehaviorFlags {}", creation_parameters.BehaviorFlags);
+    //info!("DeviceType {}", creation_parameters.DeviceType.0);
+
+    let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(|| {
         let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
         this.GetCreationParameters(&mut creation_parameters).unwrap();
 
@@ -66,14 +100,19 @@ unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HR
                 ctx: context,
                 renderer,
                 wnd_proc,
-                flags: ImguiRenderLoopFlags { focused: false }
+                flags: ImguiRenderLoopFlags { focused: false },
+                request_render: true,
             }
         ))
     }).lock();
 
-    imgui_renderer.render();
+    //if imgui_renderer.request_render
+    //{
+        imgui_renderer.render();
+    //    imgui_renderer.request_render = false;
+    //}
 
-    let (trampoline_end_scene, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (trampoline_end_scene, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_end_scene(this);
     return result;
 }
@@ -84,23 +123,27 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
-    match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
-            hwnd,
-            umsg,
-            WPARAM(wparam),
-            LPARAM(lparam),
-            imgui_renderer,
-            IMGUI_RENDER_LOOP.get().unwrap(),
-        ),
-        Some(None) => {
-            debug!("Could not lock in WndProc");
-            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        },
-        None => {
-            debug!("WndProc called before hook was set");
-            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        },
+    if IMGUI_RENDERER.is_some()
+    {
+        match IMGUI_RENDERER.as_mut().unwrap().try_lock()
+        {
+            Some(imgui_renderer) => imgui_wnd_proc_impl(
+                hwnd,
+                umsg,
+                WPARAM(wparam),
+                LPARAM(lparam),
+                imgui_renderer,
+                IMGUI_RENDER_LOOP.get().unwrap(),
+            ),
+            None => {
+                debug!("Could not lock in WndProc");
+                DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+            },
+        }
+    }
+    else {
+        debug!("WndProc called before hook was set");
+        DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
     }
 }
 
@@ -116,14 +159,19 @@ unsafe extern "system" fn imgui_dx9_present_impl(
 {
     info!("present");
 
-    let (_, trampoline_present) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    //if let Some(renderer) = IMGUI_RENDERER.get()
+    //{
+    //    renderer.lock().request_render = true;
+    //}
+
+    let (_, trampoline_present, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     return result;
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
-static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn)> = OnceCell::new();
+static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
+static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
 
 
 
@@ -133,6 +181,7 @@ struct ImguiRenderer
     renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
+    request_render: bool,
 }
 
 impl ImguiRenderer
@@ -143,6 +192,7 @@ impl ImguiRenderer
             let mut io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+            //info!("io displaysize {}, {}", io.display_size[0], io.display_size[1]);
 
             let mut pos = POINT { x: 0, y: 0 };
 
@@ -204,6 +254,7 @@ pub struct ImguiDX9Hooks
 {
     hook_dx9_end_scene: RawDetour,
     hook_dx9_present: RawDetour,
+    hook_dx9_reset: RawDetour,
 }
 
 impl ImguiDX9Hooks
@@ -211,7 +262,7 @@ impl ImguiDX9Hooks
     pub unsafe fn new<T: 'static>(t: T) -> Self
         where T: ImguiRenderLoop + Send + Sync,
     {
-        let (hook_dx9_end_scene_address, dx9_present_address)  = get_dx9_present_addr();
+        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address)  = get_dx9_present_addr();
 
         let  hook_dx9_end_scene = RawDetour::new(
             hook_dx9_end_scene_address as *const _,
@@ -223,14 +274,20 @@ impl ImguiDX9Hooks
             imgui_dx9_present_impl as *const _,
         ) .expect("dx9_present hook");
 
+        let  hook_dx9_reset = RawDetour::new(
+            dx9_reset_address as *const _,
+            imgui_dx9_reset_impl as *const _,
+        ) .expect("dx9_present hook");
+
+
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {(
                 std::mem::transmute(hook_dx9_end_scene.trampoline()),
                 std::mem::transmute(hook_dx9_present.trampoline()),
-
+                std::mem::transmute(hook_dx9_reset.trampoline()),
         )});
 
-        Self {  hook_dx9_end_scene, hook_dx9_present }
+        Self {  hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset }
     }
 }
 
@@ -239,7 +296,7 @@ impl Hooks for ImguiDX9Hooks
 {
     unsafe fn hook(&self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present] {
+        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -248,7 +305,7 @@ impl Hooks for ImguiDX9Hooks
 
     unsafe fn unhook(&mut self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present] {
+        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
@@ -311,7 +368,7 @@ unsafe fn create_dummy_window() -> HWND
     return hwnd;
 }
 
-unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn)
+unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)
 {
     let hwnd = create_dummy_window();
 
@@ -346,7 +403,8 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn)
 
     let end_scene_ptr = device.vtable().EndScene;
     let present_ptr = device.vtable().Present;
+    let reset_ptr = device.vtable().Reset;
 
     DestroyWindow(hwnd);
-    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr));
+    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr), std::mem::transmute(reset_ptr));
 }

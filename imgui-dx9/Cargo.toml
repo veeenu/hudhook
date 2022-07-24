@@ -17,10 +17,11 @@ windows = { version = "0.34.0", features = [
     "Win32_UI_WindowsAndMessaging"
 ] }
 
-imgui = "0.8"
+imgui = "0.8.0"
+log = "0.4.16"
 
 [dev-dependencies]
-imgui = "0.8"
-imgui-winit-support = "0.8"
+imgui = "0.8.0"
+imgui-winit-support = "0.8.0"
 winit = "0.25"
 raw-window-handle = "0.3"
