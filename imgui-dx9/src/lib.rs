@@ -33,14 +33,15 @@ use imgui::{
     internal::RawWrapper, BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx,
     TextureId, Textures,
 };
-use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, IDirect3DSurface9, D3DBACKBUFFER_TYPE_MONO, D3DSURFACE_DESC};
+use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, D3DDEVICE_CREATION_PARAMETERS};
 
-use windows::Win32::Foundation::RECT;
+use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
 use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
 use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
+use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -69,6 +70,7 @@ struct CustomVertex {
 
 /// A DirectX 9 renderer for (Imgui-rs)[https://docs.rs/imgui/*/imgui/].
 pub struct Renderer {
+    device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS,
     device: IDirect3DDevice9,
     font_tex: IDirect3DBaseTexture9,
     vertex_buffer: (IDirect3DVertexBuffer9, usize),
@@ -84,7 +86,7 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self> {
+    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9, device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS) -> Result<Self> {
         let font_tex =
             IDirect3DBaseTexture9::from(Self::create_font_texture(ctx.fonts(), &device)?);
 
@@ -96,6 +98,7 @@ impl Renderer {
         Ok(Renderer {
             vertex_buffer: Self::create_vertex_buffer(&device, 0)?,
             index_buffer: Self::create_index_buffer(&device, 0)?,
+            device_creation_parameters,
             device,
             font_tex,
             textures: Textures::new(),
@@ -103,17 +106,21 @@ impl Renderer {
     }
 
     ///Gets the window width & height via the backbuffer
-    pub fn get_window_rect(&self) -> RECT
+    pub fn get_window_rect(&self) -> Option<RECT>
     {
-        let surface = unsafe{ self.device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).expect("Failed to get backbuffer") };
-        let mut description = unsafe{ D3DSURFACE_DESC{..core::mem::zeroed() }};
-        unsafe{ surface.GetDesc(&mut description) };
-        RECT{
-            left: 0,
-            right: description.Width as i32,
-            top: 0,
-            bottom: description.Height as i32,
+        unsafe{
+            let mut rect: RECT = RECT{..core::mem::zeroed()};
+            if GetWindowRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
+                Some(rect)
+            } else {
+                None
+            }
         }
+    }
+
+    ///Returns the hFocuswindow HWND from the device creation parameters
+    pub fn get_hwnd(&self) -> HWND{
+        self.device_creation_parameters.hFocusWindow
     }
 
     /// Creates a new renderer for the given [`IDirect3DDevice9`].
@@ -123,8 +130,8 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new_raw(im_ctx: &mut imgui::Context, device: IDirect3DDevice9) -> Result<Self> {
-        Self::new(im_ctx, device)
+    pub unsafe fn new_raw(im_ctx: &mut imgui::Context, device: IDirect3DDevice9, device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS) -> Result<Self> {
+        Self::new(im_ctx, device, device_creation_parameters)
     }
 
     /// The textures registry of this renderer.

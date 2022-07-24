@@ -2,16 +2,22 @@ use once_cell::sync::OnceCell;
 use std::ptr::null;
 use detour::RawDetour;
 use imgui::Context;
-use log::{error};
+use log::{debug, error, info, trace};
 use parking_lot::Mutex;
 use windows::core::{HRESULT, Interface, PCSTR};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, Direct3DCreate9, IDirect3DDevice9};
-use windows::Win32::Graphics::Gdi::{HBRUSH, RGNDATA};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, Direct3DCreate9, IDirect3DDevice9};
+use windows::Win32::Graphics::Gdi::{HBRUSH, RGNDATA, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DestroyWindow, GetCursorPos, GetForegroundWindow, HCURSOR, HICON, HMENU, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
-use crate::hooks::common::{ImguiWindowsEventHandler, WndProcType};
+use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos, GetForegroundWindow, GWLP_WNDPROC, HCURSOR, HICON, HMENU, IsChild, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
+
+#[cfg(target_arch = "x86")]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 
 
 
@@ -25,52 +31,79 @@ type Dx9PresentFn = unsafe extern "system" fn(
     pdirtyregion: *const RGNDATA
 ) -> HRESULT;
 
+type WndProcType =
+    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
 {
-    unsafe extern "system" fn def_window_proc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcA(hwnd, msg, wparam, lparam)
-    }
+    info!("end scene");
 
     let mut imgui_renderer = IMGUI_RENDERER.get_or_init(|| {
+        let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
+        this.GetCreationParameters(&mut creation_parameters).unwrap();
+
         let mut context = imgui::Context::create();
         context.set_ini_filename(None);
-        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
+        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone(), creation_parameters).unwrap();
+
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            creation_parameters.hFocusWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as isize,
+        ));
+
+        #[cfg(target_arch = "x86")]
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            creation_parameters.hFocusWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as i32,
+        ));
 
         Mutex::new(Box::new(
             ImguiRenderer
             {
                 ctx: context,
                 renderer,
-                wnd_proc: def_window_proc,
+                wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false }
             }
         ))
     }).lock();
 
-   imgui_renderer.render();
-
-
-
-        //Ok(imgui_renderer) =>
-        //{
-        //    let r = imgui_renderer.unwrap();
-        //    r.renderer.render(r.ctx);
-        //}
-        //_ => error!("Failed to acquire imgui_renderer lock")
-
-
-
-
+    imgui_renderer.render();
 
     let (trampoline_end_scene, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_end_scene(this);
     return result;
 }
+
+unsafe extern "system" fn imgui_wnd_proc(
+    hwnd: HWND,
+    umsg: u32,
+    WPARAM(wparam): WPARAM,
+    LPARAM(lparam): LPARAM,
+) -> LRESULT {
+    match IMGUI_RENDERER.get().map(Mutex::try_lock) {
+        Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            imgui_renderer,
+            IMGUI_RENDER_LOOP.get().unwrap(),
+        ),
+        Some(None) => {
+            debug!("Could not lock in WndProc");
+            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+        },
+        None => {
+            debug!("WndProc called before hook was set");
+            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+        },
+    }
+}
+
 
 
 unsafe extern "system" fn imgui_dx9_present_impl(
@@ -81,6 +114,8 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     pdirtyregion: *const RGNDATA
 ) -> HRESULT
 {
+    info!("present");
+
     let (_, trampoline_present) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     return result;
@@ -104,24 +139,27 @@ impl ImguiRenderer
 {
     unsafe fn render(&mut self)
     {
-
-
-        {
+        if let Some(rect) = self.renderer.get_window_rect() {
             let mut io = self.ctx.io_mut();
-            let rect = self.renderer.get_window_rect();
+
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+
+            let mut pos = POINT { x: 0, y: 0 };
+
+            let active_window = GetForegroundWindow();
+            if !active_window.is_invalid()
+                && (active_window == self.renderer.get_hwnd()
+                || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
+            {
+                let gcp = GetCursorPos(&mut pos as *mut _);
+                if gcp.as_bool() && ScreenToClient(self.renderer.get_hwnd(), &mut pos as *mut _).as_bool() {
+                    io.mouse_pos[0] = pos.x as _;
+                    io.mouse_pos[1] = pos.y as _;
+                }
+            }
+        } else {
+            trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
-
-
-        let mut pos = POINT { x: 0, y: 0 };
-
-        //let active_window = GetForegroundWindow();
-
-        //let gcp = GetCursorPos(&mut pos as *mut _);
-        //if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
-        //    io.mouse_pos[0] = pos.x as _;
-        //    io.mouse_pos[1] = pos.y as _;
-        //}
 
 
         //let ctx = &mut self.ctx;
