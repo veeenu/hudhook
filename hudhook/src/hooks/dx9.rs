@@ -21,11 +21,13 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 
 unsafe fn draw(this: &IDirect3DDevice9)
 {
-    let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(|| {
-
+    let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(||
+    {
         let mut context = imgui::Context::create();
         context.set_ini_filename(None);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
         let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
+
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             renderer.get_hwnd(),
@@ -75,15 +77,12 @@ unsafe extern "system" fn imgui_dx9_reset_impl(this: IDirect3DDevice9, present_p
 {
     info!("reset: {}, {}", (*present_params).BackBufferWidth, (*present_params).BackBufferHeight);
 
-    //Drop the renderer so that it is re-initialized on the next call to EndScene
-    if IMGUI_RENDERER.is_some()
-    {
-        let renderer = IMGUI_RENDERER.take();
-        IMGUI_RENDERER = None;
-        drop(renderer);
-    }
-    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
-    return trampoline_reset(this, present_params);
+    IMGUI_RENDERER = None;
+
+    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9 reset trampoline uninitialized");
+    let r = trampoline_reset(this, present_params);
+    info!("Tramp reset {}", r.0);
+    return r;
 }
 
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
@@ -149,14 +148,17 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     pdirtyregion: *const RGNDATA
 ) -> HRESULT
 {
-    //info!("present");
+    info!("present");
 
     this.BeginScene().unwrap();
     draw(&this);
     this.EndScene().unwrap();
 
+    info!("present tramp");
+
     let (_, trampoline_present, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
+    info!("present res {}", result.0);
     return result;
 }
 
