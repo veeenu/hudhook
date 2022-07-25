@@ -52,16 +52,11 @@ unsafe fn draw(this: &IDirect3DDevice9)
                 renderer,
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
-                frame: 0,
             }
         ))
     }).lock();
 
-    //if imgui_renderer.frame == 1
-    // {
     imgui_renderer.render();
-    //}
-    imgui_renderer.frame += 1;
 }
 
 
@@ -102,11 +97,9 @@ unsafe extern "system" fn imgui_dx9_reset_impl(this: IDirect3DDevice9, present_p
         IMGUI_RENDERER = None;
         drop(renderer);
     }
-    let (_, _, trampoline_reset, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     return trampoline_reset(this, present_params);
 }
-
-
 
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
 {
@@ -126,7 +119,7 @@ unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HR
 
 
 
-    let (trampoline_end_scene, _, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (trampoline_end_scene, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_end_scene(this);
     return result;
 }
@@ -171,28 +164,20 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     pdirtyregion: *const RGNDATA
 ) -> HRESULT
 {
-    info!("present");
+    //info!("present");
 
     this.BeginScene().unwrap();
     draw(&this);
     this.EndScene().unwrap();
 
-    if IMGUI_RENDERER.is_some()
-    {
-        if let Some(mut renderer) = IMGUI_RENDERER.as_mut().unwrap().try_lock()
-        {
-            renderer.frame = 0;
-        }
-    }
-
-    let (_, trampoline_present, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (_, trampoline_present, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     return result;
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
-static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn, Dx9SwapchainPresentFn)> = OnceCell::new();
+static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
 
 
 
@@ -202,7 +187,6 @@ struct ImguiRenderer
     renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
-    frame: usize,
 }
 
 impl ImguiRenderer
@@ -276,7 +260,6 @@ pub struct ImguiDX9Hooks
     hook_dx9_end_scene: RawDetour,
     hook_dx9_present: RawDetour,
     hook_dx9_reset: RawDetour,
-    hook_dx9_swapchain_present: RawDetour,
 }
 
 impl ImguiDX9Hooks
@@ -301,20 +284,14 @@ impl ImguiDX9Hooks
             imgui_dx9_reset_impl as *const _,
         ) .expect("dx9_present hook");
 
-        let hook_dx9_swapchain_present = RawDetour::new(
-            dx9_swapchain_present_address as *const _,
-            imgui_dx9_swapchain_present_impl as *const _,
-        ) .expect("dx9_present hook");
-
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {(
                 std::mem::transmute(hook_dx9_end_scene.trampoline()),
                 std::mem::transmute(hook_dx9_present.trampoline()),
                 std::mem::transmute(hook_dx9_reset.trampoline()),
-                std::mem::transmute(hook_dx9_swapchain_present.trampoline()),
         )});
 
-        Self {  hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset, hook_dx9_swapchain_present }
+        Self {  hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset }
     }
 }
 
@@ -323,7 +300,7 @@ impl Hooks for ImguiDX9Hooks
 {
     unsafe fn hook(&self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset, &self.hook_dx9_swapchain_present] {
+        for hook in [/*&self.hook_dx9_end_scene, , &self.hook_dx9_swapchain_present*/ &self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -332,7 +309,7 @@ impl Hooks for ImguiDX9Hooks
 
     unsafe fn unhook(&mut self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset, &self.hook_dx9_swapchain_present] {
+        for hook in [/*&self.hook_dx9_end_scene,, &self.hook_dx9_swapchain_present*/ &self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
