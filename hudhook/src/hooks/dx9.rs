@@ -4,11 +4,11 @@ use std::cell::RefCell;
 use detour::RawDetour;
 use imgui::Context;
 use log::{debug, error, info, trace};
-use parking_lot::lock_api::MutexGuard;
 use parking_lot::{Mutex, RawMutex};
 use windows::core::{HRESULT, Interface, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, Direct3DCreate9, IDirect3DDevice9};
+use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DTRANSFORMSTATETYPE, D3DTS_PROJECTION, D3DTS_VIEW, D3DVIEWPORT9, Direct3DCreate9, IDirect3DDevice9, IDirect3DSwapChain9};
+use windows::Win32::Graphics::Direct3D::D3DMATRIX;
 use windows::Win32::Graphics::Gdi::{HBRUSH, RGNDATA, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos, GetForegroundWindow, GWLP_WNDPROC, HCURSOR, HICON, HMENU, IsChild, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
@@ -20,6 +20,50 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+
+unsafe fn draw(this: &IDirect3DDevice9)
+{
+    let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(|| {
+        let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
+        this.GetCreationParameters(&mut creation_parameters).unwrap();
+
+        let mut context = imgui::Context::create();
+        context.set_ini_filename(None);
+        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone(), creation_parameters).unwrap();
+
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            creation_parameters.hFocusWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as isize,
+        ));
+
+        #[cfg(target_arch = "x86")]
+            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            creation_parameters.hFocusWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as i32,
+        ));
+
+        Mutex::new(Box::new(
+            ImguiRenderer
+            {
+                ctx: context,
+                renderer,
+                wnd_proc,
+                flags: ImguiRenderLoopFlags { focused: false },
+                frame: 0,
+            }
+        ))
+    }).lock();
+
+    //if imgui_renderer.frame == 1
+    // {
+    imgui_renderer.render();
+    //}
+    imgui_renderer.frame += 1;
+}
+
 
 
 type Dx9EndSceneFn = unsafe extern "system" fn(this: IDirect3DDevice9,) -> HRESULT;
@@ -35,8 +79,14 @@ type Dx9PresentFn = unsafe extern "system" fn(
 ) -> HRESULT;
 
 
-
-
+type Dx9SwapchainPresentFn = unsafe extern "system" fn(
+    this: IDirect3DSwapChain9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+    dwFlags: u32,
+) -> HRESULT;
 
 type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -48,71 +98,35 @@ unsafe extern "system" fn imgui_dx9_reset_impl(this: IDirect3DDevice9, present_p
     //Drop the renderer so that it is re-initialized on the next call to EndScene
     if IMGUI_RENDERER.is_some()
     {
-        let mut renderer = IMGUI_RENDERER.take();
+        let renderer = IMGUI_RENDERER.take();
         IMGUI_RENDERER = None;
         drop(renderer);
     }
-
-
-    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (_, _, trampoline_reset, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     return trampoline_reset(this, present_params);
 }
 
 
 
-
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT
 {
-    //let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
-    //this.GetCreationParameters(&mut creation_parameters).unwrap();
+    let mut viewport = D3DVIEWPORT9{..core::mem::zeroed()};
+    this.GetViewport(&mut viewport).unwrap();
+    let render_target_surface = this.GetRenderTarget(0).unwrap();
+    let mut render_target_desc = D3DSURFACE_DESC{..core::mem::zeroed()};
+    render_target_surface.GetDesc(&mut render_target_desc).unwrap();
 
-    info!("end scene");
-    //info!("AdapterOrdinal {}", creation_parameters.AdapterOrdinal);
-    //info!("hFocusWindow {}", creation_parameters.hFocusWindow.0);
-    //info!("BehaviorFlags {}", creation_parameters.BehaviorFlags);
-    //info!("DeviceType {}", creation_parameters.DeviceType.0);
+    let backbuffer_surface = this.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
+    let mut backbuffer_desc = D3DSURFACE_DESC{..core::mem::zeroed()};
+    backbuffer_surface.GetDesc(&mut backbuffer_desc).unwrap();
 
-    let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(|| {
-        let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
-        this.GetCreationParameters(&mut creation_parameters).unwrap();
+    info!("endscene {:?}", viewport);
+    info!("rtd {:?}", render_target_desc);
+    info!("bd  {:?}", backbuffer_desc);
 
-        let mut context = imgui::Context::create();
-        context.set_ini_filename(None);
-        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone(), creation_parameters).unwrap();
 
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-            creation_parameters.hFocusWindow,
-            GWLP_WNDPROC,
-            imgui_wnd_proc as usize as isize,
-        ));
 
-        #[cfg(target_arch = "x86")]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-            creation_parameters.hFocusWindow,
-            GWLP_WNDPROC,
-            imgui_wnd_proc as usize as i32,
-        ));
-
-        Mutex::new(Box::new(
-            ImguiRenderer
-            {
-                ctx: context,
-                renderer,
-                wnd_proc,
-                flags: ImguiRenderLoopFlags { focused: false },
-                request_render: true,
-            }
-        ))
-    }).lock();
-
-    //if imgui_renderer.request_render
-    //{
-        imgui_renderer.render();
-    //    imgui_renderer.request_render = false;
-    //}
-
-    let (trampoline_end_scene, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    let (trampoline_end_scene, _, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_end_scene(this);
     return result;
 }
@@ -159,19 +173,26 @@ unsafe extern "system" fn imgui_dx9_present_impl(
 {
     info!("present");
 
-    //if let Some(renderer) = IMGUI_RENDERER.get()
-    //{
-    //    renderer.lock().request_render = true;
-    //}
+    this.BeginScene().unwrap();
+    draw(&this);
+    this.EndScene().unwrap();
 
-    let (_, trampoline_present, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+    if IMGUI_RENDERER.is_some()
+    {
+        if let Some(mut renderer) = IMGUI_RENDERER.as_mut().unwrap().try_lock()
+        {
+            renderer.frame = 0;
+        }
+    }
+
+    let (_, trampoline_present, _, _) = TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
     let result = trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     return result;
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
-static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
+static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn, Dx9SwapchainPresentFn)> = OnceCell::new();
 
 
 
@@ -181,7 +202,7 @@ struct ImguiRenderer
     renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
-    request_render: bool,
+    frame: usize,
 }
 
 impl ImguiRenderer
@@ -255,6 +276,7 @@ pub struct ImguiDX9Hooks
     hook_dx9_end_scene: RawDetour,
     hook_dx9_present: RawDetour,
     hook_dx9_reset: RawDetour,
+    hook_dx9_swapchain_present: RawDetour,
 }
 
 impl ImguiDX9Hooks
@@ -262,7 +284,7 @@ impl ImguiDX9Hooks
     pub unsafe fn new<T: 'static>(t: T) -> Self
         where T: ImguiRenderLoop + Send + Sync,
     {
-        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address)  = get_dx9_present_addr();
+        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address, dx9_swapchain_present_address)  = get_dx9_present_addr();
 
         let  hook_dx9_end_scene = RawDetour::new(
             hook_dx9_end_scene_address as *const _,
@@ -279,15 +301,20 @@ impl ImguiDX9Hooks
             imgui_dx9_reset_impl as *const _,
         ) .expect("dx9_present hook");
 
+        let hook_dx9_swapchain_present = RawDetour::new(
+            dx9_swapchain_present_address as *const _,
+            imgui_dx9_swapchain_present_impl as *const _,
+        ) .expect("dx9_present hook");
 
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {(
                 std::mem::transmute(hook_dx9_end_scene.trampoline()),
                 std::mem::transmute(hook_dx9_present.trampoline()),
                 std::mem::transmute(hook_dx9_reset.trampoline()),
+                std::mem::transmute(hook_dx9_swapchain_present.trampoline()),
         )});
 
-        Self {  hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset }
+        Self {  hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset, hook_dx9_swapchain_present }
     }
 }
 
@@ -296,7 +323,7 @@ impl Hooks for ImguiDX9Hooks
 {
     unsafe fn hook(&self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset] {
+        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset, &self.hook_dx9_swapchain_present] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -305,7 +332,7 @@ impl Hooks for ImguiDX9Hooks
 
     unsafe fn unhook(&mut self)
     {
-        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset] {
+        for hook in [&self.hook_dx9_end_scene, &self.hook_dx9_present, &self.hook_dx9_reset, &self.hook_dx9_swapchain_present] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
@@ -368,7 +395,7 @@ unsafe fn create_dummy_window() -> HWND
     return hwnd;
 }
 
-unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)
+unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn, Dx9SwapchainPresentFn)
 {
     let hwnd = create_dummy_window();
 
@@ -400,11 +427,13 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)
         &mut device,
     ).expect("dx9 failed to create device");
     let device = device.unwrap();
+    let swapchain = device.GetSwapChain(0).unwrap();
 
     let end_scene_ptr = device.vtable().EndScene;
     let present_ptr = device.vtable().Present;
     let reset_ptr = device.vtable().Reset;
+    let swapchain_present_ptr = swapchain.vtable().Present;
 
     DestroyWindow(hwnd);
-    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr), std::mem::transmute(reset_ptr));
+    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr), std::mem::transmute(reset_ptr), std::mem::transmute(swapchain_present_ptr));
 }

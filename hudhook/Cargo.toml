@@ -10,7 +10,11 @@ license-file = "LICENSE"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
 [[example]]
-name = "hook_you"
+name = "hook_you_dx9"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "hook_you_dx11"
 crate-type = ["cdylib"]
 
 [[bin]]

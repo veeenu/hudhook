@@ -33,16 +33,16 @@ use imgui::{
     internal::RawWrapper, BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx,
     TextureId, Textures,
 };
-use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, D3DDEVICE_CREATION_PARAMETERS};
+use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, D3DDEVICE_CREATION_PARAMETERS, D3DRS_CLIPPING, IDirect3DSurface9, D3DMULTISAMPLE_NONE, D3DSURFACE_DESC, D3DCAPS9, D3DBACKBUFFER_TYPE_MONO};
 
-use windows::Win32::Foundation::{BOOL, HWND, RECT};
+use windows::Win32::Foundation::{BOOL, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
 use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
 use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-use log::{debug, error, info, trace};
+use log::info;
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -60,7 +60,10 @@ pub type Result<T> = windows::core::Result<T>;
 
 static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
     Anonymous: D3DMATRIX_0 {
-        m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        m: [1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0],
     },
 };
 
@@ -79,6 +82,7 @@ pub struct Renderer {
     vertex_buffer: (IDirect3DVertexBuffer9, usize),
     index_buffer: (IDirect3DIndexBuffer9, usize),
     textures: Textures<IDirect3DBaseTexture9>,
+    surface: IDirect3DSurface9,
 }
 
 impl Drop for Renderer
@@ -105,6 +109,27 @@ impl Renderer {
         "imgui_dx9_renderer@",
         env!("CARGO_PKG_VERSION")
         )));
+
+        ////Need to obtain the multisampling from the depth stencil, otherwise creating the render target will fail
+        //let depth_stencil_surface = device.GetDepthStencilSurface().expect("Failed to get dept stencil surface");
+        //let mut dss_description = D3DSURFACE_DESC{..core::mem::zeroed()};
+        //depth_stencil_surface.GetDesc(&mut dss_description);
+
+
+
+        let mut rect = RECT{..core::mem::zeroed()};
+        if !GetWindowRect(device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0)
+        {
+            panic!("Failed to create render target, GetWindowRect returned an error");
+        }
+        let mut surface = None;
+        device.CreateRenderTarget((rect.right - rect.left) as u32, (rect.bottom - rect.top) as u32,  D3DFMT_A8R8G8B8, D3DMULTISAMPLE_NONE, 0, false, &mut surface, ptr::null_mut()).expect("failed to create render target");
+        let surface = surface.unwrap();
+
+        let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
+        //device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO);
+
+
         Ok(Renderer {
             vertex_buffer: Self::create_vertex_buffer(&device, 0)?,
             index_buffer: Self::create_index_buffer(&device, 0)?,
@@ -112,6 +137,7 @@ impl Renderer {
             device,
             font_tex,
             textures: Textures::new(),
+            surface,
         })
     }
 
@@ -220,7 +246,7 @@ impl Renderer {
                             right: ((clip_rect[2] - clip_off[0]) * clip_scale[0]) as i32,
                             bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
                         };
-                        info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
+                        //info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
                         self.device.SetScissorRect(&r).unwrap();
                         self.device
                             .DrawIndexedPrimitive(
@@ -249,18 +275,19 @@ impl Renderer {
         let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
         let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
 
-        info!("fb size {}, {}", fb_width, fb_height);
+        info!("fb size {} * {} = {}, {} * {} = {}", draw_data.display_size[0],  draw_data.framebuffer_scale[0], fb_width, draw_data.display_size[1], draw_data.framebuffer_scale[1], fb_height);
 
         let vp = D3DVIEWPORT9 {
             X: 0,
             Y: 0,
-            Width: fb_width as _,
-            Height: fb_height as _,
+            Width: draw_data.display_size[0] as u32,
+            Height: draw_data.display_size[1] as u32,
             MinZ: 0.0,
             MaxZ: 1.0,
         };
 
         let device = &self.device;
+        device.SetRenderTarget(0, &self.surface);
         device.SetViewport(&vp).unwrap();
         device.SetPixelShader(None).unwrap();
         device.SetVertexShader(None).unwrap();
@@ -289,7 +316,7 @@ impl Renderer {
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
 
-        info!("l {} r {} t {} b {}", l,r,t,b);
+        //info!("l {} r {} t {} b {}", l,r,t,b);
 
         let mat_projection = D3DMATRIX {
             Anonymous: D3DMATRIX_0 {
@@ -317,6 +344,18 @@ impl Renderer {
         device.SetTransform(D3DTS_WORLDMATRIX, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_VIEW, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_PROJECTION, &mat_projection).unwrap();
+
+        //let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+        //let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+        //let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+//
+        //device.GetTransform(D3DTRANSFORMSTATETYPE(256)   , &mut mat_world     ).unwrap();
+        //device.GetTransform(D3DTS_VIEW                   , &mut mat_view      ).unwrap();
+        //device.GetTransform(D3DTS_PROJECTION             , &mut mat_projection).unwrap();
+//
+        //info!("inner mat_world        {:?}", mat_world.Anonymous.m);
+        //info!("inner mat_view         {:?}", mat_view.Anonymous.m);
+        //info!("inner mat_projection   {:?}", mat_projection.Anonymous.m);
     }
 
     unsafe fn lock_buffers<'v, 'i>(
@@ -468,6 +507,8 @@ struct StateBackup
     mat_world: D3DMATRIX,
     mat_view: D3DMATRIX,
     mat_projection: D3DMATRIX,
+    viewport: D3DVIEWPORT9,
+    surface: IDirect3DSurface9,
 }
 
 impl StateBackup {
@@ -478,16 +519,21 @@ impl StateBackup {
                 let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
                 let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
                 let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+                let mut viewport      : D3DVIEWPORT9 = D3DVIEWPORT9{..core::mem::zeroed()};
 
                 device.GetTransform(D3DTS_WORLDMATRIX   , &mut mat_world)?;
                 device.GetTransform(D3DTS_VIEW          , &mut mat_view)?;
                 device.GetTransform(D3DTS_PROJECTION    , &mut mat_projection)?;
+                device.GetViewport(&mut viewport)?;
+                let surface = device.GetRenderTarget(0).unwrap();
 
                 Ok(StateBackup{
                     state_block,
                     mat_world,
                     mat_view,
                     mat_projection,
+                    viewport,
+                    surface,
                 })
             },
             Err(e) => Err(e),
@@ -500,6 +546,8 @@ impl StateBackup {
         device.SetTransform(D3DTS_WORLDMATRIX, &self.mat_world)?;
         device.SetTransform(D3DTS_VIEW, &self.mat_view)?;
         device.SetTransform(D3DTS_PROJECTION, &self.mat_projection)?;
+        device.SetViewport(&self.viewport).unwrap();
+        device.SetRenderTarget(0, &self.surface).unwrap();
         Ok(())
     }
 }
