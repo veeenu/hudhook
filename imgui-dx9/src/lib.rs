@@ -42,7 +42,6 @@ use windows::Win32::System::SystemServices::D3DFVF_TEX1;
 use windows::Win32::System::SystemServices::D3DFVF_XYZ;
 use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-use log::info;
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -100,7 +99,7 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9, device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS) -> Result<Self> {
+    pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self> {
         let font_tex =
             IDirect3DBaseTexture9::from(Self::create_font_texture(ctx.fonts(), &device)?);
 
@@ -109,6 +108,9 @@ impl Renderer {
         "imgui_dx9_renderer@",
         env!("CARGO_PKG_VERSION")
         )));
+
+        let mut device_creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
+        device.GetCreationParameters(&mut device_creation_parameters).unwrap();
 
         let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
 
@@ -148,8 +150,8 @@ impl Renderer {
     /// `device` must be a valid [`IDirect3DDevice9`] pointer.
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
-    pub unsafe fn new_raw(im_ctx: &mut imgui::Context, device: IDirect3DDevice9, device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS) -> Result<Self> {
-        Self::new(im_ctx, device, device_creation_parameters)
+    pub unsafe fn new_raw(im_ctx: &mut imgui::Context, device: IDirect3DDevice9) -> Result<Self> {
+        Self::new(im_ctx, device)
     }
 
     /// The textures registry of this renderer.
@@ -253,12 +255,8 @@ impl Renderer {
         Ok(())
     }
 
-    unsafe fn set_render_state(&mut self, draw_data: &DrawData) {
-        let fb_width = draw_data.display_size[0] * draw_data.framebuffer_scale[0];
-        let fb_height = draw_data.display_size[1] * draw_data.framebuffer_scale[1];
-
-        //info!("fb size {} * {} = {}, {} * {} = {}", draw_data.display_size[0],  draw_data.framebuffer_scale[0], fb_width, draw_data.display_size[1], draw_data.framebuffer_scale[1], fb_height);
-
+    unsafe fn set_render_state(&mut self, draw_data: &DrawData)
+    {
         let vp = D3DVIEWPORT9 {
             X: 0,
             Y: 0,

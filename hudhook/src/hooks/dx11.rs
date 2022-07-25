@@ -25,6 +25,12 @@ use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
+
+#[cfg(target_arch = "x86")]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+
 use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
 };
@@ -165,11 +171,21 @@ impl ImguiRenderer {
         let sd = swap_chain.GetDesc().expect("GetDesc");
 
         let engine = RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
+
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
+
+        #[cfg(target_arch = "x86")]
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            sd.OutputWindow,
+            GWLP_WNDPROC,
+            imgui_wnd_proc as usize as i32,
+        ));
+
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
@@ -231,7 +247,22 @@ impl ImguiRenderer {
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain>) {
         let swap_chain = self.store_swap_chain(swap_chain);
         let desc = swap_chain.GetDesc().unwrap();
-        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
+
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        SetWindowLongPtrA(
+            desc.OutputWindow,
+            GWLP_WNDPROC,
+            self.wnd_proc as usize as isize,
+        );
+
+        #[cfg(target_arch = "x86")]
+        SetWindowLongA(
+            desc.OutputWindow,
+            GWLP_WNDPROC,
+            self.wnd_proc as usize as i32,
+        );
+
+
     }
 
     fn ctx(&self) -> &imgui_dx11::imgui::Context {

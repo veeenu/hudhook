@@ -1,14 +1,12 @@
 use once_cell::sync::OnceCell;
 use std::ptr::null;
-use std::cell::RefCell;
 use detour::RawDetour;
 use imgui::Context;
 use log::{debug, error, info, trace};
-use parking_lot::{Mutex, RawMutex};
+use parking_lot::{Mutex};
 use windows::core::{HRESULT, Interface, PCSTR};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DTRANSFORMSTATETYPE, D3DTS_PROJECTION, D3DTS_VIEW, D3DVIEWPORT9, Direct3DCreate9, IDirect3DDevice9, IDirect3DSwapChain9};
-use windows::Win32::Graphics::Direct3D::D3DMATRIX;
+use windows::Win32::Graphics::Direct3D9::{D3D_SDK_VERSION, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, Direct3DCreate9, IDirect3DDevice9};
 use windows::Win32::Graphics::Gdi::{HBRUSH, RGNDATA, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos, GetForegroundWindow, GWLP_WNDPROC, HCURSOR, HICON, HMENU, IsChild, RegisterClassA, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE};
@@ -24,23 +22,20 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 unsafe fn draw(this: &IDirect3DDevice9)
 {
     let mut imgui_renderer = IMGUI_RENDERER.get_or_insert_with(|| {
-        let mut creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
-        this.GetCreationParameters(&mut creation_parameters).unwrap();
 
         let mut context = imgui::Context::create();
         context.set_ini_filename(None);
-        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone(), creation_parameters).unwrap();
-
+        let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-            creation_parameters.hFocusWindow,
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            renderer.get_hwnd(),
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
 
         #[cfg(target_arch = "x86")]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-            creation_parameters.hFocusWindow,
+        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            renderer.get_hwnd(),
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
         ));
@@ -71,16 +66,6 @@ type Dx9PresentFn = unsafe extern "system" fn(
     pdestrect: *const RECT,
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA
-) -> HRESULT;
-
-
-type Dx9SwapchainPresentFn = unsafe extern "system" fn(
-    this: IDirect3DSwapChain9,
-    psourcerect: *const RECT,
-    pdestrect: *const RECT,
-    hdestwindowoverride: HWND,
-    pdirtyregion: *const RGNDATA,
-    dwFlags: u32,
 ) -> HRESULT;
 
 type WndProcType =
@@ -257,6 +242,7 @@ unsafe impl Sync for ImguiRenderer {}
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct ImguiDX9Hooks
 {
+    #[allow(dead_code)]
     hook_dx9_end_scene: RawDetour,
     hook_dx9_present: RawDetour,
     hook_dx9_reset: RawDetour,
@@ -267,7 +253,7 @@ impl ImguiDX9Hooks
     pub unsafe fn new<T: 'static>(t: T) -> Self
         where T: ImguiRenderLoop + Send + Sync,
     {
-        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address, dx9_swapchain_present_address)  = get_dx9_present_addr();
+        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address) = get_dx9_present_addr();
 
         let  hook_dx9_end_scene = RawDetour::new(
             hook_dx9_end_scene_address as *const _,
@@ -372,7 +358,7 @@ unsafe fn create_dummy_window() -> HWND
     return hwnd;
 }
 
-unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn, Dx9SwapchainPresentFn)
+unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)
 {
     let hwnd = create_dummy_window();
 
@@ -404,13 +390,11 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn, Dx
         &mut device,
     ).expect("dx9 failed to create device");
     let device = device.unwrap();
-    let swapchain = device.GetSwapChain(0).unwrap();
 
     let end_scene_ptr = device.vtable().EndScene;
     let present_ptr = device.vtable().Present;
     let reset_ptr = device.vtable().Reset;
-    let swapchain_present_ptr = swapchain.vtable().Present;
 
     DestroyWindow(hwnd);
-    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr), std::mem::transmute(reset_ptr), std::mem::transmute(swapchain_present_ptr));
+    return (std::mem::transmute(end_scene_ptr), std::mem::transmute(present_ptr), std::mem::transmute(reset_ptr));
 }

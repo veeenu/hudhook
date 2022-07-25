@@ -7,11 +7,7 @@
 
 pub(crate) mod common;
 pub mod dx9;
-
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 pub mod dx11;
-
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 pub mod dx12;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};

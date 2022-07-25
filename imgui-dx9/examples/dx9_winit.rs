@@ -102,9 +102,8 @@ fn main() {
     imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
 
-    let mut creation_parameters = unsafe{ D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()}};
-    unsafe{ device.GetCreationParameters(&mut creation_parameters).unwrap(); };
-    let mut renderer = unsafe { imgui_dx9::Renderer::new(&mut imgui, device.clone(), creation_parameters).unwrap() };
+
+    let mut renderer = unsafe { imgui_dx9::Renderer::new(&mut imgui, device.clone()).unwrap() };
 
     let mut last_frame = Instant::now();
 
