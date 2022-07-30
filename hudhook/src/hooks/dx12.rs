@@ -10,7 +10,8 @@ use imgui_dx12::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{Interface, HRESULT, PCSTR};
+use widestring::{u16cstr, U16CStr};
+use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
@@ -72,6 +73,17 @@ static TRAMPOLINE: OnceCell<(
     ResizeBuffersType,
 )> = OnceCell::new();
 
+const COMMAND_ALLOCATOR_NAMES: [&U16CStr; 8] = [
+    u16cstr!("hudhook Command allocator #0"),
+    u16cstr!("hudhook Command allocator #1"),
+    u16cstr!("hudhook Command allocator #2"),
+    u16cstr!("hudhook Command allocator #3"),
+    u16cstr!("hudhook Command allocator #4"),
+    u16cstr!("hudhook Command allocator #5"),
+    u16cstr!("hudhook Command allocator #6"),
+    u16cstr!("hudhook Command allocator #7"),
+];
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Debugging
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -118,15 +130,26 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
+    trace!(
+        "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
+         {command_lists:p}) invoked"
+    );
     COMMAND_QUEUE_GUARD
         .get_or_try_init(|| {
-            trace!("cmd_queue ptr is {:?}", cmd_queue);
+            let desc = cmd_queue.GetDesc();
+            trace!("CommandQueue description: {:?}", desc);
+
+            if desc.Type.0 != 0 {
+                trace!("Skipping CommandQueue");
+                return Err(());
+            }
+
             if let Some(renderer) = IMGUI_RENDERER.get() {
                 trace!("cmd_queue ptr was set");
                 renderer.lock().command_queue = Some(cmd_queue.clone());
                 Ok(())
             } else {
-                trace!("cmd_queue ptr was not set");
+                trace!("cmd_queue ptr was not set: renderer not initialized");
                 Err(())
             }
         })
@@ -257,6 +280,10 @@ impl ImguiRenderer {
             .unwrap();
         command_list.Close().unwrap();
 
+        command_list
+            .SetName(PCWSTR(u16cstr!("hudhook Command List").as_ptr()))
+            .expect("Couldn't set command list name");
+
         let rtv_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -278,15 +305,20 @@ impl ImguiRenderer {
                     ptr: rtv_handle_start.ptr + (i * rtv_heap_inc_size) as usize,
                 };
                 trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
+
                 let back_buffer = swap_chain.GetBuffer(i).unwrap();
                 dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
-                FrameContext {
-                    desc_handle,
-                    back_buffer,
-                    command_allocator: dev
-                        .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-                        .unwrap(),
-                }
+
+                let command_allocator: ID3D12CommandAllocator =
+                    dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).unwrap();
+                let command_allocator_name = COMMAND_ALLOCATOR_NAMES
+                    [usize::min(COMMAND_ALLOCATOR_NAMES.len() - 1, i as usize)];
+
+                command_allocator
+                    .SetName(PCWSTR(command_allocator_name.as_ptr()))
+                    .expect("Couldn't set command allocator name");
+
+                FrameContext { desc_handle, back_buffer, command_allocator }
             })
             .collect();
 

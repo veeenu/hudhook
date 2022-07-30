@@ -7,7 +7,8 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use log::*;
 use memoffset::offset_of;
-use windows::core::{Result, PCSTR};
+use windows::core::{Result, PCSTR, PCWSTR};
+use widestring::u16cstr;
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -63,7 +64,7 @@ impl FrameResources {
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
 
-            if let Err(e) = unsafe {
+            unsafe {
                 dev.CreateCommittedResource(
                     &props,
                     D3D12_HEAP_FLAG_NONE,
@@ -72,10 +73,13 @@ impl FrameResources {
                     null(),
                     &mut self.vertex_buffer as *mut Option<_>,
                 )
-            } {
-                error!("{:?}", e);
             }
+            .map_err(|e| {
+                error!("Resizing index buffer: {:?}", e);
+                e
+            })?;
         }
+
         if self.index_buffer.is_none() || self.index_buffer_size < indices {
             drop(self.index_buffer.take());
             self.index_buffer_size = indices + 10000;
@@ -99,7 +103,7 @@ impl FrameResources {
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
 
-            if let Err(e) = unsafe {
+            unsafe {
                 dev.CreateCommittedResource(
                     &props,
                     D3D12_HEAP_FLAG_NONE,
@@ -108,9 +112,11 @@ impl FrameResources {
                     null(),
                     &mut self.index_buffer as *mut _,
                 )
-            } {
-                error!("{:?}", e);
             }
+            .map_err(|e| {
+                error!("Resizing index buffer: {:?}", e);
+                e
+            })?;
         }
         Ok(())
     }
@@ -433,7 +439,7 @@ impl RenderEngine {
                 let buf_ptr = unsafe { err_blob.GetBufferPointer() } as *mut u8;
                 let buf_size = unsafe { err_blob.GetBufferSize() };
                 let s = unsafe { String::from_raw_parts(buf_ptr, buf_size, buf_size + 1) };
-                error!("{}: {}", e, s);
+                error!("Serializing root signature: {}: {}", e, s);
             }
         }
 
@@ -731,11 +737,28 @@ impl RenderEngine {
         }
         .unwrap();
 
+        unsafe {
+            cmd_queue.SetName(PCWSTR(u16cstr!("hudhook font texture Command Queue").as_ptr()))
+        }
+        .unwrap();
+
         let cmd_allocator: ID3D12CommandAllocator =
             unsafe { self.dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
 
+        unsafe {
+            cmd_allocator
+                .SetName(PCWSTR(u16cstr!("hudhook font texture Command Allocator").as_ptr()))
+        }
+        .unwrap();
+
         let cmd_list: ID3D12GraphicsCommandList = unsafe {
             self.dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &cmd_allocator, None)
+        }
+        .unwrap();
+
+        unsafe {
+            cmd_list
+                .SetName(PCWSTR(u16cstr!("hudhook font texture Command List").as_ptr()))
         }
         .unwrap();
 
