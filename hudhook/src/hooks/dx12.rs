@@ -21,13 +21,11 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::WindowsAndMessaging::*;
-
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
-
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
@@ -317,7 +315,6 @@ impl ImguiRenderer {
             imgui_wnd_proc as usize as i32,
         ));
 
-
         ctx.set_ini_filename(None);
 
         let flags = ImguiRenderLoopFlags { focused: true };
@@ -460,18 +457,10 @@ impl ImguiRenderer {
         let desc = swap_chain.GetDesc().unwrap();
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as isize,
-        );
+        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
-        SetWindowLongA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as i32,
-        );
+        SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
     }
 }
 

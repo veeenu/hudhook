@@ -1,47 +1,55 @@
-//Based on https://github.com/Veykril/imgui-dx9-renderer
+// Based on https://github.com/Veykril/imgui-dx9-renderer
 //
-//Copyright (c) 2019 Lukas Wirth
+// Copyright (c) 2019 Lukas Wirth
 //
-//Permission is hereby granted, free of charge, to any person obtaining a copy
-//of this software and associated documentation files (the "Software"), to deal
-//in the Software without restriction, including without limitation the rights
-//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-//copies of the Software, and to permit persons to whom the Software is
-//furnished to do so, subject to the following conditions:
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
 //
-//The above copyright notice and this permission notice shall be included in all
-//copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 //
-//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-//SOFTWARE.
-
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
 #![cfg(windows)]
 #![deny(missing_docs)]
 //! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/*/imgui/) rust bindings.
 
-use std::mem;
-use std::ptr;
-use std::slice;
+use std::{mem, ptr, slice};
 
+use imgui::internal::RawWrapper;
 use imgui::{
-    internal::RawWrapper, BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx,
-    TextureId, Textures,
+    BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx, TextureId, Textures,
 };
 use log::info;
-use windows::Win32::Graphics::Direct3D9::{IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9, D3DDEVICE_CREATION_PARAMETERS, IDirect3DSurface9, D3DBACKBUFFER_TYPE_MONO};
-
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
+use windows::Win32::Graphics::Direct3D9::{
+    IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9,
+    IDirect3DSurface9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBACKBUFFER_TYPE_MONO,
+    D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE,
+    D3DDEVICE_CREATION_PARAMETERS, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT,
+    D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE,
+    D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE,
+    D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE,
+    D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR,
+    D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP,
+    D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW,
+    D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9,
+};
 use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
-use windows::Win32::System::SystemServices::D3DFVF_TEX1;
-use windows::Win32::System::SystemServices::D3DFVF_XYZ;
-use windows::Win32::System::SystemServices::{D3DFVF_DIFFUSE, D3DTA_DIFFUSE, D3DTA_TEXTURE};
+use windows::Win32::System::SystemServices::{
+    D3DFVF_DIFFUSE, D3DFVF_TEX1, D3DFVF_XYZ, D3DTA_DIFFUSE, D3DTA_TEXTURE,
+};
 use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
 
 const FONT_TEX_ID: usize = !0;
@@ -55,15 +63,12 @@ const INDEX_BUF_ADD_CAPACITY: usize = 10000;
 
 const D3DTS_WORLDMATRIX: D3DTRANSFORMSTATETYPE = D3DTRANSFORMSTATETYPE(256);
 
-///Reexport of windows::core::Result<T>
+/// Reexport of windows::core::Result<T>
 pub type Result<T> = windows::core::Result<T>;
 
 static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
     Anonymous: D3DMATRIX_0 {
-        m: [1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0],
+        m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
     },
 };
 
@@ -85,10 +90,8 @@ pub struct Renderer {
     surface: IDirect3DSurface9,
 }
 
-impl Drop for Renderer
-{
-    fn drop(&mut self)
-    {
+impl Drop for Renderer {
+    fn drop(&mut self) {
         info!("dropping Renderer");
     }
 }
@@ -107,11 +110,12 @@ impl Renderer {
 
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!(
-        "imgui_dx9_renderer@",
-        env!("CARGO_PKG_VERSION")
+            "imgui_dx9_renderer@",
+            env!("CARGO_PKG_VERSION")
         )));
 
-        let mut device_creation_parameters = D3DDEVICE_CREATION_PARAMETERS{..core::mem::zeroed()};
+        let mut device_creation_parameters =
+            D3DDEVICE_CREATION_PARAMETERS { ..core::mem::zeroed() };
         device.GetCreationParameters(&mut device_creation_parameters).unwrap();
 
         let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
@@ -127,11 +131,10 @@ impl Renderer {
         })
     }
 
-    ///Gets the window width & height via the backbuffer
-    pub fn get_window_rect(&self) -> Option<RECT>
-    {
-        unsafe{
-            let mut rect: RECT = RECT{..core::mem::zeroed()};
+    /// Gets the window width & height via the backbuffer
+    pub fn get_window_rect(&self) -> Option<RECT> {
+        unsafe {
+            let mut rect: RECT = RECT { ..core::mem::zeroed() };
             if GetWindowRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
                 Some(rect)
             } else {
@@ -140,8 +143,8 @@ impl Renderer {
         }
     }
 
-    ///Returns the hFocuswindow HWND from the device creation parameters
-    pub fn get_hwnd(&self) -> HWND{
+    /// Returns the hFocuswindow HWND from the device creation parameters
+    pub fn get_hwnd(&self) -> HWND {
         self.device_creation_parameters.hFocusWindow
     }
 
@@ -232,7 +235,7 @@ impl Renderer {
                             right: ((clip_rect[2] - clip_off[0]) * clip_scale[0]) as i32,
                             bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
                         };
-                        //info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
+                        // info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
                         self.device.SetScissorRect(&r).unwrap();
                         self.device
                             .DrawIndexedPrimitive(
@@ -257,8 +260,7 @@ impl Renderer {
         Ok(())
     }
 
-    unsafe fn set_render_state(&mut self, draw_data: &DrawData)
-    {
+    unsafe fn set_render_state(&mut self, draw_data: &DrawData) {
         let vp = D3DVIEWPORT9 {
             X: 0,
             Y: 0,
@@ -298,7 +300,7 @@ impl Renderer {
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
 
-        //info!("l {} r {} t {} b {}", l,r,t,b);
+        // info!("l {} r {} t {} b {}", l,r,t,b);
 
         let mat_projection = D3DMATRIX {
             Anonymous: D3DMATRIX_0 {
@@ -327,17 +329,19 @@ impl Renderer {
         device.SetTransform(D3DTS_VIEW, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_PROJECTION, &mat_projection).unwrap();
 
-        //let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-        //let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-        //let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-//
-        //device.GetTransform(D3DTRANSFORMSTATETYPE(256)   , &mut mat_world     ).unwrap();
-        //device.GetTransform(D3DTS_VIEW                   , &mut mat_view      ).unwrap();
-        //device.GetTransform(D3DTS_PROJECTION             , &mut mat_projection).unwrap();
-//
-        //info!("inner mat_world        {:?}", mat_world.Anonymous.m);
-        //info!("inner mat_view         {:?}", mat_view.Anonymous.m);
-        //info!("inner mat_projection   {:?}", mat_projection.Anonymous.m);
+        // let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+        // let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+        // let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
+        //
+        // device.GetTransform(D3DTRANSFORMSTATETYPE(256)   , &mut mat_world
+        // ).unwrap(); device.GetTransform(D3DTS_VIEW
+        // , &mut mat_view      ).unwrap();
+        // device.GetTransform(D3DTS_PROJECTION             , &mut
+        // mat_projection).unwrap();
+        //
+        // info!("inner mat_world        {:?}", mat_world.Anonymous.m);
+        // info!("inner mat_view         {:?}", mat_view.Anonymous.m);
+        // info!("inner mat_projection   {:?}", mat_projection.Anonymous.m);
     }
 
     unsafe fn lock_buffers<'v, 'i>(
@@ -382,7 +386,7 @@ impl Renderer {
         )?;
 
         for (vbuf, ibuf) in
-        draw_data.draw_lists().map(|draw_list| (draw_list.vtx_buffer(), draw_list.idx_buffer()))
+            draw_data.draw_lists().map(|draw_list| (draw_list.vtx_buffer(), draw_list.idx_buffer()))
         {
             for (vertex, vtx_dst) in vbuf.iter().zip(vtx_dst.iter_mut()) {
                 *vtx_dst = CustomVertex {
@@ -483,8 +487,7 @@ impl Renderer {
     }
 }
 
-struct StateBackup
-{
+struct StateBackup {
     state_block: IDirect3DStateBlock9,
     mat_world: D3DMATRIX,
     mat_view: D3DMATRIX,
@@ -495,21 +498,20 @@ struct StateBackup
 
 impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
-        match device.CreateStateBlock(D3DSBT_ALL)
-        {
+        match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => {
-                let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-                let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-                let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-                let mut viewport      : D3DVIEWPORT9 = D3DVIEWPORT9{..core::mem::zeroed()};
+                let mut mat_world: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
+                let mut mat_view: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
+                let mut mat_projection: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
+                let mut viewport: D3DVIEWPORT9 = D3DVIEWPORT9 { ..core::mem::zeroed() };
 
-                device.GetTransform(D3DTS_WORLDMATRIX   , &mut mat_world)?;
-                device.GetTransform(D3DTS_VIEW          , &mut mat_view)?;
-                device.GetTransform(D3DTS_PROJECTION    , &mut mat_projection)?;
+                device.GetTransform(D3DTS_WORLDMATRIX, &mut mat_world)?;
+                device.GetTransform(D3DTS_VIEW, &mut mat_view)?;
+                device.GetTransform(D3DTS_PROJECTION, &mut mat_projection)?;
                 device.GetViewport(&mut viewport)?;
                 let surface = device.GetRenderTarget(0).unwrap();
 
-                Ok(StateBackup{
+                Ok(StateBackup {
                     state_block,
                     mat_world,
                     mat_view,
@@ -522,8 +524,7 @@ impl StateBackup {
         }
     }
 
-    unsafe fn restore(&self, device: &IDirect3DDevice9) -> Result<()>
-    {
+    unsafe fn restore(&self, device: &IDirect3DDevice9) -> Result<()> {
         self.state_block.Apply().unwrap();
         device.SetTransform(D3DTS_WORLDMATRIX, &self.mat_world)?;
         device.SetTransform(D3DTS_VIEW, &self.mat_view)?;
@@ -533,4 +534,3 @@ impl StateBackup {
         Ok(())
     }
 }
-
