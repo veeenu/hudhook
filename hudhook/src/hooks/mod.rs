@@ -16,8 +16,17 @@ pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
 pub trait Hooks {
     /// Find the hook target functions addresses, initialize the data, create
     /// and enable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
     unsafe fn hook(&self);
+
     /// Cleanup global data and disable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
     unsafe fn unhook(&mut self);
 }
 
