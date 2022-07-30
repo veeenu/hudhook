@@ -6,7 +6,9 @@ use log::{debug, error, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, HANDLE};
+use windows::Win32::Foundation::{
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
@@ -81,14 +83,15 @@ unsafe extern "system" fn imgui_dx9_reset_impl(
     this: IDirect3DDevice9,
     present_params: *const D3DPRESENT_PARAMETERS,
 ) -> HRESULT {
-    info!("reset: {}, {}", (*present_params).BackBufferWidth, (*present_params).BackBufferHeight);
+    trace!("reset: {}, {}", (*present_params).BackBufferWidth, (*present_params).BackBufferHeight);
 
     IMGUI_RENDERER = None;
 
     let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9 reset trampoline uninitialized");
     let r = trampoline_reset(this, present_params);
-    info!("Tramp reset {}", r.0);
-    return r;
+    trace!("Tramp reset {}", r.0);
+
+    r
 }
 
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT {
@@ -102,14 +105,14 @@ unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HR
     let mut backbuffer_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
     backbuffer_surface.GetDesc(&mut backbuffer_desc).unwrap();
 
-    info!("endscene {:?}", viewport);
-    info!("rtd {:?}", render_target_desc);
-    info!("bd  {:?}", backbuffer_desc);
+    trace!("endscene {:?}", viewport);
+    trace!("rtd {:?}", render_target_desc);
+    trace!("bd  {:?}", backbuffer_desc);
 
     let (trampoline_end_scene, ..) =
         TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
-    let result = trampoline_end_scene(this);
-    return result;
+
+    trampoline_end_scene(this)
 }
 
 unsafe extern "system" fn imgui_wnd_proc(
@@ -159,7 +162,8 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     let result =
         trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     info!("present res {}", result.0);
-    return result;
+
+    result
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
@@ -244,6 +248,10 @@ pub struct ImguiDX9Hooks {
 }
 
 impl ImguiDX9Hooks {
+    /// # Safety
+    ///
+    /// Is most likely undefined behavior, as it modifies function pointers at
+    /// runtime.
     pub unsafe fn new<T: 'static>(t: T) -> Self
     where
         T: ImguiRenderLoop + Send + Sync,
@@ -323,38 +331,36 @@ unsafe fn create_dummy_window() -> HWND {
         DefWindowProcA(hwnd, msg, wparam, lparam)
     }
 
-    let hwnd = {
-        let hinstance = GetModuleHandleA(None).unwrap();
-        let wnd_class = WNDCLASSA {
-            style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(def_window_proc),
-            hInstance: hinstance,
-            lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hIcon: HICON(0),
-            hCursor: HCURSOR(0),
-            hbrBackground: HBRUSH(0),
-            lpszMenuName: PCSTR(null()),
-        };
-
-        RegisterClassA(&wnd_class);
-        CreateWindowExA(
-            WINDOW_EX_STYLE(0),
-            PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-            PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            0,
-            0,
-            100,
-            100,
-            HWND(0),
-            HMENU(0),
-            hinstance,
-            null(),
-        )
+    let hinstance = GetModuleHandleA(None).unwrap();
+    let wnd_class = WNDCLASSA {
+        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(def_window_proc),
+        hInstance: hinstance,
+        lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hIcon: HICON(0),
+        hCursor: HCURSOR(0),
+        hbrBackground: HBRUSH(0),
+        lpszMenuName: PCSTR(null()),
     };
-    return hwnd;
+
+    RegisterClassA(&wnd_class);
+
+    CreateWindowExA(
+        WINDOW_EX_STYLE(0),
+        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
+        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        0,
+        0,
+        100,
+        100,
+        HWND(0),
+        HMENU(0),
+        hinstance,
+        null(),
+    )
 }
 
 unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
@@ -390,9 +396,9 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     let reset_ptr = device.vtable().Reset;
 
     DestroyWindow(hwnd);
-    return (
+    (
         std::mem::transmute(end_scene_ptr),
         std::mem::transmute(present_ptr),
         std::mem::transmute(reset_ptr),
-    );
+    )
 }

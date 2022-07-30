@@ -698,7 +698,7 @@ impl Hooks for ImguiDX12Hooks {
         }
 
         drop(IMGUI_RENDER_LOOP.take());
-        drop(COMMAND_QUEUE_GUARD.take());
+        COMMAND_QUEUE_GUARD.take();
 
         DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
     }
