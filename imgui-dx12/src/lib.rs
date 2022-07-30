@@ -7,8 +7,8 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use log::*;
 use memoffset::offset_of;
-use windows::core::{Result, PCSTR, PCWSTR};
 use widestring::u16cstr;
+use windows::core::{Result, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -151,10 +151,7 @@ impl RenderEngine {
         font_srv_gpu_desc_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
     ) -> Self {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
-        ctx.set_renderer_name(String::from(concat!(
-            "imgui-dx12@",
-            env!("CARGO_PKG_VERSION")
-        )));
+        ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
 
         let frame_resources =
             (0..num_frames_in_flight).map(|_| FrameResources::default()).collect::<Vec<_>>();
@@ -760,11 +757,8 @@ impl RenderEngine {
         }
         .unwrap();
 
-        unsafe {
-            cmd_list
-                .SetName(PCWSTR(u16cstr!("hudhook font texture Command List").as_ptr()))
-        }
-        .unwrap();
+        unsafe { cmd_list.SetName(PCWSTR(u16cstr!("hudhook font texture Command List").as_ptr())) }
+            .unwrap();
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: upload_buffer,

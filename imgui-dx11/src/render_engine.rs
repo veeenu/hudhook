@@ -27,10 +27,7 @@ impl RenderEngine {
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
 
-        ctx.set_renderer_name(String::from(concat!(
-            "imgui-dx11@",
-            env!("CARGO_PKG_VERSION")
-        )));
+        ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
         RenderEngine { dasc, shader_program, buffers, texture }
     }
@@ -46,10 +43,7 @@ impl RenderEngine {
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
 
-        ctx.set_renderer_name(String::from(concat!(
-            "imgui-dx11@",
-            env!("CARGO_PKG_VERSION")
-        )));
+        ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
         RenderEngine { dasc, shader_program, buffers, texture }
     }

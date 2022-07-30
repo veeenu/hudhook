@@ -90,7 +90,11 @@ impl StateBackup {
             ctx.RSSetScissorRects(&self.scissor_rects);
             ctx.RSSetViewports(&self.viewports);
             ctx.RSSetState(self.rasterizer_state.as_ref());
-            ctx.OMSetBlendState(self.blend_state.as_ref(), &self.blend_factor as _, self.sample_mask);
+            ctx.OMSetBlendState(
+                self.blend_state.as_ref(),
+                &self.blend_factor as _,
+                self.sample_mask,
+            );
             ctx.OMSetDepthStencilState(self.depth_stencil_state.as_ref(), self.stencil_ref);
             ctx.PSSetShaderResources(0, &self.ps_shader_resource);
             // ctx.PSSetSamplers(0, &[self.ps_sampler]);

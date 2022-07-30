@@ -285,10 +285,7 @@ impl ImguiDX9Hooks {
 
 impl Hooks for ImguiDX9Hooks {
     unsafe fn hook(&self) {
-        for hook in [
-            &self.hook_dx9_present,
-            &self.hook_dx9_reset,
-        ] {
+        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -296,10 +293,7 @@ impl Hooks for ImguiDX9Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [
-            &self.hook_dx9_present,
-            &self.hook_dx9_reset,
-        ] {
+        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
