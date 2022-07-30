@@ -151,6 +151,10 @@ impl RenderEngine {
         font_srv_gpu_desc_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
     ) -> Self {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
+        ctx.set_renderer_name(String::from(concat!(
+            "imgui-dx12@",
+            env!("CARGO_PKG_VERSION")
+        )));
 
         let frame_resources =
             (0..num_frames_in_flight).map(|_| FrameResources::default()).collect::<Vec<_>>();
