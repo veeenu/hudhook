@@ -30,7 +30,6 @@ use imgui::internal::RawWrapper;
 use imgui::{
     BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx, TextureId, Textures,
 };
-use log::info;
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
 use windows::Win32::Graphics::Direct3D9::{
@@ -90,12 +89,6 @@ pub struct Renderer {
     surface: IDirect3DSurface9,
 }
 
-impl Drop for Renderer {
-    fn drop(&mut self) {
-        info!("dropping Renderer");
-    }
-}
-
 impl Renderer {
     /// Creates a new renderer for the given [`IDirect3DDevice9`].
     ///
@@ -110,7 +103,7 @@ impl Renderer {
 
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!(
-            "imgui_dx9_renderer@",
+            "imgui-dx9@",
             env!("CARGO_PKG_VERSION")
         )));
 
@@ -235,7 +228,6 @@ impl Renderer {
                             right: ((clip_rect[2] - clip_off[0]) * clip_scale[0]) as i32,
                             bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
                         };
-                        // info!("RECT {} {} {} {}", r.bottom, r.top, r.left, r.right);
                         self.device.SetScissorRect(&r).unwrap();
                         self.device
                             .DrawIndexedPrimitive(
@@ -300,8 +292,6 @@ impl Renderer {
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
 
-        // info!("l {} r {} t {} b {}", l,r,t,b);
-
         let mat_projection = D3DMATRIX {
             Anonymous: D3DMATRIX_0 {
                 m: [
@@ -328,20 +318,6 @@ impl Renderer {
         device.SetTransform(D3DTS_WORLDMATRIX, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_VIEW, &MAT_IDENTITY).unwrap();
         device.SetTransform(D3DTS_PROJECTION, &mat_projection).unwrap();
-
-        // let mut mat_world     : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-        // let mut mat_view      : D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-        // let mut mat_projection: D3DMATRIX = D3DMATRIX{..core::mem::zeroed()};
-        //
-        // device.GetTransform(D3DTRANSFORMSTATETYPE(256)   , &mut mat_world
-        // ).unwrap(); device.GetTransform(D3DTS_VIEW
-        // , &mut mat_view      ).unwrap();
-        // device.GetTransform(D3DTS_PROJECTION             , &mut
-        // mat_projection).unwrap();
-        //
-        // info!("inner mat_world        {:?}", mat_world.Anonymous.m);
-        // info!("inner mat_view         {:?}", mat_view.Anonymous.m);
-        // info!("inner mat_projection   {:?}", mat_projection.Anonymous.m);
     }
 
     unsafe fn lock_buffers<'v, 'i>(

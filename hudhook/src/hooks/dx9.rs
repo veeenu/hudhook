@@ -2,7 +2,7 @@ use std::ptr::null;
 
 use detour::RawDetour;
 use imgui::Context;
-use log::{debug, error, info, trace};
+use log::{debug, error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
@@ -83,18 +83,22 @@ unsafe extern "system" fn imgui_dx9_reset_impl(
     this: IDirect3DDevice9,
     present_params: *const D3DPRESENT_PARAMETERS,
 ) -> HRESULT {
-    trace!("reset: {}, {}", (*present_params).BackBufferWidth, (*present_params).BackBufferHeight);
+    trace!(
+        "IDirect3DDevice9::Reset invoked ({} x {})",
+        (*present_params).BackBufferWidth,
+        (*present_params).BackBufferHeight
+    );
 
     IMGUI_RENDERER = None;
 
-    let (_, _, trampoline_reset) = TRAMPOLINE.get().expect("dx9 reset trampoline uninitialized");
-    let r = trampoline_reset(this, present_params);
-    trace!("Tramp reset {}", r.0);
-
-    r
+    let (_, _, trampoline_reset) =
+        TRAMPOLINE.get().expect("IDirect3DDevice9::Reset trampoline uninitialized");
+    trampoline_reset(this, present_params)
 }
 
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT {
+    trace!("IDirect3DDevice9::EndScene invoked");
+
     let mut viewport = D3DVIEWPORT9 { ..core::mem::zeroed() };
     this.GetViewport(&mut viewport).unwrap();
     let render_target_surface = this.GetRenderTarget(0).unwrap();
@@ -105,12 +109,12 @@ unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HR
     let mut backbuffer_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
     backbuffer_surface.GetDesc(&mut backbuffer_desc).unwrap();
 
-    trace!("endscene {:?}", viewport);
-    trace!("rtd {:?}", render_target_desc);
-    trace!("bd  {:?}", backbuffer_desc);
+    trace!("Viewport: {:?}", viewport);
+    trace!("Render target desc: {:?}", render_target_desc);
+    trace!("Backbuffer desc: {:?}", backbuffer_desc);
 
     let (trampoline_end_scene, ..) =
-        TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
+        TRAMPOLINE.get().expect("IDirect3DDevice9::EndScene trampoline uninitialized");
 
     trampoline_end_scene(this)
 }
@@ -149,21 +153,16 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT {
-    info!("present");
+    trace!("IDirect3DDevice9::Present invoked");
 
     this.BeginScene().unwrap();
     draw(&this);
     this.EndScene().unwrap();
 
-    info!("present tramp");
-
     let (_, trampoline_present, _) =
-        TRAMPOLINE.get().expect("dx9_Present trampoline uninitialized");
-    let result =
-        trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
-    info!("present res {}", result.0);
+        TRAMPOLINE.get().expect("IDirect3DDevice9::Present trampoline uninitialized");
 
-    result
+    trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
@@ -183,7 +182,6 @@ impl ImguiRenderer {
             let mut io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-            // info!("io displaysize {}, {}", io.display_size[0], io.display_size[1]);
 
             let mut pos = POINT { x: 0, y: 0 };
 
@@ -204,7 +202,6 @@ impl ImguiRenderer {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
 
-        // let ctx = &mut self.ctx;
         let mut ui = self.ctx.frame();
 
         IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
@@ -263,15 +260,15 @@ impl ImguiDX9Hooks {
             hook_dx9_end_scene_address as *const _,
             imgui_dx9_end_scene_impl as *const _,
         )
-        .expect("dx9_end_scene hook");
+        .expect("IDirect3DDevice9::EndScene hook");
 
         let hook_dx9_present =
             RawDetour::new(dx9_present_address as *const _, imgui_dx9_present_impl as *const _)
-                .expect("dx9_present hook");
+                .expect("IDirect3DDevice9::Present hook");
 
         let hook_dx9_reset =
             RawDetour::new(dx9_reset_address as *const _, imgui_dx9_reset_impl as *const _)
-                .expect("dx9_present hook");
+                .expect("IDirect3DDevice9::Reset hook");
 
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {
@@ -289,7 +286,6 @@ impl ImguiDX9Hooks {
 impl Hooks for ImguiDX9Hooks {
     unsafe fn hook(&self) {
         for hook in [
-            // &self.hook_dx9_end_scene, , &self.hook_dx9_swapchain_present
             &self.hook_dx9_present,
             &self.hook_dx9_reset,
         ] {
@@ -301,7 +297,6 @@ impl Hooks for ImguiDX9Hooks {
 
     unsafe fn unhook(&mut self) {
         for hook in [
-            // &self.hook_dx9_end_scene,, &self.hook_dx9_swapchain_present
             &self.hook_dx9_present,
             &self.hook_dx9_reset,
         ] {
@@ -388,7 +383,7 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
         &mut present_params,
         &mut device,
     )
-    .expect("dx9 failed to create device");
+    .expect("IDirect3DDevice9::CreateDevice: failed to create device");
     let device = device.unwrap();
 
     let end_scene_ptr = device.vtable().EndScene;
