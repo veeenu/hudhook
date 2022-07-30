@@ -122,20 +122,20 @@ impl StateBackup {
         unsafe {
             ctx.RSSetScissorRects(&self.scissor_rects);
             ctx.RSSetViewports(&self.viewports);
-            ctx.RSSetState(self.rasterizer_state);
-            ctx.OMSetBlendState(self.blend_state, &self.blend_factor as _, self.sample_mask);
-            ctx.OMSetDepthStencilState(self.depth_stencil_state, self.stencil_ref);
+            ctx.RSSetState(self.rasterizer_state.as_ref());
+            ctx.OMSetBlendState(self.blend_state.as_ref(), &self.blend_factor as _, self.sample_mask);
+            ctx.OMSetDepthStencilState(self.depth_stencil_state.as_ref(), self.stencil_ref);
             ctx.PSSetShaderResources(0, &self.ps_shader_resource);
             // ctx.PSSetSamplers(0, &[self.ps_sampler]);
             if self.ps_instances.is_some() {
-                ctx.PSSetShader(self.pixel_shader, &[self.ps_instances]);
+                ctx.PSSetShader(self.pixel_shader.as_ref(), &[self.ps_instances]);
             }
             if self.vs_instances.is_some() {
-                ctx.VSSetShader(self.vertex_shader, &[self.vs_instances]);
+                ctx.VSSetShader(self.vertex_shader.as_ref(), &[self.vs_instances]);
             }
             ctx.IASetPrimitiveTopology(self.primitive_topology);
             ctx.IASetIndexBuffer(
-                self.index_buffer,
+                self.index_buffer.as_ref(),
                 self.index_buffer_format,
                 self.index_buffer_offset,
             );
@@ -146,7 +146,7 @@ impl StateBackup {
                 &self.vertex_buffer_stride,
                 &self.vertex_buffer_offset,
             );
-            ctx.IASetInputLayout(self.input_layout);
+            ctx.IASetInputLayout(self.input_layout.as_ref());
         }
     }
 }

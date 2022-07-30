@@ -6,7 +6,7 @@ use log::{debug, error, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, HANDLE};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
@@ -184,7 +184,7 @@ impl ImguiRenderer {
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = GetForegroundWindow();
-            if !active_window.is_invalid()
+            if !HANDLE(active_window.0).is_invalid()
                 && (active_window == self.renderer.get_hwnd()
                     || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
             {
@@ -324,7 +324,7 @@ unsafe fn create_dummy_window() -> HWND {
     }
 
     let hwnd = {
-        let hinstance = GetModuleHandleA(None);
+        let hinstance = GetModuleHandleA(None).unwrap();
         let wnd_class = WNDCLASSA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(def_window_proc),

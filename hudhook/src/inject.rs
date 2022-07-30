@@ -7,7 +7,7 @@ use std::ptr::{null, null_mut};
 
 use log::*;
 use widestring::U16CString;
-use windows::core::{PCSTR, PCWSTR};
+use windows::core::{Error, Result, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
@@ -22,13 +22,16 @@ use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, GetWindowThreadProces
 
 /// Inject the DLL stored at `dll_path` in the process that owns the window with
 /// title `title`.
-pub fn inject(title: &str, dll_path: PathBuf) {
+pub fn inject(title: &str, dll_path: PathBuf) -> Result<()> {
     let title = U16CString::from_str(title).unwrap();
     let hwnd = unsafe { FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr())) };
 
     if hwnd.0 == 0 {
-        error!("FindWindowW returned NULL: {}", unsafe { GetLastError().0 });
-        return;
+        let last_error = unsafe { GetLastError() };
+        return Err(Error::new(
+            HRESULT(last_error.0 as _),
+            format!("FindWindowW returned NULL: {}", last_error.0).into(),
+        ));
     }
 
     let mut pid: u32 = 0;
@@ -41,7 +44,7 @@ pub fn inject(title: &str, dll_path: PathBuf) {
 
     let proc_addr = unsafe {
         GetProcAddress(
-            GetModuleHandleA(PCSTR(kernel32.as_ptr() as _)),
+            GetModuleHandleA(PCSTR(kernel32.as_ptr() as _))?,
             PCSTR(loadlibraryw.as_ptr() as _),
         )
     };
@@ -49,7 +52,7 @@ pub fn inject(title: &str, dll_path: PathBuf) {
     let dll_path =
         widestring::WideCString::from_os_str(dll_path.canonicalize().unwrap().as_os_str()).unwrap();
 
-    let hproc = unsafe { OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid) };
+    let hproc = unsafe { OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid) }?;
     let dllp = unsafe {
         VirtualAllocEx(
             hproc,
@@ -83,7 +86,7 @@ pub fn inject(title: &str, dll_path: PathBuf) {
             0,
             null_mut(),
         )
-    };
+    }?;
 
     unsafe {
         WaitForSingleObject(thread, INFINITE);
@@ -93,4 +96,6 @@ pub fn inject(title: &str, dll_path: PathBuf) {
         VirtualFreeEx(hproc, dllp, 0, MEM_RELEASE);
         CloseHandle(hproc);
     };
+
+    Ok(())
 }

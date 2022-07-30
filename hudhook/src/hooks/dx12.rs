@@ -11,7 +11,9 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -363,7 +365,7 @@ impl ImguiRenderer {
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = unsafe { GetForegroundWindow() };
-            if !active_window.is_invalid()
+            if !HANDLE(active_window.0).is_invalid()
                 && (active_window == sd.OutputWindow
                     || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
             {
@@ -508,7 +510,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     ) -> LRESULT {
         DefWindowProcA(hwnd, msg, wparam, lparam)
     }
-    let hinstance = unsafe { GetModuleHandleA(None) };
+    let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
     let hwnd = {
         let wnd_class = WNDCLASSEXA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
@@ -580,10 +582,13 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as u32,
     };
 
-    let swap_chain = unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc) }.unwrap();
-    let present_ptr = unsafe { swap_chain.vtable().Present };
-    let ecl_ptr = unsafe { command_queue.vtable().ExecuteCommandLists };
-    let rbuf_ptr = unsafe { swap_chain.vtable().ResizeBuffers };
+    let mut swap_chain = None;
+    unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc, &mut swap_chain) }.unwrap();
+    let swap_chain = swap_chain.unwrap();
+
+    let present_ptr = swap_chain.vtable().Present;
+    let ecl_ptr = command_queue.vtable().ExecuteCommandLists;
+    let rbuf_ptr = swap_chain.vtable().ResizeBuffers;
 
     unsafe { DestroyWindow(hwnd) };
     unsafe { UnregisterClassA(PCSTR("HUDHOOK_DUMMY\0".as_ptr()), hinstance) };

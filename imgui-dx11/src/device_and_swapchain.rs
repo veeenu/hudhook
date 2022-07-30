@@ -81,7 +81,7 @@ impl DeviceAndSwapChain {
             let p_back_buffer: ID3D11Resource = swap_chain.GetBuffer(0).expect("GetBuffer");
 
             let back_buffer = dev
-                .CreateRenderTargetView(p_back_buffer, null_mut())
+                .CreateRenderTargetView(&p_back_buffer, null_mut())
                 .expect("CreateRenderTargetView");
 
             dev_ctx.OMSetRenderTargets(&[Some(back_buffer.clone())], None);
