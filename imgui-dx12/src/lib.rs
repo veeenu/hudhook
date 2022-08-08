@@ -7,7 +7,8 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use log::*;
 use memoffset::offset_of;
-use windows::core::PCSTR;
+use widestring::u16cstr;
+use windows::core::{Result, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -38,12 +39,7 @@ struct FrameResources {
 }
 
 impl FrameResources {
-    fn resize(
-        &mut self,
-        dev: &ID3D12Device,
-        indices: usize,
-        vertices: usize,
-    ) -> Result<(), windows::core::Error> {
+    fn resize(&mut self, dev: &ID3D12Device, indices: usize, vertices: usize) -> Result<()> {
         if self.vertex_buffer.is_none() || self.vertex_buffer_size < vertices {
             drop(self.vertex_buffer.take());
 
@@ -68,7 +64,7 @@ impl FrameResources {
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
 
-            if let Err(e) = unsafe {
+            unsafe {
                 dev.CreateCommittedResource(
                     &props,
                     D3D12_HEAP_FLAG_NONE,
@@ -77,10 +73,13 @@ impl FrameResources {
                     null(),
                     &mut self.vertex_buffer as *mut Option<_>,
                 )
-            } {
-                error!("{:?}", e);
             }
+            .map_err(|e| {
+                error!("Resizing index buffer: {:?}", e);
+                e
+            })?;
         }
+
         if self.index_buffer.is_none() || self.index_buffer_size < indices {
             drop(self.index_buffer.take());
             self.index_buffer_size = indices + 10000;
@@ -104,7 +103,7 @@ impl FrameResources {
                 Flags: D3D12_RESOURCE_FLAG_NONE,
             };
 
-            if let Err(e) = unsafe {
+            unsafe {
                 dev.CreateCommittedResource(
                     &props,
                     D3D12_HEAP_FLAG_NONE,
@@ -113,9 +112,11 @@ impl FrameResources {
                     null(),
                     &mut self.index_buffer as *mut _,
                 )
-            } {
-                error!("{:?}", e);
             }
+            .map_err(|e| {
+                error!("Resizing index buffer: {:?}", e);
+                e
+            })?;
         }
         Ok(())
     }
@@ -150,6 +151,7 @@ impl RenderEngine {
         font_srv_gpu_desc_handle: D3D12_GPU_DESCRIPTOR_HANDLE,
     ) -> Self {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
+        ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
 
         let frame_resources =
             (0..num_frames_in_flight).map(|_| FrameResources::default()).collect::<Vec<_>>();
@@ -249,7 +251,7 @@ impl RenderEngine {
         draw_data: &DrawData,
         cmd_list: &ID3D12GraphicsCommandList,
         frame_resources_idx: usize,
-    ) -> Result<(), windows::core::Error> {
+    ) -> Result<()> {
         let print_device_removed_reason = |e: windows::core::Error| -> windows::core::Error {
             trace!("Device removed reason: {:?}", unsafe { self.dev.GetDeviceRemovedReason() });
             e
@@ -438,7 +440,7 @@ impl RenderEngine {
                 let buf_ptr = unsafe { err_blob.GetBufferPointer() } as *mut u8;
                 let buf_size = unsafe { err_blob.GetBufferSize() };
                 let s = unsafe { String::from_raw_parts(buf_ptr, buf_size, buf_size + 1) };
-                error!("{}: {}", e, s);
+                error!("Serializing root signature: {}: {}", e, s);
             }
         }
 
@@ -493,7 +495,7 @@ impl RenderEngine {
                 vs.len(),
                 PCSTR(null()),
                 null(),
-                None::<ID3DInclude>,
+                None::<&ID3DInclude>,
                 PCSTR("main\0".as_ptr()),
                 PCSTR("vs_5_0\0".as_ptr()),
                 0,
@@ -526,7 +528,7 @@ impl RenderEngine {
                 ps.len(),
                 PCSTR(null()),
                 null(),
-                None::<ID3DInclude>,
+                None::<&ID3DInclude>,
                 PCSTR("main\0".as_ptr()),
                 PCSTR("ps_5_0\0".as_ptr()),
                 0,
@@ -625,7 +627,7 @@ impl RenderEngine {
         let pipeline_state = unsafe { self.dev.CreateGraphicsPipelineState(&pso_desc) };
         self.pipeline_state = Some(pipeline_state.unwrap());
 
-        self.create_font_texture(ctx);
+        self.create_font_texture(ctx).unwrap();
     }
 
     pub fn invalidate_device_objects(&mut self) {
@@ -645,7 +647,7 @@ impl RenderEngine {
         });
     }
 
-    fn create_font_texture(&mut self, ctx: &mut imgui::Context) {
+    fn create_font_texture(&mut self, ctx: &mut imgui::Context) -> Result<()> {
         let mut fonts = ctx.fonts();
         let texture = fonts.build_rgba32_texture();
 
@@ -724,7 +726,7 @@ impl RenderEngine {
         let fence: ID3D12Fence = unsafe { self.dev.CreateFence(0, D3D12_FENCE_FLAG_NONE) }.unwrap();
 
         let event =
-            unsafe { CreateEventA(null(), BOOL::from(false), BOOL::from(false), PCSTR(null())) };
+            unsafe { CreateEventA(null(), BOOL::from(false), BOOL::from(false), PCSTR(null())) }?;
 
         let cmd_queue: ID3D12CommandQueue = unsafe {
             self.dev.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
@@ -736,13 +738,27 @@ impl RenderEngine {
         }
         .unwrap();
 
+        unsafe {
+            cmd_queue.SetName(PCWSTR(u16cstr!("hudhook font texture Command Queue").as_ptr()))
+        }
+        .unwrap();
+
         let cmd_allocator: ID3D12CommandAllocator =
             unsafe { self.dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
 
-        let cmd_list: ID3D12GraphicsCommandList = unsafe {
-            self.dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmd_allocator, None)
+        unsafe {
+            cmd_allocator
+                .SetName(PCWSTR(u16cstr!("hudhook font texture Command Allocator").as_ptr()))
         }
         .unwrap();
+
+        let cmd_list: ID3D12GraphicsCommandList = unsafe {
+            self.dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &cmd_allocator, None)
+        }
+        .unwrap();
+
+        unsafe { cmd_list.SetName(PCWSTR(u16cstr!("hudhook font texture Command List").as_ptr())) }
+            .unwrap();
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: upload_buffer,
@@ -786,7 +802,7 @@ impl RenderEngine {
             cmd_list.Close().unwrap();
             cmd_queue.ExecuteCommandLists(&[Some(cmd_list.into())]);
             cmd_queue.Signal(&fence, 1).unwrap();
-            fence.SetEventOnCompletion(1, &event).unwrap();
+            fence.SetEventOnCompletion(1, event).unwrap();
             WaitForSingleObject(event, u32::MAX);
         };
 
@@ -808,7 +824,7 @@ impl RenderEngine {
 
         unsafe {
             self.dev.CreateShaderResourceView(
-                p_texture.clone(),
+                p_texture.as_ref(),
                 &srv_desc,
                 self.font_srv_cpu_desc_handle,
             )
@@ -816,6 +832,8 @@ impl RenderEngine {
         drop(self.font_texture_resource.take());
         self.font_texture_resource = p_texture;
         fonts.tex_id = TextureId::from(self.font_srv_gpu_desc_handle.ptr as usize);
+
+        Ok(())
     }
 
     pub fn new_frame(&mut self, ctx: &mut imgui::Context) {

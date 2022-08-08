@@ -36,5 +36,5 @@ fn main() {
         dlls.remove(dll)
     };
 
-    inject::inject("DARK SOULS III", dll);
+    inject::inject("DARK SOULS III", dll).unwrap();
 }

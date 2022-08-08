@@ -9,6 +9,7 @@ use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT;
 
 const D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE: usize = 16;
 
+#[derive(Default)]
 pub struct StateBackup {
     scissor_rects_count: u32,
     viewports_count: u32,
@@ -37,40 +38,6 @@ pub struct StateBackup {
     vertex_buffer_offset: u32,
     index_buffer_format: DXGI_FORMAT,
     input_layout: Option<ID3D11InputLayout>,
-}
-
-impl Default for StateBackup {
-    fn default() -> Self {
-        Self {
-            ps_instances: Default::default(),
-            vs_instances: Default::default(),
-            scissor_rects_count: Default::default(),
-            viewports_count: Default::default(),
-            scissor_rects: Default::default(),
-            viewports: Default::default(),
-            rasterizer_state: Default::default(),
-            blend_state: Default::default(),
-            blend_factor: Default::default(),
-            sample_mask: Default::default(),
-            stencil_ref: Default::default(),
-            depth_stencil_state: Default::default(),
-            ps_shader_resource: Default::default(),
-            _ps_sampler: Default::default(),
-            pixel_shader: Default::default(),
-            vertex_shader: Default::default(),
-            ps_instances_count: Default::default(),
-            vs_instances_count: Default::default(),
-            primitive_topology: Default::default(),
-            index_buffer: Default::default(),
-            vertex_buffer: Default::default(),
-            vertex_constant_buffer: Default::default(),
-            index_buffer_offset: Default::default(),
-            vertex_buffer_stride: Default::default(),
-            vertex_buffer_offset: Default::default(),
-            index_buffer_format: Default::default(),
-            input_layout: Default::default(),
-        }
-    }
 }
 
 impl StateBackup {
@@ -122,20 +89,24 @@ impl StateBackup {
         unsafe {
             ctx.RSSetScissorRects(&self.scissor_rects);
             ctx.RSSetViewports(&self.viewports);
-            ctx.RSSetState(self.rasterizer_state);
-            ctx.OMSetBlendState(self.blend_state, &self.blend_factor as _, self.sample_mask);
-            ctx.OMSetDepthStencilState(self.depth_stencil_state, self.stencil_ref);
+            ctx.RSSetState(self.rasterizer_state.as_ref());
+            ctx.OMSetBlendState(
+                self.blend_state.as_ref(),
+                &self.blend_factor as _,
+                self.sample_mask,
+            );
+            ctx.OMSetDepthStencilState(self.depth_stencil_state.as_ref(), self.stencil_ref);
             ctx.PSSetShaderResources(0, &self.ps_shader_resource);
             // ctx.PSSetSamplers(0, &[self.ps_sampler]);
             if self.ps_instances.is_some() {
-                ctx.PSSetShader(self.pixel_shader, &[self.ps_instances]);
+                ctx.PSSetShader(self.pixel_shader.as_ref(), &[self.ps_instances]);
             }
             if self.vs_instances.is_some() {
-                ctx.VSSetShader(self.vertex_shader, &[self.vs_instances]);
+                ctx.VSSetShader(self.vertex_shader.as_ref(), &[self.vs_instances]);
             }
             ctx.IASetPrimitiveTopology(self.primitive_topology);
             ctx.IASetIndexBuffer(
-                self.index_buffer,
+                self.index_buffer.as_ref(),
                 self.index_buffer_format,
                 self.index_buffer_offset,
             );
@@ -146,7 +117,7 @@ impl StateBackup {
                 &self.vertex_buffer_stride,
                 &self.vertex_buffer_offset,
             );
-            ctx.IASetInputLayout(self.input_layout);
+            ctx.IASetInputLayout(self.input_layout.as_ref());
         }
     }
 }

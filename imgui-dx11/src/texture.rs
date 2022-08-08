@@ -27,7 +27,7 @@ impl Texture {
         let texture = fonts.build_rgba32_texture();
         let data = texture.data.to_vec();
 
-        let _tex = unsafe {
+        let tex = unsafe {
             dasc.dev().CreateTexture2D(
                 &D3D11_TEXTURE2D_DESC {
                     Width: texture.width as _,
@@ -50,7 +50,7 @@ impl Texture {
         };
 
         let tex_view = unsafe {
-            dasc.dev().CreateShaderResourceView(_tex.clone(), &D3D11_SHADER_RESOURCE_VIEW_DESC {
+            dasc.dev().CreateShaderResourceView(&tex, &D3D11_SHADER_RESOURCE_VIEW_DESC {
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                 ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
                 Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
@@ -77,7 +77,7 @@ impl Texture {
         fonts.tex_id = imgui::TextureId::from(&tex_view as *const _ as usize);
         trace!("Texture view: {:x} id: {:x}", &tex_view as *const _ as usize, fonts.tex_id.id());
 
-        Ok(Texture { _tex, tex_view, _font_sampler })
+        Ok(Texture { _tex: tex, tex_view, _font_sampler })
     }
 
     pub(crate) fn tex_view(&self) -> ID3D11ShaderResourceView {

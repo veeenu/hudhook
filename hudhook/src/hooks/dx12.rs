@@ -10,8 +10,11 @@ use imgui_dx12::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use widestring::{u16cstr, U16CStr};
+use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
+use windows::Win32::Foundation::{
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -21,13 +24,11 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::WindowsAndMessaging::*;
-
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
-
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
@@ -71,6 +72,17 @@ static TRAMPOLINE: OnceCell<(
     ExecuteCommandListsType,
     ResizeBuffersType,
 )> = OnceCell::new();
+
+const COMMAND_ALLOCATOR_NAMES: [&U16CStr; 8] = [
+    u16cstr!("hudhook Command allocator #0"),
+    u16cstr!("hudhook Command allocator #1"),
+    u16cstr!("hudhook Command allocator #2"),
+    u16cstr!("hudhook Command allocator #3"),
+    u16cstr!("hudhook Command allocator #4"),
+    u16cstr!("hudhook Command allocator #5"),
+    u16cstr!("hudhook Command allocator #6"),
+    u16cstr!("hudhook Command allocator #7"),
+];
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Debugging
@@ -118,15 +130,26 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
+    trace!(
+        "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
+         {command_lists:p}) invoked"
+    );
     COMMAND_QUEUE_GUARD
         .get_or_try_init(|| {
-            trace!("cmd_queue ptr is {:?}", cmd_queue);
+            let desc = cmd_queue.GetDesc();
+            trace!("CommandQueue description: {:?}", desc);
+
+            if desc.Type.0 != 0 {
+                trace!("Skipping CommandQueue");
+                return Err(());
+            }
+
             if let Some(renderer) = IMGUI_RENDERER.get() {
                 trace!("cmd_queue ptr was set");
                 renderer.lock().command_queue = Some(cmd_queue.clone());
                 Ok(())
             } else {
-                trace!("cmd_queue ptr was not set");
+                trace!("cmd_queue ptr was not set: renderer not initialized");
                 Err(())
             }
         })
@@ -257,6 +280,10 @@ impl ImguiRenderer {
             .unwrap();
         command_list.Close().unwrap();
 
+        command_list
+            .SetName(PCWSTR(u16cstr!("hudhook Command List").as_ptr()))
+            .expect("Couldn't set command list name");
+
         let rtv_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -278,15 +305,20 @@ impl ImguiRenderer {
                     ptr: rtv_handle_start.ptr + (i * rtv_heap_inc_size) as usize,
                 };
                 trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
+
                 let back_buffer = swap_chain.GetBuffer(i).unwrap();
                 dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
-                FrameContext {
-                    desc_handle,
-                    back_buffer,
-                    command_allocator: dev
-                        .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-                        .unwrap(),
-                }
+
+                let command_allocator: ID3D12CommandAllocator =
+                    dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).unwrap();
+                let command_allocator_name = COMMAND_ALLOCATOR_NAMES
+                    [usize::min(COMMAND_ALLOCATOR_NAMES.len() - 1, i as usize)];
+
+                command_allocator
+                    .SetName(PCWSTR(command_allocator_name.as_ptr()))
+                    .expect("Couldn't set command allocator name");
+
+                FrameContext { desc_handle, back_buffer, command_allocator }
             })
             .collect();
 
@@ -316,7 +348,6 @@ impl ImguiRenderer {
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
         ));
-
 
         ctx.set_ini_filename(None);
 
@@ -366,7 +397,7 @@ impl ImguiRenderer {
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = unsafe { GetForegroundWindow() };
-            if !active_window.is_invalid()
+            if !HANDLE(active_window.0).is_invalid()
                 && (active_window == sd.OutputWindow
                     || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
             {
@@ -460,18 +491,10 @@ impl ImguiRenderer {
         let desc = swap_chain.GetDesc().unwrap();
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as isize,
-        );
+        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
-        SetWindowLongA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as i32,
-        );
+        SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
     }
 }
 
@@ -519,7 +542,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     ) -> LRESULT {
         DefWindowProcA(hwnd, msg, wparam, lparam)
     }
-    let hinstance = unsafe { GetModuleHandleA(None) };
+    let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
     let hwnd = {
         let wnd_class = WNDCLASSEXA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
@@ -591,10 +614,13 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as u32,
     };
 
-    let swap_chain = unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc) }.unwrap();
-    let present_ptr = unsafe { swap_chain.vtable().Present };
-    let ecl_ptr = unsafe { command_queue.vtable().ExecuteCommandLists };
-    let rbuf_ptr = unsafe { swap_chain.vtable().ResizeBuffers };
+    let mut swap_chain = None;
+    unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc, &mut swap_chain) }.unwrap();
+    let swap_chain = swap_chain.unwrap();
+
+    let present_ptr = swap_chain.vtable().Present;
+    let ecl_ptr = command_queue.vtable().ExecuteCommandLists;
+    let rbuf_ptr = swap_chain.vtable().ResizeBuffers;
 
     unsafe { DestroyWindow(hwnd) };
     unsafe { UnregisterClassA(PCSTR("HUDHOOK_DUMMY\0".as_ptr()), hinstance) };
@@ -704,7 +730,7 @@ impl Hooks for ImguiDX12Hooks {
         }
 
         drop(IMGUI_RENDER_LOOP.take());
-        drop(COMMAND_QUEUE_GUARD.take());
+        COMMAND_QUEUE_GUARD.take();
 
         DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
     }

@@ -4,9 +4,9 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-use super::dx9::ImguiDX9Hooks;
 use super::dx11::ImguiDX11Hooks;
 use super::dx12::ImguiDX12Hooks;
+use super::dx9::ImguiDX9Hooks;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 pub(crate) type WndProcType =

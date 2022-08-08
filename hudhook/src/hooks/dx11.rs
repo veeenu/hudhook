@@ -8,7 +8,9 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT, PCSTR};
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM,
+};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -23,13 +25,11 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::UI::WindowsAndMessaging::*;
-
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
-
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
@@ -186,7 +186,6 @@ impl ImguiRenderer {
             imgui_wnd_proc as usize as i32,
         ));
 
-
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
 
@@ -210,7 +209,7 @@ impl ImguiRenderer {
             let mut pos = POINT { x: 0, y: 0 };
 
             let active_window = GetForegroundWindow();
-            if !active_window.is_invalid()
+            if !HANDLE(active_window.0).is_invalid()
                 && (active_window == sd.OutputWindow
                     || IsChild(active_window, sd.OutputWindow).as_bool())
             {
@@ -249,20 +248,10 @@ impl ImguiRenderer {
         let desc = swap_chain.GetDesc().unwrap();
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as isize,
-        );
+        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
-        SetWindowLongA(
-            desc.OutputWindow,
-            GWLP_WNDPROC,
-            self.wnd_proc as usize as i32,
-        );
-
-
+        SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
     }
 
     fn ctx(&self) -> &imgui_dx11::imgui::Context {
@@ -320,7 +309,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     }
 
     let hwnd = {
-        let hinstance = unsafe { GetModuleHandleA(None) };
+        let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
         let wnd_class = WNDCLASSA {
             style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(def_window_proc),
@@ -388,8 +377,8 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
 
     let swap_chain = p_swap_chain.unwrap();
 
-    let present_ptr = unsafe { swap_chain.vtable().Present };
-    let resize_buffers_ptr = unsafe { swap_chain.vtable().ResizeBuffers };
+    let present_ptr = swap_chain.vtable().Present;
+    let resize_buffers_ptr = swap_chain.vtable().ResizeBuffers;
 
     unsafe {
         DestroyWindow(hwnd);

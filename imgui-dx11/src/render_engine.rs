@@ -26,6 +26,9 @@ impl RenderEngine {
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+
+        ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
+
         RenderEngine { dasc, shader_program, buffers, texture }
     }
 
@@ -39,6 +42,9 @@ impl RenderEngine {
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
         let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+
+        ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
+
         RenderEngine { dasc, shader_program, buffers, texture }
     }
 
@@ -89,7 +95,7 @@ impl RenderEngine {
                 &0,
             );
             dev_ctx.IASetIndexBuffer(
-                self.buffers.idx_buffer(),
+                &self.buffers.idx_buffer(),
                 if std::mem::size_of::<imgui::DrawIdx>() == 2 {
                     DXGI_FORMAT_R16_UINT
                 } else {
@@ -140,8 +146,6 @@ impl RenderEngine {
                 }
                 vtx_offset += cl.vtx_buffer().len();
             }
-
-            // self.dasc.swap_chain().Present(1, 0);
         }
 
         trace!("Restoring state backup");
@@ -153,7 +157,7 @@ impl RenderEngine {
     }
 
     pub fn present(&self) {
-        if let Err(e) = unsafe { self.dasc.swap_chain().Present(1, 0) } {
+        if let Err(e) = unsafe { self.dasc.swap_chain().Present(1, 0).ok() } {
             log::error!("Present: {e}");
         }
     }

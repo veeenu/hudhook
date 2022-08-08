@@ -252,7 +252,7 @@ pub mod lifecycle {
 
         /// Please don't use me.
         pub fn get_module() -> HINSTANCE {
-            unsafe { MODULE.get().unwrap().clone() }
+            unsafe { *MODULE.get().unwrap() }
         }
 
         /// Please don't use me.

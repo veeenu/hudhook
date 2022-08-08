@@ -1,39 +1,43 @@
-//Based on https://github.com/Veykril/imgui-dx9-renderer
+// Based on https://github.com/Veykril/imgui-dx9-renderer
 //
-//Copyright (c) 2019 Lukas Wirth
+// Copyright (c) 2019 Lukas Wirth
 //
-//Permission is hereby granted, free of charge, to any person obtaining a copy
-//of this software and associated documentation files (the "Software"), to deal
-//in the Software without restriction, including without limitation the rights
-//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-//copies of the Software, and to permit persons to whom the Software is
-//furnished to do so, subject to the following conditions:
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
 //
-//The above copyright notice and this permission notice shall be included in all
-//copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 //
-//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-//SOFTWARE.
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 
-use std::{ptr, time::Instant};
+use std::ptr;
+use std::time::Instant;
 
 use imgui::{FontConfig, FontSource};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{BOOL, HWND};
-use windows::Win32::Graphics::Direct3D9::{Direct3DCreate9, IDirect3D9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DPRESENT_PARAMETERS, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DFMT_R5G6B5, D3DMULTISAMPLE_NONE, D3DPRESENT_INTERVAL_DEFAULT, D3DPRESENT_RATE_DEFAULT, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION, D3DDEVICE_CREATION_PARAMETERS};
-use windows::Win32::System::SystemServices::D3DCLEAR_TARGET;
-use winit::{
-    dpi::LogicalSize,
-    event::{Event, WindowEvent},
-    event_loop::EventLoop,
-    window::WindowBuilder,
+use windows::Win32::Graphics::Direct3D9::{
+    Direct3DCreate9, IDirect3D9, IDirect3DDevice9, D3DADAPTER_DEFAULT,
+    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL,
+    D3DFMT_R5G6B5, D3DMULTISAMPLE_NONE, D3DPRESENT_INTERVAL_DEFAULT, D3DPRESENT_PARAMETERS,
+    D3DPRESENT_RATE_DEFAULT, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
+use windows::Win32::System::SystemServices::D3DCLEAR_TARGET;
+use winit::dpi::LogicalSize;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
 const WINDOW_WIDTH: f64 = 760.0;
 const WINDOW_HEIGHT: f64 = 760.0;
@@ -100,8 +104,6 @@ fn main() {
         config: Some(FontConfig { size_pixels: font_size, ..FontConfig::default() }),
     }]);
     imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-
-
 
     let mut renderer = unsafe { imgui_dx9::Renderer::new(&mut imgui, device.clone()).unwrap() };
 
