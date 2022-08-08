@@ -1,3 +1,5 @@
+#based on https://github.com/Veykril/imgui-dx9-renderer
+
 [package]
 name = "imgui-dx11"
 version = "0.1.0"
@@ -9,7 +11,7 @@ edition = "2021"
 imgui = "0.8.0"
 imgui-sys = "0.8.0"
 log = "0.4.17"
-windows = { version = "0.34.0", features = [
+windows = { version = "0.39.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",
   "Win32_Security",

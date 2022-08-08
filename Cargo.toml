@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "hudhook",
+  "imgui-dx9",
   "imgui-dx11",
   "imgui-dx12",
 ]

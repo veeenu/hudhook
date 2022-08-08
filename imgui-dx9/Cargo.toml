@@ -1,0 +1,27 @@
+[package]
+name = "imgui-dx9"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+windows = { version = "0.39.0", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D9",
+    "Win32_System_SystemServices",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_UI_WindowsAndMessaging"
+] }
+
+imgui = "0.8.0"
+log = "0.4.16"
+
+[dev-dependencies]
+imgui = "0.8.0"
+imgui-winit-support = "0.8.0"
+winit = "0.25"
+raw-window-handle = "0.3"
