@@ -48,7 +48,8 @@ unsafe fn draw(dc: HDC) {
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
 
-            // Set the new wnd proc, and store the old one
+            // Set the new wnd proc, and assign the old one to a variable for further
+            // storing
             #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
             let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
                 hwnd,
