@@ -42,7 +42,10 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            // Create OpenGL Rendererer
+            // TODO: LOADER OF OPENGL AND THEN CREATE RENDERER (consider switching loader to
+            // fully rust-written instead of c-backed one)
+
+            // Create OpenGL Rendererer TODO
             // let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
             // Grab the HWND from the DC
@@ -63,6 +66,7 @@ unsafe fn draw(dc: HDC) {
                 imgui_wnd_proc as usize as i32,
             ));
 
+            // TODO: Insert OpenGL renderer here
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
                 renderer,
@@ -138,7 +142,7 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
-        // USE GetWindowRect HERE ON THE HWND
+        // TODO: USE GetWindowRect HERE ON THE HWND, SIMPLY INLINE "get_window_rect()"
         if let Some(rect) = self.renderer.get_window_rect() {
             let mut io = self.ctx.io_mut();
 
@@ -146,6 +150,7 @@ impl ImguiRenderer {
 
             let mut pos = POINT { x: 0, y: 0 };
 
+            // TODO: TEST THIS AND SEE IF IT WORKS AS INTENDED
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
                 && (active_window == self.game_hwnd
@@ -198,7 +203,7 @@ unsafe impl Sync for ImguiRenderer {}
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct OpenGL3Hooks {
     #[allow(dead_code)]
-    hook_opengl_swapbuffers: RawDetour,
+    hook_opengl_wglSwapBuffers: RawDetour,
 }
 
 impl OpenGL3Hooks {
@@ -214,7 +219,7 @@ impl OpenGL3Hooks {
         let hook_opengl_swapbuffers_address = get_opengl_wglswapbuffers_addr();
 
         // Create detours
-        let hook_opengl_swapbuffers = RawDetour::new(
+        let hook_opengl_wglSwapBuffers = RawDetour::new(
             hook_opengl_swapbuffers_address as *const _,
             imgui_opengl3_wglSwapBuffers_impl as *const _,
         )
@@ -222,15 +227,15 @@ impl OpenGL3Hooks {
 
         // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_swapbuffers.trampoline()));
+        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wglSwapBuffers.trampoline()));
 
-        Self { hook_opengl_swapbuffers }
+        Self { hook_opengl_wglSwapBuffers }
     }
 }
 
 impl Hooks for OpenGL3Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_opengl_swapbuffers] {
+        for hook in [&self.hook_opengl_wglSwapBuffers] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -238,7 +243,7 @@ impl Hooks for OpenGL3Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [&self.hook_opengl_swapbuffers] {
+        for hook in [&self.hook_opengl_wglSwapBuffers] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
@@ -251,9 +256,7 @@ impl Hooks for OpenGL3Hooks {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Function address finders
-////////////////////////////////////////////////////////////////////////////////////////////////////
+// Get the address of wglSwapBuffers in opengl32.dll
 unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
     // Grab a handle to opengl32.dll
     let opengl32dll = CString::new("opengl32.dll").unwrap();
