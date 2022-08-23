@@ -1,4 +1,5 @@
 use std::ptr::null;
+use std::sync::RwLock;
 
 use detour::RawDetour;
 use imgui::Context;
@@ -167,6 +168,7 @@ unsafe extern "system" fn imgui_dx9_present_impl(
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
+static mut GAME_HWND: Option<RwLock<Box<HWND>>> = None;
 static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
 
 struct ImguiRenderer {
@@ -178,6 +180,7 @@ struct ImguiRenderer {
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
+        // USE GetWindowRect HERE ON THE HWND
         if let Some(rect) = self.renderer.get_window_rect() {
             let mut io = self.ctx.io_mut();
 
