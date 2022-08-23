@@ -4,6 +4,7 @@ use std::sync::RwLock;
 
 use detour::RawDetour;
 use imgui::Context;
+use imgui_ogl3::{gl_loader, imgui_opengl_renderer};
 use log::{debug, error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -42,11 +43,11 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            // TODO: LOADER OF OPENGL AND THEN CREATE RENDERER (consider switching loader to
-            // fully rust-written instead of c-backed one)
-
-            // Create OpenGL Rendererer TODO
-            // let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
+            // Init the loader (grabbing the func required)
+            gl_loader::init_gl();
+            let renderer = imgui_opengl_renderer::Renderer::new(&mut context, |s| {
+                gl_loader::get_proc_address(s) as _
+            });
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
@@ -134,7 +135,7 @@ static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 
 struct ImguiRenderer {
     ctx: Context,
-    renderer: imgui_dx9::Renderer,
+    renderer: imgui_opengl_renderer::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
@@ -143,34 +144,34 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
         // TODO: USE GetWindowRect HERE ON THE HWND, SIMPLY INLINE "get_window_rect()"
-        if let Some(rect) = self.renderer.get_window_rect() {
-            let mut io = self.ctx.io_mut();
-
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
-            let mut pos = POINT { x: 0, y: 0 };
-
-            // TODO: TEST THIS AND SEE IF IT WORKS AS INTENDED
-            let active_window = GetForegroundWindow();
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == self.game_hwnd
-                    || IsChild(active_window, self.game_hwnd).as_bool())
-            {
-                let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
-                }
-            }
-        } else {
-            trace!("GetWindowRect error: {:x}", GetLastError().0);
-        }
+        // if let Some(rect) = self.renderer.get_window_rect() {
+        // let mut io = self.ctx.io_mut();
+        //
+        // io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top)
+        // as f32];
+        //
+        // let mut pos = POINT { x: 0, y: 0 };
+        //
+        // TODO: TEST THIS AND SEE IF IT WORKS AS INTENDED
+        // let active_window = GetForegroundWindow();
+        // if !HANDLE(active_window.0).is_invalid()
+        // && (active_window == self.game_hwnd
+        // || IsChild(active_window, self.game_hwnd).as_bool())
+        // {
+        // let gcp = GetCursorPos(&mut pos as *mut _);
+        // if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut
+        // _).as_bool() { io.mouse_pos[0] = pos.x as _;
+        // io.mouse_pos[1] = pos.y as _;
+        // }
+        // }
+        // } else {
+        // trace!("GetWindowRect error: {:x}", GetLastError().0);
+        // }
 
         let mut ui = self.ctx.frame();
 
         IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
-        let draw_data = ui.render();
-        self.renderer.render(draw_data).unwrap();
+        self.renderer.render(ui);
     }
 
     unsafe fn cleanup(&mut self) {}
