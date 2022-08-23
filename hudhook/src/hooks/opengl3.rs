@@ -79,6 +79,8 @@ unsafe fn draw(dc: HDC) {
         })
         .lock();
 
+    ImguiWindowsEventHandler::setup_io(imgui_renderer.as_mut());
+
     imgui_renderer.render();
 }
 
