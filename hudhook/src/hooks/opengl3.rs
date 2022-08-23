@@ -67,18 +67,17 @@ unsafe fn draw(dc: HDC) {
                 imgui_wnd_proc as usize as i32,
             ));
 
-            // TODO: Insert OpenGL renderer here
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
                 renderer,
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
-                game_hwnd: todo!(),
+                game_hwnd: hwnd,
             }))
         })
         .lock();
 
-    // imgui_renderer.render();
+    imgui_renderer.render();
 }
 
 type WndProcType =
