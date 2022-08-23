@@ -112,7 +112,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 unsafe extern "system" fn imgui_opengl3_wglSwapBuffers_impl(dc: HDC) -> () {
     trace!("opengl32.wglSwapBuffers invoked");
 
-    // Draw imgui
+    // Draw ImGui
     draw(dc);
 
     // Get the trampoline
