@@ -25,8 +25,9 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExA, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos,
-    GetForegroundWindow, IsChild, RegisterClassA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, GWLP_WNDPROC,
-    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    GetForegroundWindow, GetWindowRect, IsChild, RegisterClassA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
+    GWLP_WNDPROC, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
@@ -141,32 +142,38 @@ struct ImguiRenderer {
     game_hwnd: HWND,
 }
 
+fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
+    unsafe {
+        let mut rect: RECT = RECT { ..core::mem::zeroed() };
+        if GetWindowRect(*hwnd, &mut rect) != BOOL(0) {
+            Some(rect)
+        } else {
+            None
+        }
+    }
+}
+
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
-        // TODO: USE GetWindowRect HERE ON THE HWND, SIMPLY INLINE "get_window_rect()"
-        // if let Some(rect) = self.renderer.get_window_rect() {
-        // let mut io = self.ctx.io_mut();
-        //
-        // io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top)
-        // as f32];
-        //
-        // let mut pos = POINT { x: 0, y: 0 };
-        //
-        // TODO: TEST THIS AND SEE IF IT WORKS AS INTENDED
-        // let active_window = GetForegroundWindow();
-        // if !HANDLE(active_window.0).is_invalid()
-        // && (active_window == self.game_hwnd
-        // || IsChild(active_window, self.game_hwnd).as_bool())
-        // {
-        // let gcp = GetCursorPos(&mut pos as *mut _);
-        // if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut
-        // _).as_bool() { io.mouse_pos[0] = pos.x as _;
-        // io.mouse_pos[1] = pos.y as _;
-        // }
-        // }
-        // } else {
-        // trace!("GetWindowRect error: {:x}", GetLastError().0);
-        // }
+        if let Some(rect) = get_window_rect(&self.game_hwnd) {
+            let mut io = self.ctx.io_mut();
+            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+            let mut pos = POINT { x: 0, y: 0 };
+
+            let active_window = GetForegroundWindow();
+            if !HANDLE(active_window.0).is_invalid()
+                && (active_window == self.game_hwnd
+                    || IsChild(active_window, self.game_hwnd).as_bool())
+            {
+                let gcp = GetCursorPos(&mut pos as *mut _);
+                if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
+                    io.mouse_pos[0] = pos.x as _;
+                    io.mouse_pos[1] = pos.y as _;
+                }
+            }
+        } else {
+            trace!("GetWindowRect error: {:x}", GetLastError().0);
+        }
 
         let mut ui = self.ctx.frame();
 
