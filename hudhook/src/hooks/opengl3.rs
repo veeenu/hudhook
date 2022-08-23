@@ -253,9 +253,11 @@ impl OpenGL3Hooks {
     where
         T: ImguiRenderLoop + Send + Sync,
     {
+        // Grab the addresses
         let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address) =
             get_dx9_present_addr();
 
+        // Create detours
         let hook_dx9_end_scene = RawDetour::new(
             hook_dx9_end_scene_address as *const _,
             imgui_dx9_end_scene_impl as *const _,
@@ -270,6 +272,7 @@ impl OpenGL3Hooks {
             RawDetour::new(dx9_reset_address as *const _, imgui_dx9_reset_impl as *const _)
                 .expect("IDirect3DDevice9::Reset hook");
 
+        // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {
             (
