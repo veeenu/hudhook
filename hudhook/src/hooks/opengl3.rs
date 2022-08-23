@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Direct3D9::{
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, D3D_SDK_VERSION,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH, HDC, RGNDATA};
+use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HBRUSH, HDC, RGNDATA};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
@@ -31,25 +31,33 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 
-unsafe fn draw(this: &IDirect3DDevice9) {
+unsafe fn draw(dc: HDC) {
     // Get the imgui renderer, or create it if it does not exist
     let mut imgui_renderer = IMGUI_RENDERER
         .get_or_insert_with(|| {
+            // Create ImGui context
             let mut context = imgui::Context::create();
             context.set_ini_filename(None);
-            IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
-            let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
+            // Initialize the render loop with the context
+            IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
+
+            // Create OpenGL Rendererer
+            // let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
+
+            // Grab the HWND from the DC
+            let hwnd = WindowFromDC(dc);
+
+            // Set the new wnd proc, and store the old one
             #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
             let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-                renderer.get_hwnd(),
+                hwnd,
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as isize,
             ));
-
             #[cfg(target_arch = "x86")]
             let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-                renderer.get_hwnd(),
+                hwnd,
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as i32,
             ));
@@ -64,7 +72,7 @@ unsafe fn draw(this: &IDirect3DDevice9) {
         })
         .lock();
 
-    imgui_renderer.render();
+    // imgui_renderer.render();
 }
 
 type WndProcType =
@@ -104,7 +112,7 @@ unsafe extern "system" fn imgui_opengl3_wglSwapBuffers_impl(dc: HDC) -> () {
     trace!("opengl32.wglSwapBuffers invoked");
 
     // Draw imgui
-    // draw(&this);
+    draw(dc);
 
     // Get the trampoline
     let trampoline_wglswapbuffers =
