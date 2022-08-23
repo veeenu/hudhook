@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::ptr::null;
 use std::sync::RwLock;
 
@@ -15,8 +16,8 @@ use windows::Win32::Graphics::Direct3D9::{
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, D3D_SDK_VERSION,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH, RGNDATA};
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH, HDC, RGNDATA};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -31,6 +32,7 @@ use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 
 unsafe fn draw(this: &IDirect3DDevice9) {
+    // Get the imgui renderer, or create it if it does not exist
     let mut imgui_renderer = IMGUI_RENDERER
         .get_or_insert_with(|| {
             let mut context = imgui::Context::create();
@@ -64,61 +66,10 @@ unsafe fn draw(this: &IDirect3DDevice9) {
     imgui_renderer.render();
 }
 
-type Dx9EndSceneFn = unsafe extern "system" fn(this: IDirect3DDevice9) -> HRESULT;
-
-type Dx9ResetFn =
-    unsafe extern "system" fn(this: IDirect3DDevice9, *const D3DPRESENT_PARAMETERS) -> HRESULT;
-
-type Dx9PresentFn = unsafe extern "system" fn(
-    this: IDirect3DDevice9,
-    psourcerect: *const RECT,
-    pdestrect: *const RECT,
-    hdestwindowoverride: HWND,
-    pdirtyregion: *const RGNDATA,
-) -> HRESULT;
-
 type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-unsafe extern "system" fn imgui_dx9_reset_impl(
-    this: IDirect3DDevice9,
-    present_params: *const D3DPRESENT_PARAMETERS,
-) -> HRESULT {
-    trace!(
-        "IDirect3DDevice9::Reset invoked ({} x {})",
-        (*present_params).BackBufferWidth,
-        (*present_params).BackBufferHeight
-    );
-
-    IMGUI_RENDERER = None;
-
-    let (_, _, trampoline_reset) =
-        TRAMPOLINE.get().expect("IDirect3DDevice9::Reset trampoline uninitialized");
-    trampoline_reset(this, present_params)
-}
-
-unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT {
-    trace!("IDirect3DDevice9::EndScene invoked");
-
-    let mut viewport = D3DVIEWPORT9 { ..core::mem::zeroed() };
-    this.GetViewport(&mut viewport).unwrap();
-    let render_target_surface = this.GetRenderTarget(0).unwrap();
-    let mut render_target_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
-    render_target_surface.GetDesc(&mut render_target_desc).unwrap();
-
-    let backbuffer_surface = this.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
-    let mut backbuffer_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
-    backbuffer_surface.GetDesc(&mut backbuffer_desc).unwrap();
-
-    trace!("Viewport: {:?}", viewport);
-    trace!("Render target desc: {:?}", render_target_desc);
-    trace!("Backbuffer desc: {:?}", backbuffer_desc);
-
-    let (trampoline_end_scene, ..) =
-        TRAMPOLINE.get().expect("IDirect3DDevice9::EndScene trampoline uninitialized");
-
-    trampoline_end_scene(this)
-}
+type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
 
 unsafe extern "system" fn imgui_wnd_proc(
     hwnd: HWND,
@@ -147,29 +98,25 @@ unsafe extern "system" fn imgui_wnd_proc(
     }
 }
 
-unsafe extern "system" fn imgui_dx9_present_impl(
-    this: IDirect3DDevice9,
-    psourcerect: *const RECT,
-    pdestrect: *const RECT,
-    hdestwindowoverride: HWND,
-    pdirtyregion: *const RGNDATA,
-) -> HRESULT {
-    trace!("IDirect3DDevice9::Present invoked");
+#[allow(non_snake_case)]
+unsafe extern "system" fn imgui_opengl3_wglSwapBuffers_impl(dc: HDC) -> () {
+    trace!("opengl32.wglSwapBuffers invoked");
 
-    this.BeginScene().unwrap();
-    draw(&this);
-    this.EndScene().unwrap();
+    // Draw imgui
+    // draw(&this);
 
-    let (_, trampoline_present, _) =
-        TRAMPOLINE.get().expect("IDirect3DDevice9::Present trampoline uninitialized");
+    // Get the trampoline
+    let trampoline_wglswapbuffers =
+        TRAMPOLINE.get().expect("opengl32.wglSwapBuffers trampoline uninitialized");
 
-    trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
+    // Call the original function
+    trampoline_wglswapbuffers(dc)
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
 static mut GAME_HWND: Option<RwLock<Box<HWND>>> = None;
-static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
+static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 
 struct ImguiRenderer {
     ctx: Context,
@@ -242,9 +189,7 @@ unsafe impl Sync for ImguiRenderer {}
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct OpenGL3Hooks {
     #[allow(dead_code)]
-    hook_dx9_end_scene: RawDetour,
-    hook_dx9_present: RawDetour,
-    hook_dx9_reset: RawDetour,
+    hook_opengl_swapbuffers: RawDetour,
 }
 
 impl OpenGL3Hooks {
@@ -257,41 +202,26 @@ impl OpenGL3Hooks {
         T: ImguiRenderLoop + Send + Sync,
     {
         // Grab the addresses
-        let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address) =
-            get_dx9_present_addr();
+        let hook_opengl_swapbuffers_address = get_opengl_wglswapbuffers_addr();
 
         // Create detours
-        let hook_dx9_end_scene = RawDetour::new(
-            hook_dx9_end_scene_address as *const _,
-            imgui_dx9_end_scene_impl as *const _,
+        let hook_opengl_swapbuffers = RawDetour::new(
+            hook_opengl_swapbuffers_address as *const _,
+            imgui_opengl3_wglSwapBuffers_impl as *const _,
         )
-        .expect("IDirect3DDevice9::EndScene hook");
-
-        let hook_dx9_present =
-            RawDetour::new(dx9_present_address as *const _, imgui_dx9_present_impl as *const _)
-                .expect("IDirect3DDevice9::Present hook");
-
-        let hook_dx9_reset =
-            RawDetour::new(dx9_reset_address as *const _, imgui_dx9_reset_impl as *const _)
-                .expect("IDirect3DDevice9::Reset hook");
+        .expect("opengl32.wglSwapBuffers hook");
 
         // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| {
-            (
-                std::mem::transmute(hook_dx9_end_scene.trampoline()),
-                std::mem::transmute(hook_dx9_present.trampoline()),
-                std::mem::transmute(hook_dx9_reset.trampoline()),
-            )
-        });
+        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_swapbuffers.trampoline()));
 
-        Self { hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset }
+        Self { hook_opengl_swapbuffers }
     }
 }
 
 impl Hooks for OpenGL3Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
+        for hook in [&self.hook_opengl_swapbuffers] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -299,7 +229,7 @@ impl Hooks for OpenGL3Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
+        for hook in [&self.hook_opengl_swapbuffers] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
@@ -315,85 +245,16 @@ impl Hooks for OpenGL3Hooks {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function address finders
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
+    // Grab a handle to the opengl32.dll
+    let opengl32dll = CString::new("opengl32.dll").unwrap();
+    let opengl32module = GetModuleHandleA(PCSTR(opengl32dll.as_ptr() as *mut _))
+        .expect("failed finding opengl32.dll");
 
-unsafe fn create_dummy_window() -> HWND {
-    unsafe extern "system" fn def_window_proc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcA(hwnd, msg, wparam, lparam)
-    }
+    // Grab the address of wglSwapBuffers
+    let wglswapbuffers = CString::new("wglSwapBuffers").unwrap();
+    let wglswapbuffers_func =
+        GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
 
-    let hinstance = GetModuleHandleA(None).unwrap();
-    let wnd_class = WNDCLASSA {
-        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(def_window_proc),
-        hInstance: hinstance,
-        lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hIcon: HICON(0),
-        hCursor: HCURSOR(0),
-        hbrBackground: HBRUSH(0),
-        lpszMenuName: PCSTR(null()),
-    };
-
-    RegisterClassA(&wnd_class);
-
-    CreateWindowExA(
-        WINDOW_EX_STYLE(0),
-        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        0,
-        0,
-        100,
-        100,
-        HWND(0),
-        HMENU(0),
-        hinstance,
-        null(),
-    )
-}
-
-unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
-    let hwnd = create_dummy_window();
-
-    let d9 = Direct3DCreate9(D3D_SDK_VERSION).unwrap();
-
-    let mut d3d_display_mode =
-        D3DDISPLAYMODE { Width: 0, Height: 0, RefreshRate: 0, Format: D3DFORMAT(0) };
-    d9.GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &mut d3d_display_mode).unwrap();
-
-    let mut present_params = D3DPRESENT_PARAMETERS {
-        Windowed: BOOL(1),
-        SwapEffect: D3DSWAPEFFECT_DISCARD,
-        BackBufferFormat: d3d_display_mode.Format,
-        ..core::mem::zeroed()
-    };
-
-    let mut device: Option<IDirect3DDevice9> = None;
-    d9.CreateDevice(
-        D3DADAPTER_DEFAULT,
-        D3DDEVTYPE_HAL,
-        hwnd,
-        D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
-        &mut present_params,
-        &mut device,
-    )
-    .expect("IDirect3DDevice9::CreateDevice: failed to create device");
-    let device = device.unwrap();
-
-    let end_scene_ptr = device.vtable().EndScene;
-    let present_ptr = device.vtable().Present;
-    let reset_ptr = device.vtable().Reset;
-
-    DestroyWindow(hwnd);
-    (
-        std::mem::transmute(end_scene_ptr),
-        std::mem::transmute(present_ptr),
-        std::mem::transmute(reset_ptr),
-    )
+    std::mem::transmute(wglswapbuffers_func)
 }
