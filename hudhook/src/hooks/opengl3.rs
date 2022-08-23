@@ -59,6 +59,7 @@ unsafe fn draw(this: &IDirect3DDevice9) {
                 renderer,
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
+                game_hwnd: todo!(),
             }))
         })
         .lock();
@@ -123,6 +124,7 @@ struct ImguiRenderer {
     renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
+    game_hwnd: HWND,
 }
 
 impl ImguiRenderer {
@@ -137,13 +139,11 @@ impl ImguiRenderer {
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
-                && (active_window == self.renderer.get_hwnd()
-                    || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
+                && (active_window == self.game_hwnd
+                    || IsChild(active_window, self.game_hwnd).as_bool())
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool()
-                    && ScreenToClient(self.renderer.get_hwnd(), &mut pos as *mut _).as_bool()
-                {
+                if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
                     io.mouse_pos[0] = pos.x as _;
                     io.mouse_pos[1] = pos.y as _;
                 }
