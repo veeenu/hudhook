@@ -246,7 +246,7 @@ impl Hooks for OpenGL3Hooks {
 // Function address finders
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
-    // Grab a handle to the opengl32.dll
+    // Grab a handle to opengl32.dll
     let opengl32dll = CString::new("opengl32.dll").unwrap();
     let opengl32module = GetModuleHandleA(PCSTR(opengl32dll.as_ptr() as *mut _))
         .expect("failed finding opengl32.dll");
