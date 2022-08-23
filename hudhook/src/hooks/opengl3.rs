@@ -131,7 +131,6 @@ unsafe extern "system" fn imgui_opengl3_wglSwapBuffers_impl(dc: HDC) -> () {
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
-static mut GAME_HWND: Option<RwLock<Box<HWND>>> = None;
 static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 
 struct ImguiRenderer {
