@@ -211,7 +211,7 @@ unsafe impl Sync for ImguiRenderer {}
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct OpenGL3Hooks {
     #[allow(dead_code)]
-    hook_opengl_wglSwapBuffers: RawDetour,
+    hook_opengl_wgl_swap_buffers: RawDetour,
 }
 
 impl OpenGL3Hooks {
@@ -227,7 +227,7 @@ impl OpenGL3Hooks {
         let hook_opengl_swapbuffers_address = get_opengl_wglswapbuffers_addr();
 
         // Create detours
-        let hook_opengl_wglSwapBuffers = RawDetour::new(
+        let hook_opengl_wgl_swap_buffers = RawDetour::new(
             hook_opengl_swapbuffers_address as *const _,
             imgui_opengl3_wglSwapBuffers_impl as *const _,
         )
@@ -235,15 +235,15 @@ impl OpenGL3Hooks {
 
         // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wglSwapBuffers.trampoline()));
+        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wgl_swap_buffers.trampoline()));
 
-        Self { hook_opengl_wglSwapBuffers }
+        Self { hook_opengl_wgl_swap_buffers }
     }
 }
 
 impl Hooks for OpenGL3Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_opengl_wglSwapBuffers] {
+        for hook in [&self.hook_opengl_wgl_swap_buffers] {
             if let Err(e) = hook.enable() {
                 error!("Couldn't enable hook: {e}");
             }
@@ -251,7 +251,7 @@ impl Hooks for OpenGL3Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [&self.hook_opengl_wglSwapBuffers] {
+        for hook in [&self.hook_opengl_wgl_swap_buffers] {
             if let Err(e) = hook.disable() {
                 error!("Couldn't disable hook: {e}");
             }
