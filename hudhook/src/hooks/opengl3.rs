@@ -43,7 +43,7 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            // Init the loader (grabbing the func required)
+            // Init the OpenGL loader (used for grabbing the OpenGL functions)
             gl_loader::init_gl();
             let renderer = imgui_opengl_renderer::Renderer::new(&mut context, |s| {
                 gl_loader::get_proc_address(s) as _
@@ -67,6 +67,7 @@ unsafe fn draw(dc: HDC) {
                 imgui_wnd_proc as usize as i32,
             ));
 
+            // Store the Imgui renderer
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
                 renderer,
