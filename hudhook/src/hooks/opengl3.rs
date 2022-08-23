@@ -68,18 +68,22 @@ unsafe fn draw(dc: HDC) {
                 imgui_wnd_proc as usize as i32,
             ));
 
-            // Store the Imgui renderer
-            Mutex::new(Box::new(ImguiRenderer {
+            // Create the imgui rendererer
+            let mut imgui_renderer = ImguiRenderer {
                 ctx: context,
                 renderer,
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
                 game_hwnd: hwnd,
-            }))
+            };
+
+            // Initialize window events on the imgui renderer
+            ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
+
+            // Return the imgui renderer as a mutex
+            Mutex::new(Box::new(imgui_renderer))
         })
         .lock();
-
-    ImguiWindowsEventHandler::setup_io(imgui_renderer.as_mut());
 
     imgui_renderer.render();
 }

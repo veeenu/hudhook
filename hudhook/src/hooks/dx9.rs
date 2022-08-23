@@ -51,12 +51,19 @@ unsafe fn draw(this: &IDirect3DDevice9) {
                 imgui_wnd_proc as usize as i32,
             ));
 
-            Mutex::new(Box::new(ImguiRenderer {
+            // Create the imgui rendererer
+            let mut imgui_renderer = ImguiRenderer {
                 ctx: context,
                 renderer,
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
-            }))
+            };
+
+            // Initialize window events on the imgui renderer
+            ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
+
+            // Return the imgui renderer as a mutex
+            Mutex::new(Box::new(imgui_renderer))
         })
         .lock();
 
