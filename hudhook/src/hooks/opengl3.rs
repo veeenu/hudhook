@@ -1,6 +1,7 @@
 use std::ffi::CString;
 use std::ptr::null;
 use std::sync::RwLock;
+use std::time::Instant;
 
 use detour::RawDetour;
 use imgui::Context;
@@ -158,6 +159,8 @@ fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
     }
 }
 
+static mut LAST_FRAME: Option<Mutex<Instant>> = None;
+
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
         if let Some(rect) = get_window_rect(&self.game_hwnd) {
@@ -179,6 +182,13 @@ impl ImguiRenderer {
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
+
+        // Update the delta time of ImGui as to tell it how long has elapsed since the
+        // last frame
+        let last_frame = LAST_FRAME.get_or_insert_with(|| Mutex::new(Instant::now())).get_mut();
+        let now = Instant::now();
+        self.ctx.io_mut().update_delta_time(now.duration_since(*last_frame));
+        *last_frame = now;
 
         let mut ui = self.ctx.frame();
 
