@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use detour::RawDetour;
 use imgui::Context;
-use imgui_ogl3::{gl_loader, imgui_opengl_renderer};
+use imgui_opengl3::{gl_loader, imgui_opengl_renderer};
 use log::{debug, error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;

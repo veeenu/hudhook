@@ -1,5 +1,5 @@
 [package]
-name = "imgui-ogl3"
+name = "imgui-opengl3"
 version = "0.1.0"
 edition = "2021"
 
