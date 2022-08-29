@@ -1,6 +1,4 @@
 use std::ffi::CString;
-use std::ptr::null;
-use std::sync::RwLock;
 use std::time::Instant;
 
 use detour::RawDetour;
@@ -9,26 +7,18 @@ use imgui_opengl3::{gl_loader, imgui_opengl_renderer};
 use log::{debug, error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{Interface, HRESULT, PCSTR};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
-    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
-    D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, D3D_SDK_VERSION,
-};
-use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HBRUSH, HDC, RGNDATA};
+use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos,
-    GetForegroundWindow, GetWindowRect, IsChild, RegisterClassA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    GWLP_WNDPROC, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW,
-    WS_VISIBLE,
+    DefWindowProcW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsChild, GWLP_WNDPROC,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
