@@ -213,13 +213,27 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
+// Get the address of wglSwapBuffers in opengl32.dll
+unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
+    // Grab a handle to opengl32.dll
+    let opengl32dll = CString::new("opengl32.dll").unwrap();
+    let opengl32module = GetModuleHandleA(PCSTR(opengl32dll.as_ptr() as *mut _))
+        .expect("failed finding opengl32.dll");
+
+    // Grab the address of wglSwapBuffers
+    let wglswapbuffers = CString::new("wglSwapBuffers").unwrap();
+    let wglswapbuffers_func =
+        GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
+
+    std::mem::transmute(wglswapbuffers_func)
+}
+
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct OpenGL3Hooks {
-    #[allow(dead_code)]
+pub struct ImguiOpenGl3Hooks {
     hook_opengl_wgl_swap_buffers: RawDetour,
 }
 
-impl OpenGL3Hooks {
+impl ImguiOpenGl3Hooks {
     /// # Safety
     ///
     /// Is most likely undefined behavior, as it modifies function pointers at
@@ -246,7 +260,7 @@ impl OpenGL3Hooks {
     }
 }
 
-impl Hooks for OpenGL3Hooks {
+impl Hooks for ImguiOpenGl3Hooks {
     unsafe fn hook(&self) {
         for hook in [&self.hook_opengl_wgl_swap_buffers] {
             if let Err(e) = hook.enable() {
@@ -267,19 +281,4 @@ impl Hooks for OpenGL3Hooks {
         }
         drop(IMGUI_RENDER_LOOP.take());
     }
-}
-
-// Get the address of wglSwapBuffers in opengl32.dll
-unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
-    // Grab a handle to opengl32.dll
-    let opengl32dll = CString::new("opengl32.dll").unwrap();
-    let opengl32module = GetModuleHandleA(PCSTR(opengl32dll.as_ptr() as *mut _))
-        .expect("failed finding opengl32.dll");
-
-    // Grab the address of wglSwapBuffers
-    let wglswapbuffers = CString::new("wglSwapBuffers").unwrap();
-    let wglswapbuffers_func =
-        GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
-
-    std::mem::transmute(wglswapbuffers_func)
 }
