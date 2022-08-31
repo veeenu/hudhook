@@ -112,7 +112,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 }
 
 #[allow(non_snake_case)]
-unsafe extern "system" fn imgui_opengl3_wglSwapBuffers_impl(dc: HDC) -> () {
+unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) -> () {
     trace!("opengl32.wglSwapBuffers invoked");
 
     // Draw ImGui
@@ -248,7 +248,7 @@ impl ImguiOpenGl3Hooks {
         // Create detours
         let hook_opengl_wgl_swap_buffers = RawDetour::new(
             hook_opengl_swapbuffers_address as *const _,
-            imgui_opengl3_wglSwapBuffers_impl as *const _,
+            imgui_opengl32_wglSwapBuffers_impl as *const _,
         )
         .expect("opengl32.wglSwapBuffers hook");
 
