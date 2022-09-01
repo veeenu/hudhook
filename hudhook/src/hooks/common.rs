@@ -7,6 +7,7 @@ use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBU
 use super::dx11::ImguiDX11Hooks;
 use super::dx12::ImguiDX12Hooks;
 use super::dx9::ImguiDX9Hooks;
+use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 pub(crate) type WndProcType =
@@ -158,6 +159,12 @@ impl HookableBackend for ImguiDX11Hooks {
 impl HookableBackend for ImguiDX12Hooks {
     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
         unsafe { ImguiDX12Hooks::new(t) }
+    }
+}
+
+impl HookableBackend for ImguiOpenGl3Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiOpenGl3Hooks::new(t) }
     }
 }
 
