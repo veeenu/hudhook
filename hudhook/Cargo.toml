@@ -26,7 +26,7 @@ name = "inject"
 
 [dependencies]
 console = "0.15.0"
-detour = "0.8.1"
+detour = { package = "detour2", version = "0.9.0" }
 dialoguer = "0.9.0"
 imgui = "0.8.0"
 imgui-dx9  = { path = "../imgui-dx9"  }
