@@ -71,7 +71,8 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             ),
             None,
             LOAD_LIBRARY_FLAGS(0),
-        ).unwrap()
+        )
+        .unwrap()
     };
     println!("Loaded library");
 
