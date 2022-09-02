@@ -22,7 +22,7 @@
 
 #![cfg(windows)]
 #![deny(missing_docs)]
-//! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/*/imgui/) rust bindings.
+//! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/) rust bindings.
 
 use std::{mem, ptr, slice};
 
@@ -78,7 +78,7 @@ struct CustomVertex {
     uv: [f32; 2],
 }
 
-/// A DirectX 9 renderer for (Imgui-rs)[https://docs.rs/imgui/*/imgui/].
+/// A DirectX 9 renderer for <https://docs.rs/imgui/>.
 pub struct Renderer {
     device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS,
     device: IDirect3DDevice9,

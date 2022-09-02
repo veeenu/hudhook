@@ -6,7 +6,7 @@
 //! [`imgui`](https://docs.rs/imgui/0.8.0/imgui/). It has been largely inspired
 //! by [CheatEngine](https://www.cheatengine.org/).
 //!
-//! Currently, DirectX 11 and DirectX 12 are supported.
+//! Currently, DirectX9, DirectX 11, DirectX 12 and OpenGL 3 are supported.
 //!
 //! For complete, fully fledged examples of usage, check out the following
 //! projects:
@@ -44,13 +44,13 @@
 //!
 //! Implement the render loop trait for your hook target.
 //!
-//! ##### Example: DirectX 11
+//! ##### Example
 //!
-//! Implement the [`hooks::dx11::ImguiRenderLoop`] trait:
+//! Implement the [`hooks::ImguiRenderLoop`] trait:
 //!
 //! ```no_run
 //! // lib.rs
-//! use hudhook::hooks::dx11::ImguiRenderLoop;
+//! use hudhook::hooks::ImguiRenderLoop;
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
@@ -74,40 +74,21 @@
 //!     }
 //! }
 //!
-//! hudhook!(MyRenderLoop.into_hook())
-//! ```
+//! // Use this if hooking into a DirectX 9 application.
+//! use hudhook::hooks::dx9::ImguiDX9Hooks;
+//! hudhook!(MyRenderLoop.into_hook::<ImguiDX9Hooks>())
 //!
-//! ##### Example: DirectX 12
+//! // Use this if hooking into a DirectX 11 application.
+//! use hudhook::hooks::dx11::ImguiDX11Hooks;
+//! hudhook!(MyRenderLoop.into_hook::<ImguiDX11Hooks>())
 //!
-//! Implement the [`hooks::dx12::ImguiRenderLoop`] trait:
+//! // Use this if hooking into a DirectX 12 application.
+//! use hudhook::hooks::dx12::ImguiDX12Hooks;
+//! hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>())
 //!
-//! ```no_run
-//! // lib.rs
-//! use hudhook::hooks::dx12::ImguiRenderLoop;
-//! use hudhook::*;
-//!
-//! pub struct MyRenderLoop;
-//!
-//! impl ImguiRenderLoop for MyRenderLoop {
-//!     fn render(&self, ctx: hudhook::RenderContext) {
-//!         imgui::Window::new(im_str!("My first render loop"))
-//!             .position([0., 0.], imgui::Condition::FirstUseEver)
-//!             .size([320., 200.], imgui::Condition::FirstUseEver)
-//!             .build(ctx.frame, || {
-//!                 ctx.frame.text(imgui::im_str!("Hello, hello!"));
-//!             });
-//!     }
-//!
-//!     fn is_visible(&self) -> bool {
-//!         true
-//!     }
-//!
-//!     fn is_capturing(&self) -> bool {
-//!         true
-//!     }
-//! }
-//!
-//! hudhook!(MyRenderLoop.into_hook())
+//! // Use this if hooking into a DirectX 9 application.
+//! use hudhook::hooks::opengl3::ImguiOpenGL3Hooks;
+//! hudhook!(MyRenderLoop.into_hook::<OpenGL3Hooks>())
 //! ```
 //!
 //! #### Injecting the DLL
