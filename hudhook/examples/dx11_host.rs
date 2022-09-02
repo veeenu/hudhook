@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 #[no_mangle]
 pub fn main(_argc: i32, _argv: *const *const u8) {
-    let hinstance = unsafe { GetModuleHandleA(None) };
+    let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(window_proc),
@@ -55,8 +55,6 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         )
     }; // lpParam
 
-    let mut render_engine = imgui_dx11::RenderEngine::new(handle);
-
     let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
 
     let mut dll_path = std::env::current_exe().unwrap();
@@ -73,7 +71,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             ),
             None,
             LOAD_LIBRARY_FLAGS(0),
-        )
+        ).unwrap()
     };
     println!("Loaded library");
 
@@ -97,9 +95,6 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             diq.ClearStoredMessages(DXGI_DEBUG_ALL);
         }
 
-        render_engine.render(|_| {}).ok();
-        render_engine.present();
-
         if !handle_message(handle) {
             break;
         }
@@ -107,7 +102,6 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
 }
 
 // Winapi things
-//
 
 fn handle_message(window: HWND) -> bool {
     unsafe {

@@ -29,7 +29,7 @@ use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::{BOOL, HWND};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3D9, IDirect3DDevice9, D3DADAPTER_DEFAULT,
-    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVICE_CREATION_PARAMETERS, D3DDEVTYPE_HAL,
+    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL,
     D3DFMT_R5G6B5, D3DMULTISAMPLE_NONE, D3DPRESENT_INTERVAL_DEFAULT, D3DPRESENT_PARAMETERS,
     D3DPRESENT_RATE_DEFAULT, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
@@ -105,7 +105,9 @@ fn main() {
     }]);
     imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
 
-    let mut renderer = unsafe { imgui_dx9::Renderer::new(&mut imgui, device.clone()).unwrap() };
+    let mut renderer = unsafe {
+        hudhook::renderers::imgui_dx9::Renderer::new(&mut imgui, device.clone()).unwrap()
+    };
 
     let mut last_frame = Instant::now();
 

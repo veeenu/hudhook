@@ -1,21 +1,21 @@
 #![feature(once_cell)]
 
-use hudhook::hooks::dx9::ImguiDX9Hooks;
+use hudhook::hooks::dx12::ImguiDX12Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
-struct HookYou;
+struct Dx12HookExample;
 
-impl HookYou {
+impl Dx12HookExample {
     fn new() -> Self {
         println!("Initializing");
         hudhook::utils::alloc_console();
         hudhook::utils::simplelog();
 
-        HookYou
+        Dx12HookExample
     }
 }
 
-impl ImguiRenderLoop for HookYou {
+impl ImguiRenderLoop for Dx12HookExample {
     fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
         Window::new("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(ui, || {
             ui.text("Hello world!");
@@ -28,4 +28,4 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-hudhook::hudhook!(HookYou::new().into_hook::<ImguiDX9Hooks>());
+hudhook::hudhook!(Dx12HookExample::new().into_hook::<ImguiDX12Hooks>());
