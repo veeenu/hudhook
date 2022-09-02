@@ -1,8 +1,9 @@
 # hudhook
 
-A DirectX 11 and 12 render loop hook library with memory manipulation API and
-[Dear ImGui](https://github.com/ocornut/imgui) overlays, largely inspired by
-[CheatEngine](https://cheatengine.org/).
+A render loop hook library with [Dear ImGui](https://github.com/ocornut/imgui)
+overlays, largely inspired by [CheatEngine](https://cheatengine.org/).
+
+Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3.
 
 Read up on the underlying architecture [here](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/).
 
@@ -10,51 +11,35 @@ Read up on the underlying architecture [here](https://veeenu.github.io/blog/seki
 
 ```rust
 // src/lib.rs
-use std::time::Instant;
+use hudhook::hooks::dx11::ImguiDX11Hooks;
+use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use imgui::{Condition, Window};
+struct Dx11HookExample;
 
-use hudhook::*;
-use hudhook::memory::*;
-use hudhook::hooks::dx11;
-use imgui::im_str;
+impl Dx11HookExample {
+    fn new() -> Self {
+        println!("Initializing");
+        hudhook::utils::alloc_console();
+        hudhook::utils::simplelog();
 
-pub struct HelloWorld {
-    start: Instant,
-    counter: f64,
-}
-
-impl RenderLoop for HelloWorld {
-    fn render(&mut self, ctx: hudhook::RenderContext) {
-        self.counter += 0.001;
-
-        let baddr: usize = base_address();
-        let ptr = PointerChain::<f64>::new(&[baddr + 0x1BAF0, 0x18]);
-        ptr.write(self.counter);
-
-        imgui::Window::new(im_str!("Hello"))
-            .size([320.0, 256.0], imgui::Condition::FirstUseEver)
-            .build(ctx.frame, || {
-                ctx.frame.text(im_str!("Hello world!"));
-                ctx
-                    .frame
-                    .text(format!("Time elapsed: {:?}", self.start.elapsed()));
-                ctx.frame.text(format!("Counter: {}", self.counter));
-                ctx.frame.separator();
-            });
-    }
-    fn is_visible(&self) -> bool {
-        true
-    }
-    fn is_capturing(&self) -> bool {
-        true
+        Dx11HookExample
     }
 }
 
-hudhook!(
-    HelloWorld {
-        start: Instant::now(),
-        counter: 1000.
-    }.into_hook(),
-);
+impl ImguiRenderLoop for Dx11HookExample {
+    fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+        Window::new("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(ui, || {
+            ui.text("Hello world!");
+            ui.text("こんにちは世界！");
+            ui.text("This...is...imgui-rs!");
+            ui.separator();
+            let mouse_pos = ui.io().mouse_pos;
+            ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
+        });
+    }
+}
+
+hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDX11Hooks>());
 ```
 
 ```rust
