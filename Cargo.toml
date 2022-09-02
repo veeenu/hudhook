@@ -9,6 +9,9 @@ documentation = "https://veeenu.github.io/hudhook"
 license-file = "LICENSE"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
+[package.metadata.docs.rs]
+default-target = "x86_64-pc-windows-msvc"
+
 # Hook examples
 #
 # These are minimal examples of how to use the library.
