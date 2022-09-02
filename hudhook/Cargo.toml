@@ -48,6 +48,16 @@ name = "renderer-dx9"
 path = "examples/renderers/dx9.rs"
 crate-type = ["bin"]
 
+[[example]]
+name = "renderer-dx11"
+path = "examples/renderers/dx11.rs"
+crate-type = ["bin"]
+
+[[example]]
+name = "renderer-dx12"
+path = "examples/renderers/dx12.rs"
+crate-type = ["bin"]
+
 [[bin]]
 name = "inject"
 
