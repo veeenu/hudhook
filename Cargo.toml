@@ -11,6 +11,7 @@ authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc"]
 
 # Hook examples
 #
