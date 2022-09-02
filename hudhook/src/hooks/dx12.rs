@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use detour::RawDetour;
 use imgui::Context;
-use imgui_dx12::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -35,6 +34,7 @@ use super::common::{
     WndProcType,
 };
 use super::Hooks;
+use crate::renderers::imgui_dx12;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -246,7 +246,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
 struct ImguiRenderer {
     ctx: Context,
-    engine: RenderEngine,
+    engine: imgui_dx12::RenderEngine,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     frame_contexts: Vec<FrameContext>,
@@ -325,7 +325,7 @@ impl ImguiRenderer {
         let mut ctx = Context::create();
         let cpu_desc = renderer_heap.GetCPUDescriptorHandleForHeapStart();
         let gpu_desc = renderer_heap.GetGPUDescriptorHandleForHeapStart();
-        let engine = RenderEngine::new(
+        let engine = imgui_dx12::RenderEngine::new(
             &mut ctx,
             dev,
             desc.BufferCount,

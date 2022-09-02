@@ -28,6 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::renderers::imgui_dx9;
 
 unsafe fn draw(this: &IDirect3DDevice9) {
     let mut imgui_renderer = IMGUI_RENDERER

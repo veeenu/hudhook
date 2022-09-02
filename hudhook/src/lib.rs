@@ -150,6 +150,7 @@
 
 pub mod hooks;
 pub mod inject;
+pub mod renderers;
 
 /// Utility functions.
 pub mod utils {

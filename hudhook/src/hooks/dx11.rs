@@ -3,7 +3,6 @@ use std::ptr::{null, null_mut};
 
 use detour::RawDetour;
 use imgui::Context;
-use imgui_dx11::RenderEngine;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -35,6 +34,7 @@ use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
 };
 use super::Hooks;
+use crate::renderers::imgui_dx11;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -147,7 +147,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
 struct ImguiRenderer {
     ctx: Context,
-    engine: RenderEngine,
+    engine: imgui_dx11::RenderEngine,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     swap_chain: IDXGISwapChain,
@@ -170,7 +170,8 @@ impl ImguiRenderer {
         let dev_ctx = dev_ctx.unwrap();
         let sd = swap_chain.GetDesc().expect("GetDesc");
 
-        let engine = RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
+        let engine =
+            imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
@@ -254,11 +255,11 @@ impl ImguiRenderer {
         SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
     }
 
-    fn ctx(&self) -> &imgui_dx11::imgui::Context {
+    fn ctx(&self) -> &imgui::Context {
         &self.ctx
     }
 
-    fn ctx_mut(&mut self) -> &mut imgui_dx11::imgui::Context {
+    fn ctx_mut(&mut self) -> &mut imgui::Context {
         &mut self.ctx
     }
 }
