@@ -160,6 +160,8 @@ impl ImguiRenderer {
         let mut ctx = Context::create();
         ctx.set_ini_filename(None);
 
+        IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
+
         let flags = ImguiRenderLoopFlags { focused: true };
 
         trace!("Initializing renderer");
@@ -186,8 +188,6 @@ impl ImguiRenderer {
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
         ));
-
-        IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
