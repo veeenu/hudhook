@@ -187,6 +187,8 @@ impl ImguiRenderer {
             imgui_wnd_proc as usize as i32,
         ));
 
+        IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
+
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
 
