@@ -532,6 +532,8 @@ unsafe impl Sync for ImguiRenderer {}
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, ResizeBuffersType) {
+    const CLASS_NAME: PCSTR = PCSTR("HUDHOOK_DUMMY\0".as_ptr());
+
     trace!("get_present_addr");
     trace!("  HWND");
     unsafe extern "system" fn wndproc(
@@ -542,41 +544,40 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     ) -> LRESULT {
         DefWindowProcA(hwnd, msg, wparam, lparam)
     }
+
     let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
-    let hwnd = {
-        let wnd_class = WNDCLASSEXA {
-            style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(wndproc),
-            hInstance: hinstance,
-            lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            cbSize: size_of::<WNDCLASSEXA>() as u32,
-            hIcon: HICON(0),
-            hIconSm: HICON(0),
-            hCursor: HCURSOR(0),
-            hbrBackground: HBRUSH(0),
-            lpszMenuName: PCSTR(null()),
-        };
-        unsafe {
-            trace!("    RegisterClassExA");
-            RegisterClassExA(&wnd_class);
-            trace!("    CreateWindowExA");
-            CreateWindowExA(
-                WINDOW_EX_STYLE(0),
-                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                0,
-                0,
-                100,
-                100,
-                None,
-                None,
-                hinstance,
-                null(),
-            )
-        }
+    let wnd_class = WNDCLASSEXA {
+        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(wndproc),
+        hInstance: hinstance,
+        lpszClassName: CLASS_NAME,
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        cbSize: size_of::<WNDCLASSEXA>() as u32,
+        hIcon: HICON(0),
+        hIconSm: HICON(0),
+        hCursor: HCURSOR(0),
+        hbrBackground: HBRUSH(0),
+        lpszMenuName: PCSTR(null()),
+    };
+    let hwnd = unsafe {
+        trace!("    RegisterClassExA");
+        RegisterClassExA(&wnd_class);
+        trace!("    CreateWindowExA");
+        CreateWindowExA(
+            WINDOW_EX_STYLE(0),
+            CLASS_NAME,
+            CLASS_NAME,
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            0,
+            0,
+            100,
+            100,
+            None,
+            None,
+            hinstance,
+            null(),
+        )
     };
 
     let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
@@ -622,8 +623,10 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     let ecl_ptr = command_queue.vtable().ExecuteCommandLists;
     let rbuf_ptr = swap_chain.vtable().ResizeBuffers;
 
-    unsafe { DestroyWindow(hwnd) };
-    unsafe { UnregisterClassA(PCSTR("HUDHOOK_DUMMY\0".as_ptr()), hinstance) };
+    unsafe {
+        DestroyWindow(hwnd);
+        UnregisterClassA(CLASS_NAME, hinstance);
+    }
 
     unsafe {
         (
