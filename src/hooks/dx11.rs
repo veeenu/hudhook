@@ -300,6 +300,8 @@ unsafe impl Sync for ImguiRenderer {}
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
+    const CLASS_NAME: PCSTR = PCSTR("HUDHOOK_DUMMY\0".as_ptr());
+
     trace!("Getting IDXGISwapChain::Present addr...");
 
     unsafe extern "system" fn def_window_proc(
@@ -311,37 +313,35 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
         DefWindowProcA(hwnd, msg, wparam, lparam)
     }
 
-    let hwnd = {
-        let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
-        let wnd_class = WNDCLASSA {
-            style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(def_window_proc),
-            hInstance: hinstance,
-            lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hIcon: HICON(0),
-            hCursor: HCURSOR(0),
-            hbrBackground: HBRUSH(0),
-            lpszMenuName: PCSTR(null()),
-        };
-        unsafe {
-            RegisterClassA(&wnd_class);
-            CreateWindowExA(
-                WINDOW_EX_STYLE(0),
-                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-                PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                0,
-                0,
-                16,
-                16,
-                HWND(0),
-                HMENU(0),
-                hinstance,
-                null(),
-            )
-        }
+    let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
+    let wnd_class = WNDCLASSA {
+        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(def_window_proc),
+        hInstance: hinstance,
+        lpszClassName: CLASS_NAME,
+        cbClsExtra: 0,
+        cbWndExtra: 0,
+        hIcon: HICON(0),
+        hCursor: HCURSOR(0),
+        hbrBackground: HBRUSH(0),
+        lpszMenuName: PCSTR(null()),
+    };
+    let hwnd = unsafe {
+        RegisterClassA(&wnd_class);
+        CreateWindowExA(
+            WINDOW_EX_STYLE(0),
+            CLASS_NAME,
+            CLASS_NAME,
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            0,
+            0,
+            16,
+            16,
+            HWND(0),
+            HMENU(0),
+            hinstance,
+            null(),
+        )
     };
 
     let feature_level = D3D_FEATURE_LEVEL_11_0;
@@ -385,6 +385,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
 
     unsafe {
         DestroyWindow(hwnd);
+        UnregisterClassA(CLASS_NAME, hinstance);
     }
 
     unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
