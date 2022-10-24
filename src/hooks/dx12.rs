@@ -8,7 +8,7 @@ use detour::RawDetour;
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, Condvar};
 use widestring::{u16cstr, U16CStr};
 use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
@@ -117,6 +117,7 @@ static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> =
 static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
+static CLEANUP_CV: Condvar = Condvar::new();
 
 #[derive(Debug)]
 struct FrameContext {
@@ -187,6 +188,8 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     if DXGI_DEBUG_ENABLED.load(Ordering::SeqCst) {
         print_dxgi_debug_messages();
     }
+
+    CLEANUP_CV.notify_one();
 
     r
 }
@@ -729,7 +732,9 @@ impl Hooks for ImguiDX12Hooks {
 
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
-            renderer.lock().cleanup(None);
+            let mut renderer = renderer.lock();
+            CLEANUP_CV.wait(&mut renderer);
+            renderer.cleanup(None);
         }
 
         drop(IMGUI_RENDER_LOOP.take());
