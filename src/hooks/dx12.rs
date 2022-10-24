@@ -8,7 +8,7 @@ use detour::RawDetour;
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
-use parking_lot::{Mutex, Condvar};
+use parking_lot::Mutex;
 use widestring::{u16cstr, U16CStr};
 use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
@@ -117,7 +117,10 @@ static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> =
 static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
-static CLEANUP_CV: Condvar = Condvar::new();
+
+static CQECL_RUNNING: Mutex<()> = Mutex::new(());
+static PRESENT_RUNNING: Mutex<()> = Mutex::new(());
+static RBUF_RUNNING: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 struct FrameContext {
@@ -131,6 +134,7 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
+    let _fence = CQECL_RUNNING.lock();
     trace!(
         "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
          {command_lists:p}) invoked"
@@ -166,6 +170,8 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
+    let _fence = PRESENT_RUNNING.lock();
+
     let (trampoline_present, ..) =
         TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
 
@@ -189,8 +195,6 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
         print_dxgi_debug_messages();
     }
 
-    CLEANUP_CV.notify_one();
-
     r
 }
 
@@ -202,6 +206,8 @@ unsafe extern "system" fn imgui_resize_buffers_impl(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT {
+    let _fence = RBUF_RUNNING.lock();
+
     trace!("IDXGISwapChain3::ResizeBuffers invoked");
     let (_, _, trampoline) =
         TRAMPOLINE.get().expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
@@ -730,10 +736,13 @@ impl Hooks for ImguiDX12Hooks {
             }
         }
 
+        let _cqecl_fence = CQECL_RUNNING.lock();
+        let _present_fence = PRESENT_RUNNING.lock();
+        let _rbuf_fence = RBUF_RUNNING.lock();
+
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
             let mut renderer = renderer.lock();
-            CLEANUP_CV.wait(&mut renderer);
             renderer.cleanup(None);
         }
 
