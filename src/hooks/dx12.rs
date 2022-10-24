@@ -1,5 +1,6 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
+use std::hint;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,6 +64,40 @@ trait Renderer {
     fn render(&mut self);
 }
 
+struct Fence(AtomicBool);
+
+impl Fence {
+    const fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    fn lock(&self) -> FenceGuard<'_> {
+        FenceGuard::new(self)
+    }
+
+    fn wait(&self) {
+        while self.0.load(Ordering::SeqCst) {
+            hint::spin_loop();
+        }
+    }
+}
+
+struct FenceGuard<'a>(&'a Fence);
+
+impl<'a> FenceGuard<'a> {
+    fn new(fence: &'a Fence) -> Self {
+        fence.0.store(true, Ordering::SeqCst);
+        Self(fence)
+    }
+}
+
+impl<'a> Drop for FenceGuard<'a> {
+    fn drop(&mut self) {
+        self.0 .0.store(false, Ordering::SeqCst);
+    }
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Global singletons
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -118,9 +153,9 @@ static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new()
 static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
-static CQECL_RUNNING: Mutex<()> = Mutex::new(());
-static PRESENT_RUNNING: Mutex<()> = Mutex::new(());
-static RBUF_RUNNING: Mutex<()> = Mutex::new(());
+static CQECL_RUNNING: Fence = Fence::new();
+static PRESENT_RUNNING: Fence = Fence::new();
+static RBUF_RUNNING: Fence = Fence::new();
 
 #[derive(Debug)]
 struct FrameContext {
@@ -135,6 +170,7 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     command_lists: *mut ID3D12CommandList,
 ) {
     let _fence = CQECL_RUNNING.lock();
+
     trace!(
         "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
          {command_lists:p}) invoked"
@@ -736,9 +772,9 @@ impl Hooks for ImguiDX12Hooks {
             }
         }
 
-        let _cqecl_fence = CQECL_RUNNING.lock();
-        let _present_fence = PRESENT_RUNNING.lock();
-        let _rbuf_fence = RBUF_RUNNING.lock();
+        CQECL_RUNNING.wait();
+        PRESENT_RUNNING.wait();
+        RBUF_RUNNING.wait();
 
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
