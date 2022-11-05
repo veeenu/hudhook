@@ -9,24 +9,29 @@ use log::LevelFilter;
 use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0, D3D_DRIVER_TYPE_UNKNOWN};
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_11_0,
+};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDevice, D3D11CreateDeviceAndSwapChain, ID3D11Device, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION, ID3D11DeviceContext, D3D11_CREATE_DEVICE_DEBUG, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11CreateDevice, D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_DEBUG, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_FORMAT_R8G8B8A8_UNORM,
+    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
 };
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory, DXGIGetDebugInterface1, IDXGIFactory, IDXGIInfoQueue, IDXGISwapChain,
-    DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_USAGE_RENDER_TARGET_OUTPUT, DXGI_SWAP_EFFECT_DISCARD, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
     PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, HCURSOR,
-    HICON, HMENU, WINDOW_EX_STYLE, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE, WM_DESTROY,
+    HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 pub struct Dx11Harness {
@@ -117,7 +122,8 @@ impl Dx11Harness {
                         &mut p_device,
                         null_mut(),
                         &mut p_context,
-                    ).unwrap()
+                    )
+                    .unwrap()
                 };
                 // let swap_chain = p_swap_chain.unwrap();
 
