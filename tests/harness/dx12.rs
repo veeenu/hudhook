@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,15 +28,13 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, DrawTextA, EndPaint, InvalidateRect, DT_CENTER, DT_SINGLELINE, DT_VCENTER, HBRUSH,
-};
+use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetClientRect,
-    GetMessageA, PostQuitMessage, RegisterClassA, SetWindowLongPtrA, TranslateMessage, CS_HREDRAW,
-    CS_OWNDC, CS_VREDRAW, GWLP_WNDPROC, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY,
-    WM_PAINT, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA,
+    GetMessageA, PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW,
+    CS_OWNDC, CS_VREDRAW, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY,
+    WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 pub struct Dx12Harness {
@@ -52,6 +50,7 @@ impl Dx12Harness {
         let child = Some(thread::spawn({
             let done = Arc::clone(&done);
             let caption = Arc::clone(&caption);
+
             move || {
                 TermLogger::init(
                     LevelFilter::Trace,
