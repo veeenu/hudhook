@@ -1,6 +1,7 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
-use std::hint;
+use std::time::Duration;
+use std::{hint, thread};
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -779,6 +780,15 @@ impl Hooks for ImguiDX12Hooks {
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
             let mut renderer = renderer.lock();
+            // XXX
+            // This is a hack for solving this concurrency issue:
+            // https://github.com/veeenu/hudhook/issues/34
+            // We should investigate deeper into this and find a way of synchronizing with the
+            // moment the actual resources involved in the rendering are dropped.
+            // Using a condvar like above does not work, and still leads clients to crash.
+            //
+            // The 34ms value was chosen because it's a bit more than 1 frame @ 30fps.
+            thread::sleep(Duration::from_millis(34));
             renderer.cleanup(None);
         }
 
