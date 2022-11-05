@@ -1,10 +1,10 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
-use std::time::Duration;
-use std::{hint, thread};
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
 use detour::RawDetour;
 use imgui::Context;
@@ -31,11 +31,11 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{
-    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+use crate::hooks::common::{
+    imgui_wnd_proc_impl, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
     WndProcType,
 };
-use super::Hooks;
+use crate::hooks::Hooks;
 use crate::renderers::imgui_dx12;
 
 type DXGISwapChainPresentType =
@@ -64,40 +64,6 @@ trait Renderer {
     /// Invoked once per frame.
     fn render(&mut self);
 }
-
-struct Fence(AtomicBool);
-
-impl Fence {
-    const fn new() -> Self {
-        Self(AtomicBool::new(false))
-    }
-
-    fn lock(&self) -> FenceGuard<'_> {
-        FenceGuard::new(self)
-    }
-
-    fn wait(&self) {
-        while self.0.load(Ordering::SeqCst) {
-            hint::spin_loop();
-        }
-    }
-}
-
-struct FenceGuard<'a>(&'a Fence);
-
-impl<'a> FenceGuard<'a> {
-    fn new(fence: &'a Fence) -> Self {
-        fence.0.store(true, Ordering::SeqCst);
-        Self(fence)
-    }
-}
-
-impl<'a> Drop for FenceGuard<'a> {
-    fn drop(&mut self) {
-        self.0 .0.store(false, Ordering::SeqCst);
-    }
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Global singletons
@@ -783,9 +749,10 @@ impl Hooks for ImguiDX12Hooks {
             // XXX
             // This is a hack for solving this concurrency issue:
             // https://github.com/veeenu/hudhook/issues/34
-            // We should investigate deeper into this and find a way of synchronizing with the
-            // moment the actual resources involved in the rendering are dropped.
-            // Using a condvar like above does not work, and still leads clients to crash.
+            // We should investigate deeper into this and find a way of synchronizing with
+            // the moment the actual resources involved in the rendering are
+            // dropped. Using a condvar like above does not work, and still
+            // leads clients to crash.
             //
             // The 34ms value was chosen because it's a bit more than 1 frame @ 30fps.
             thread::sleep(Duration::from_millis(34));
