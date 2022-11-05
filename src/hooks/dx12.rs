@@ -25,6 +25,8 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
+use windows::Win32::System::WindowsProgramming::INFINITE;
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -129,6 +131,23 @@ struct FrameContext {
     back_buffer: ID3D12Resource,
     desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
     command_allocator: ID3D12CommandAllocator,
+    fence: ID3D12Fence,
+    fence_val: u64,
+    fence_event: HANDLE,
+}
+
+impl FrameContext {
+    fn incr(&mut self) -> u64 {
+        self.fence_val += 1;
+        self.fence_val
+    }
+
+    fn wait_fence(&mut self) {
+        unsafe {
+            self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
+            WaitForSingleObjectEx(self.fence_event, INFINITE, false);
+        }
+    }
 }
 
 unsafe extern "system" fn imgui_execute_command_lists_impl(
@@ -330,9 +349,19 @@ impl ImguiRenderer {
                     .SetName(PCWSTR(command_allocator_name.as_ptr()))
                     .expect("Couldn't set command allocator name");
 
-                FrameContext { desc_handle, back_buffer, command_allocator }
+                FrameContext {
+                    desc_handle,
+                    back_buffer,
+                    command_allocator,
+                    fence: dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
+                    fence_val: 0,
+                    fence_event: CreateEventExW(null(), PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
+                        .unwrap(),
+                }
             })
             .collect();
+
+        trace!("number of frame contexts: {}", frame_contexts.len());
 
         let mut ctx = Context::create();
         let cpu_desc = renderer_heap.GetCPUDescriptorHandleForHeapStart();
@@ -434,7 +463,10 @@ impl ImguiRenderer {
         };
 
         let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
-        let frame_context = &self.frame_contexts[frame_contexts_idx];
+        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
+
+        frame_context.wait_fence();
+        frame_context.incr();
 
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;
@@ -489,6 +521,7 @@ impl ImguiRenderer {
             self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
             command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
+            command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
         }
 
         let barrier = barriers.into_iter().next().unwrap();
