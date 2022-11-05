@@ -3,6 +3,8 @@ use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use std::time::Duration;
 
 use detour::RawDetour;
 use imgui::Context;
@@ -29,11 +31,11 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{
-    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+use crate::hooks::common::{
+    imgui_wnd_proc_impl, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
     WndProcType,
 };
-use super::Hooks;
+use crate::hooks::Hooks;
 use crate::renderers::imgui_dx12;
 
 type DXGISwapChainPresentType =
@@ -118,6 +120,10 @@ static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new()
 static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
+static CQECL_RUNNING: Fence = Fence::new();
+static PRESENT_RUNNING: Fence = Fence::new();
+static RBUF_RUNNING: Fence = Fence::new();
+
 #[derive(Debug)]
 struct FrameContext {
     back_buffer: ID3D12Resource,
@@ -130,6 +136,8 @@ unsafe extern "system" fn imgui_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
+    let _fence = CQECL_RUNNING.lock();
+
     trace!(
         "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
          {command_lists:p}) invoked"
@@ -165,6 +173,8 @@ unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
+    let _fence = PRESENT_RUNNING.lock();
+
     let (trampoline_present, ..) =
         TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
 
@@ -199,6 +209,8 @@ unsafe extern "system" fn imgui_resize_buffers_impl(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT {
+    let _fence = RBUF_RUNNING.lock();
+
     trace!("IDXGISwapChain3::ResizeBuffers invoked");
     let (_, _, trampoline) =
         TRAMPOLINE.get().expect("IDXGISwapChain3::ResizeBuffer trampoline uninitialized");
@@ -727,9 +739,24 @@ impl Hooks for ImguiDX12Hooks {
             }
         }
 
+        CQECL_RUNNING.wait();
+        PRESENT_RUNNING.wait();
+        RBUF_RUNNING.wait();
+
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
-            renderer.lock().cleanup(None);
+            let mut renderer = renderer.lock();
+            // XXX
+            // This is a hack for solving this concurrency issue:
+            // https://github.com/veeenu/hudhook/issues/34
+            // We should investigate deeper into this and find a way of synchronizing with
+            // the moment the actual resources involved in the rendering are
+            // dropped. Using a condvar like above does not work, and still
+            // leads clients to crash.
+            //
+            // The 34ms value was chosen because it's a bit more than 1 frame @ 30fps.
+            thread::sleep(Duration::from_millis(34));
+            renderer.cleanup(None);
         }
 
         drop(IMGUI_RENDER_LOOP.take());

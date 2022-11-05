@@ -1,3 +1,6 @@
+use std::hint;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use imgui::{Context, Io, Key, Ui};
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -188,5 +191,48 @@ pub trait ImguiRenderLoop {
         Self: Send + Sync + Sized + 'static,
     {
         Box::<T>::new(HookableBackend::from_struct(self))
+    }
+}
+
+/// Spin-loop based synchronization struct.
+///
+/// Call [`Fence::lock`] in a thread to indicate some operation is in progress,
+/// and [`Fence::wait`] on a different thread to create a spin-loop that waits
+/// for the lock to be dropped.
+pub(crate) struct Fence(AtomicBool);
+
+impl Fence {
+    pub(crate) const fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    /// Create a [`FenceGuard`].
+    pub(crate) fn lock(&self) -> FenceGuard<'_> {
+        FenceGuard::new(self)
+    }
+
+    /// Wait in a spin-loop for the [`FenceGuard`] created by [`Fence::lock`] to
+    /// be dropped.
+    pub(crate) fn wait(&self) {
+        while self.0.load(Ordering::SeqCst) {
+            hint::spin_loop();
+        }
+    }
+}
+
+/// A RAII implementation of a spin-loop for a [`Fence`]. When this is dropped,
+/// the wait on a [`Fence`] will terminate.
+pub(crate) struct FenceGuard<'a>(&'a Fence);
+
+impl<'a> FenceGuard<'a> {
+    fn new(fence: &'a Fence) -> Self {
+        fence.0.store(true, Ordering::SeqCst);
+        Self(fence)
+    }
+}
+
+impl<'a> Drop for FenceGuard<'a> {
+    fn drop(&mut self) {
+        self.0 .0.store(false, Ordering::SeqCst);
     }
 }
