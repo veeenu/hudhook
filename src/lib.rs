@@ -50,45 +50,45 @@
 //!
 //! ```no_run
 //! // lib.rs
-//! use hudhook::hooks::ImguiRenderLoop;
+//! use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
 //!
 //! impl ImguiRenderLoop for MyRenderLoop {
-//!     fn render(&self, ctx: hudhook::RenderContext) {
-//!         imgui::Window::new(im_str!("My first render loop"))
+//!     fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+//!         imgui::Window::new("My first render loop")
 //!             .position([0., 0.], imgui::Condition::FirstUseEver)
 //!             .size([320., 200.], imgui::Condition::FirstUseEver)
-//!             .build(ctx.frame, || {
-//!                 ctx.frame.text(imgui::im_str!("Hello, hello!"));
+//!             .build(ui, || {
+//!                 ui.text("Hello, hello!");
 //!             });
-//!     }
-//!
-//!     fn is_visible(&self) -> bool {
-//!         true
-//!     }
-//!
-//!     fn is_capturing(&self) -> bool {
-//!         true
 //!     }
 //! }
 //!
-//! // Use this if hooking into a DirectX 9 application.
-//! use hudhook::hooks::dx9::ImguiDX9Hooks;
-//! hudhook!(MyRenderLoop.into_hook::<ImguiDX9Hooks>())
+//! {
+//!     // Use this if hooking into a DirectX 9 application.
+//!     use hudhook::hooks::dx9::ImguiDX9Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX9Hooks>());
+//! }
 //!
-//! // Use this if hooking into a DirectX 11 application.
-//! use hudhook::hooks::dx11::ImguiDX11Hooks;
-//! hudhook!(MyRenderLoop.into_hook::<ImguiDX11Hooks>())
+//! {
+//!     // Use this if hooking into a DirectX 11 application.
+//!     use hudhook::hooks::dx11::ImguiDX11Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX11Hooks>());
+//! }
 //!
-//! // Use this if hooking into a DirectX 12 application.
-//! use hudhook::hooks::dx12::ImguiDX12Hooks;
-//! hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>())
+//! {
+//!     // Use this if hooking into a DirectX 12 application.
+//!     use hudhook::hooks::dx12::ImguiDX12Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>());
+//! }
 //!
-//! // Use this if hooking into a DirectX 9 application.
-//! use hudhook::hooks::opengl3::ImguiOpenGL3Hooks;
-//! hudhook!(MyRenderLoop.into_hook::<OpenGL3Hooks>())
+//! {
+//!     // Use this if hooking into a DirectX 9 application.
+//!     use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiOpenGl3Hooks>());
+//! }
 //! ```
 //!
 //! #### Injecting the DLL
@@ -98,7 +98,7 @@
 //!
 //! ```no_run
 //! // main.rs
-//! use hudhook::inject;
+//! use hudhook::inject::inject;
 //!
 //! fn main() {
 //!     let mut cur_exe = std::env::current_exe().unwrap();
@@ -107,26 +107,9 @@
 //!
 //!     let cur_dll = cur_exe.canonicalize().unwrap();
 //!
-//!     inject("MyTargetApplication.exe", cur_dll.as_path().to_str().unwrap()).unwrap();
+//!     inject("MyTargetApplication.exe", cur_dll).unwrap();
 //! }
 //! ```
-// //! ### Memory manipulation
-// //!
-// //! In an initialization step:
-// //!
-// //! ```no_run
-// //! let x = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x80]);
-// //! let y = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x88]);
-// //! let z = PointerChain::<f32>::new(&[base_address, 0x40, 0x28, 0x84]);
-// //! ```
-// //!
-// //! In the render loop:
-// //!
-// //! ```no_run
-// //! x.read().map(|val| x.write(val + 1.));
-// //! y.read().map(|val| y.write(val + 1.));
-// //! z.read().map(|val| z.write(val + 1.));
-// //! ```
 #![allow(clippy::needless_doctest_main)]
 
 pub mod hooks;
@@ -149,6 +132,7 @@ pub mod utils {
     }
 
     /// Initialize `simplelog` with sane defaults.
+    #[cfg(feature = "simplelog")]
     pub fn simplelog() {
         use log::*;
         use simplelog::*;
@@ -262,13 +246,19 @@ pub mod reexports {
 ///
 /// Example usage:
 /// ```no_run
+/// use hudhook::hooks::dx12::ImguiDX12Hooks;
+/// use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+/// use hudhook::*;
+///
 /// pub struct MyRenderLoop;
 ///
-/// impl RenderLoop for MyRenderLoop {
-///   fn render(&self, frame: imgui::Ui, flags: &ImguiRenderLoopFlags) { ... }
+/// impl ImguiRenderLoop for MyRenderLoop {
+///     fn render(&mut self, frame: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+///         // ...
+///     }
 /// }
 ///
-/// hudhook!(MyRenderLoop.into_hook());
+/// hudhook::hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>());
 /// ```
 #[macro_export]
 macro_rules! hudhook {
