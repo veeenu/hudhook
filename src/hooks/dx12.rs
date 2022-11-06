@@ -2,7 +2,7 @@
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, Ordering, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -487,7 +487,6 @@ impl ImguiRenderer {
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
         };
-
 
         frame_context.wait_fence();
         frame_context.incr();

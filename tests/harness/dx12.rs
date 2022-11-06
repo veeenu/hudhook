@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use log::trace;
-use simplelog::*;
 use windows::core::{Interface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -43,6 +42,7 @@ pub struct Dx12Harness {
 }
 
 impl Dx12Harness {
+    #[allow(unused)]
     pub fn new(caption: &str) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let caption = Arc::new(CString::new(caption).unwrap());
@@ -234,9 +234,7 @@ impl Drop for Dx12Harness {
     }
 }
 
-// Winapi things
-//
-
+#[allow(unused)]
 fn handle_message(window: HWND) -> bool {
     unsafe {
         let mut msg = MaybeUninit::uninit();
@@ -250,6 +248,7 @@ fn handle_message(window: HWND) -> bool {
     }
 }
 
+#[allow(unused)]
 pub unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
