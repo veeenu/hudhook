@@ -246,14 +246,16 @@ pub mod reexports {
 ///
 /// Example usage:
 /// ```no_run
-/// use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 /// use hudhook::hooks::dx12::ImguiDX12Hooks;
+/// use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 /// use hudhook::*;
 ///
 /// pub struct MyRenderLoop;
 ///
 /// impl ImguiRenderLoop for MyRenderLoop {
-///   fn render(&mut self, frame: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) { /* ... */ }
+///     fn render(&mut self, frame: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+///         // ...
+///     }
 /// }
 ///
 /// hudhook::hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>());
