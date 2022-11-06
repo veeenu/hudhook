@@ -130,7 +130,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         unsafe { dev.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
     let rtv_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
-    let frames = (0..desc.BufferCount)
+    let _frames = (0..desc.BufferCount)
         .map(|i| unsafe {
             let buf: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {

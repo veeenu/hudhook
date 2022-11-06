@@ -2,9 +2,9 @@
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use detour::RawDetour;
 use imgui::Context;
@@ -25,6 +25,8 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
+use windows::Win32::System::WindowsProgramming::INFINITE;
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -36,7 +38,7 @@ use crate::hooks::common::{
     WndProcType,
 };
 use crate::hooks::Hooks;
-use crate::renderers::imgui_dx12;
+use crate::renderers::imgui_dx12::RenderEngine;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -129,6 +131,25 @@ struct FrameContext {
     back_buffer: ID3D12Resource,
     desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
     command_allocator: ID3D12CommandAllocator,
+    fence: ID3D12Fence,
+    fence_val: u64,
+    fence_event: HANDLE,
+}
+
+impl FrameContext {
+    fn incr(&mut self) {
+        static FENCE_MAX: AtomicU64 = AtomicU64::new(0);
+        self.fence_val = FENCE_MAX.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wait_fence(&mut self) {
+        unsafe {
+            if self.fence.GetCompletedValue() < self.fence_val {
+                self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
+                WaitForSingleObjectEx(self.fence_event, INFINITE, false);
+            }
+        }
+    }
 }
 
 unsafe extern "system" fn imgui_execute_command_lists_impl(
@@ -258,7 +279,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
 struct ImguiRenderer {
     ctx: Context,
-    engine: imgui_dx12::RenderEngine,
+    engine: RenderEngine,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     frame_contexts: Vec<FrameContext>,
@@ -330,14 +351,24 @@ impl ImguiRenderer {
                     .SetName(PCWSTR(command_allocator_name.as_ptr()))
                     .expect("Couldn't set command allocator name");
 
-                FrameContext { desc_handle, back_buffer, command_allocator }
+                FrameContext {
+                    desc_handle,
+                    back_buffer,
+                    command_allocator,
+                    fence: dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
+                    fence_val: 0,
+                    fence_event: CreateEventExW(null(), PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
+                        .unwrap(),
+                }
             })
             .collect();
+
+        trace!("number of frame contexts: {}", frame_contexts.len());
 
         let mut ctx = Context::create();
         let cpu_desc = renderer_heap.GetCPUDescriptorHandleForHeapStart();
         let gpu_desc = renderer_heap.GetGPUDescriptorHandleForHeapStart();
-        let engine = imgui_dx12::RenderEngine::new(
+        let engine = RenderEngine::new(
             &mut ctx,
             dev,
             desc.BufferCount,
@@ -395,7 +426,12 @@ impl ImguiRenderer {
     }
 
     fn render(&mut self, swap_chain: Option<IDXGISwapChain3>) -> Option<()> {
+        let render_start = Instant::now();
+
         let swap_chain = self.store_swap_chain(swap_chain);
+
+        let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
+        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
         let sd = unsafe { swap_chain.GetDesc() }.unwrap();
@@ -433,9 +469,6 @@ impl ImguiRenderer {
             },
         };
 
-        let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
-        let frame_context = &self.frame_contexts[frame_contexts_idx];
-
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;
         let mut ui = ctx.frame();
@@ -454,6 +487,9 @@ impl ImguiRenderer {
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
         };
+
+        frame_context.wait_fence();
+        frame_context.incr();
 
         let command_allocator = &frame_context.command_allocator;
 
@@ -489,12 +525,13 @@ impl ImguiRenderer {
             self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
             command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
+            command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
         }
 
         let barrier = barriers.into_iter().next().unwrap();
 
         let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-        trace!("Rendering done");
+        trace!("Rendering done in {:?}", render_start.elapsed());
         None
     }
 

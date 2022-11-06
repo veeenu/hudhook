@@ -107,3 +107,8 @@ winit = "0.27"
 
 [build-dependencies]
 cc = "1.0.72"
+
+[profile.test]
+opt-level = 3
+overflow-checks = false
+lto = "thin"
