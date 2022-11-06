@@ -51,14 +51,6 @@ impl Dx12Harness {
             let caption = Arc::clone(&caption);
 
             move || {
-                TermLogger::init(
-                    LevelFilter::Trace,
-                    Config::default(),
-                    TerminalMode::Mixed,
-                    ColorChoice::Auto,
-                )
-                .ok();
-
                 let hinstance = unsafe { GetModuleHandleA(PCSTR(null())).unwrap() };
                 let wnd_class = WNDCLASSA {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,

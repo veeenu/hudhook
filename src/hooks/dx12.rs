@@ -2,9 +2,9 @@
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, AtomicU64};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use detour::RawDetour;
 use imgui::Context;
@@ -38,7 +38,7 @@ use crate::hooks::common::{
     WndProcType,
 };
 use crate::hooks::Hooks;
-use crate::renderers::imgui_dx12;
+use crate::renderers::imgui_dx12::RenderEngine;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -137,15 +137,17 @@ struct FrameContext {
 }
 
 impl FrameContext {
-    fn incr(&mut self) -> u64 {
-        self.fence_val += 1;
-        self.fence_val
+    fn incr(&mut self) {
+        static FENCE_MAX: AtomicU64 = AtomicU64::new(0);
+        self.fence_val = FENCE_MAX.fetch_add(1, Ordering::SeqCst);
     }
 
     fn wait_fence(&mut self) {
         unsafe {
-            self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
-            WaitForSingleObjectEx(self.fence_event, INFINITE, false);
+            if self.fence.GetCompletedValue() < self.fence_val {
+                self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
+                WaitForSingleObjectEx(self.fence_event, INFINITE, false);
+            }
         }
     }
 }
@@ -277,7 +279,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
 struct ImguiRenderer {
     ctx: Context,
-    engine: imgui_dx12::RenderEngine,
+    engine: RenderEngine,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     frame_contexts: Vec<FrameContext>,
@@ -366,7 +368,7 @@ impl ImguiRenderer {
         let mut ctx = Context::create();
         let cpu_desc = renderer_heap.GetCPUDescriptorHandleForHeapStart();
         let gpu_desc = renderer_heap.GetGPUDescriptorHandleForHeapStart();
-        let engine = imgui_dx12::RenderEngine::new(
+        let engine = RenderEngine::new(
             &mut ctx,
             dev,
             desc.BufferCount,
@@ -424,7 +426,12 @@ impl ImguiRenderer {
     }
 
     fn render(&mut self, swap_chain: Option<IDXGISwapChain3>) -> Option<()> {
+        let render_start = Instant::now();
+
         let swap_chain = self.store_swap_chain(swap_chain);
+
+        let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
+        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
         let sd = unsafe { swap_chain.GetDesc() }.unwrap();
@@ -462,12 +469,6 @@ impl ImguiRenderer {
             },
         };
 
-        let frame_contexts_idx = unsafe { swap_chain.GetCurrentBackBufferIndex() } as usize;
-        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
-
-        frame_context.wait_fence();
-        frame_context.incr();
-
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;
         let mut ui = ctx.frame();
@@ -486,6 +487,10 @@ impl ImguiRenderer {
             Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
             Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
         };
+
+
+        frame_context.wait_fence();
+        frame_context.incr();
 
         let command_allocator = &frame_context.command_allocator;
 
@@ -527,7 +532,7 @@ impl ImguiRenderer {
         let barrier = barriers.into_iter().next().unwrap();
 
         let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-        trace!("Rendering done");
+        trace!("Rendering done in {:?}", render_start.elapsed());
         None
     }
 
