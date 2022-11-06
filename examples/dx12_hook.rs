@@ -9,6 +9,7 @@ impl Dx12HookExample {
     fn new() -> Self {
         println!("Initializing");
         hudhook::utils::alloc_console();
+        #[cfg(feature = "simplelog")]
         hudhook::utils::simplelog();
 
         Dx12HookExample

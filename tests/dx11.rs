@@ -17,7 +17,6 @@ fn test_imgui_dx11() {
         fn new() -> Self {
             println!("Initializing");
             hudhook::utils::alloc_console();
-            hudhook::utils::simplelog();
 
             Dx11HookExample
         }
