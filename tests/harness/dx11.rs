@@ -19,7 +19,7 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory, DXGIGetDebugInterface1, IDXGIFactory, IDXGIInfoQueue, IDXGISwapChain,
@@ -49,14 +49,6 @@ impl Dx11Harness {
             let caption = Arc::clone(&caption);
 
             move || {
-                TermLogger::init(
-                    LevelFilter::Trace,
-                    Config::default(),
-                    TerminalMode::Mixed,
-                    ColorChoice::Auto,
-                )
-                .unwrap();
-
                 let hinstance = unsafe { GetModuleHandleA(None).unwrap() };
                 let wnd_class = WNDCLASSA {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
@@ -77,21 +69,21 @@ impl Dx11Harness {
                 };
                 let handle = unsafe {
                     CreateWindowExA(
-                        WINDOW_EX_STYLE(0),               // dwExStyle
-                        PCSTR("MyClass\0".as_ptr()),      // class we registered.
-                        PCSTR(caption.as_ptr().cast()),   // title
-                        WS_OVERLAPPEDWINDOW | WS_VISIBLE, // dwStyle
+                        WINDOW_EX_STYLE(0),
+                        PCSTR("MyClass\0".as_ptr()),
+                        PCSTR(caption.as_ptr().cast()),
+                        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         // size and position
                         100,
                         100,
                         rect.right - rect.left,
                         rect.bottom - rect.top,
-                        HWND(0),   // hWndParent
-                        HMENU(0),  // hMenu
-                        hinstance, // hInstance
+                        HWND(0),
+                        HMENU(0),
+                        hinstance,
                         null(),
                     )
-                }; // lpParam
+                };
 
                 let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
 
@@ -108,14 +100,18 @@ impl Dx11Harness {
                         D3D11_SDK_VERSION,
                         &DXGI_SWAP_CHAIN_DESC {
                             BufferDesc: DXGI_MODE_DESC {
+                                Width: 800,
+                                Height: 600,
+                                RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
                                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                                 ..Default::default()
                             },
                             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                            BufferCount: 2,
+                            BufferCount: 1,
                             OutputWindow: handle,
                             Windowed: BOOL::from(true),
                             SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
+                            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                             ..Default::default()
                         },
                         &mut p_swap_chain,
@@ -125,7 +121,7 @@ impl Dx11Harness {
                     )
                     .unwrap()
                 };
-                // let swap_chain = p_swap_chain.unwrap();
+                let swap_chain = p_swap_chain.unwrap();
 
                 loop {
                     unsafe {
@@ -150,7 +146,7 @@ impl Dx11Harness {
                     }
 
                     eprintln!("Present...");
-                    // unsafe { swap_chain.Present(1, 0).unwrap() };
+                    unsafe { swap_chain.Present(1, 0).unwrap() };
 
                     eprintln!("Handle message");
                     if !handle_message(handle) {

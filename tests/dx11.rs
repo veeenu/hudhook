@@ -7,6 +7,7 @@ use harness::dx11::Dx11Harness;
 use hudhook::hooks::dx11::ImguiDX11Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
+use simplelog::*;
 
 #[test]
 fn test_imgui_dx11() {
@@ -37,6 +38,9 @@ fn test_imgui_dx11() {
             );
         }
     }
+
+    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
+        .unwrap();
 
     let dx11_harness = Dx11Harness::new("DX11 hook example");
     thread::sleep(Duration::from_millis(500));
