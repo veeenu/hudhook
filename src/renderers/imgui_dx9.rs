@@ -264,14 +264,14 @@ impl Renderer {
         device.SetViewport(&vp).unwrap();
         device.SetPixelShader(None).unwrap();
         device.SetVertexShader(None).unwrap();
-        device.SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE.0 as u32).unwrap();
+        device.SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE.0).unwrap();
         device.SetRenderState(D3DRS_LIGHTING, FALSE).unwrap();
         device.SetRenderState(D3DRS_ZENABLE, FALSE).unwrap();
         device.SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE).unwrap();
         device.SetRenderState(D3DRS_ALPHATESTENABLE, FALSE).unwrap();
-        device.SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD.0 as u32).unwrap();
-        device.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA.0 as u32).unwrap();
-        device.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA.0 as u32).unwrap();
+        device.SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD.0).unwrap();
+        device.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA.0).unwrap();
+        device.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA.0).unwrap();
         device.SetRenderState(D3DRS_SCISSORTESTENABLE, TRUE).unwrap();
         device.SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD.0 as u32).unwrap();
         device.SetRenderState(D3DRS_FOGENABLE, FALSE).unwrap();

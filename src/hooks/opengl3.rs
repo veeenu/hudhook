@@ -111,7 +111,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 }
 
 #[allow(non_snake_case)]
-unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) -> () {
+unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
     trace!("opengl32.wglSwapBuffers invoked");
 
     // Draw ImGui

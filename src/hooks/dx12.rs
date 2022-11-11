@@ -514,6 +514,9 @@ impl ImguiRenderer {
                 unsafe { print_dxgi_debug_messages() }
             };
         };
+
+        // Explicit auto deref necessary because this is ManuallyDrop.
+        #[allow(clippy::explicit_auto_deref)]
         unsafe {
             (*barrier.Anonymous.Transition).StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
             (*barrier.Anonymous.Transition).StateAfter = D3D12_RESOURCE_STATE_PRESENT;
