@@ -238,14 +238,14 @@ unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiDX9Hooks {
+pub struct ImguiDx9Hooks {
     #[allow(dead_code)]
     hook_dx9_end_scene: RawDetour,
     hook_dx9_present: RawDetour,
     hook_dx9_reset: RawDetour,
 }
 
-impl ImguiDX9Hooks {
+impl ImguiDx9Hooks {
     /// # Safety
     ///
     /// Is most likely undefined behavior, as it modifies function pointers at
@@ -284,7 +284,7 @@ impl ImguiDX9Hooks {
     }
 }
 
-impl Hooks for ImguiDX9Hooks {
+impl Hooks for ImguiDx9Hooks {
     unsafe fn hook(&self) {
         for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
             if let Err(e) = hook.enable() {

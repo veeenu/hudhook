@@ -391,12 +391,12 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
 }
 
-pub struct ImguiDX11Hooks {
+pub struct ImguiDx11Hooks {
     hook_present: RawDetour,
     hook_resize_buffers: RawDetour,
 }
 
-impl ImguiDX11Hooks {
+impl ImguiDx11Hooks {
     /// Construct a [`RawDetour`] that will render UI via the provided
     /// `ImguiRenderLoop`.
     ///
@@ -433,7 +433,7 @@ impl ImguiDX11Hooks {
     }
 }
 
-impl Hooks for ImguiDX11Hooks {
+impl Hooks for ImguiDx11Hooks {
     unsafe fn hook(&self) {
         for hook in [&self.hook_present, &self.hook_resize_buffers] {
             if let Err(e) = hook.enable() {

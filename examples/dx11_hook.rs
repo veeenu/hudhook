@@ -1,6 +1,6 @@
 #![feature(once_cell)]
 
-use hudhook::hooks::dx11::ImguiDX11Hooks;
+use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 struct Dx11HookExample;
@@ -29,4 +29,4 @@ impl ImguiRenderLoop for Dx11HookExample {
     }
 }
 
-hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDX11Hooks>());
+hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDx11Hooks>());

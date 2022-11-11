@@ -68,20 +68,20 @@
 //!
 //! {
 //!     // Use this if hooking into a DirectX 9 application.
-//!     use hudhook::hooks::dx9::ImguiDX9Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX9Hooks>());
+//!     use hudhook::hooks::dx9::ImguiDx9Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx9Hooks>());
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 11 application.
-//!     use hudhook::hooks::dx11::ImguiDX11Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX11Hooks>());
+//!     use hudhook::hooks::dx11::ImguiDx11Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx11Hooks>());
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 12 application.
-//!     use hudhook::hooks::dx12::ImguiDX12Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>());
+//!     use hudhook::hooks::dx12::ImguiDx12Hooks;
+//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
 //! }
 //!
 //! {
@@ -246,7 +246,7 @@ pub mod reexports {
 ///
 /// Example usage:
 /// ```no_run
-/// use hudhook::hooks::dx12::ImguiDX12Hooks;
+/// use hudhook::hooks::dx12::ImguiDx12Hooks;
 /// use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 /// use hudhook::*;
 ///
@@ -258,7 +258,7 @@ pub mod reexports {
 ///     }
 /// }
 ///
-/// hudhook::hudhook!(MyRenderLoop.into_hook::<ImguiDX12Hooks>());
+/// hudhook::hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
 /// ```
 #[macro_export]
 macro_rules! hudhook {
