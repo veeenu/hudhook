@@ -1,16 +1,20 @@
 //! Facilities for injecting compiled DLLs into target processes.
 
-use std::ffi::{c_void, CString};
-use std::mem::size_of;
-use std::os::windows::prelude::OsStrExt;
+use std::ffi::{CStr, CString, OsString};
+use std::mem::{self, size_of};
+use std::os::windows::prelude::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 
 use log::*;
-use widestring::U16CString;
+use widestring::{U16CStr, U16CString};
 use windows::core::{Error, Result, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32First, Process32FirstW, Process32Next, Process32NextW,
+    PROCESSENTRY32, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
@@ -21,70 +25,88 @@ use windows::Win32::System::Threading::{
 use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, FindWindowW, GetWindowThreadProcessId};
 
-/// Inject the DLL stored at `dll_path` in the process that owns the window with
-/// title `title`.
-pub fn inject(title: &str, dll_path: PathBuf) -> Result<()> {
-    let hproc = get_process_by_title(title)?;
-    let proc_addr = unsafe {
-        GetProcAddress(
-            GetModuleHandleA(PCSTR("Kernel32\0".as_ptr()))?,
-            PCSTR(
-                if cfg!(target_arch = "x86") {
-                    "LoadLibraryA\0"
-                } else if cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
-                    "LoadLibraryW\0"
-                } else {
-                    panic!("This architecture is not supported")
-                }
-                .as_ptr(),
-            ),
-        )
-    };
+/// A process, open with the permissions appropriate for injection.
+pub struct Process(HANDLE);
 
-    let dll_path = dll_path.canonicalize().unwrap().as_os_str().encode_wide().collect::<Vec<_>>();
+impl Process {
+    /// Retrieve the process ID by window title, returning the first match, and
+    /// open it with the appropriate permissions.
+    pub fn by_title(title: &str) -> Result<Self> {
+        get_process_by_title(title).map(Self)
+    }
 
-    let dllp = unsafe {
-        VirtualAllocEx(
-            hproc,
-            null_mut(),
-            (MAX_PATH as usize) * size_of::<u16>(),
-            MEM_RESERVE | MEM_COMMIT,
-            PAGE_READWRITE,
-        )
-    };
+    /// Retrieve the process ID by executable name, returning the first match,
+    /// and open it with the appropriate permissions.
+    pub fn by_name(name: &str) -> Result<Self> {
+        get_process_by_name(name).map(Self)
+    }
 
-    let mut bytes_written = 0usize;
-    let res = unsafe {
-        WriteProcessMemory(
-            hproc,
-            dllp,
-            dll_path.as_ptr().cast::<c_void>(),
-            (dll_path.len() + 1) * size_of::<u16>(),
-            (&mut bytes_written) as *mut _,
-        )
-    };
+    /// Inject the DLL in the process.
+    pub fn inject(&self, dll_path: PathBuf) -> Result<()> {
+        let kernel32 = CString::new("Kernel32").unwrap();
+        let loadlibraryw = CString::new("LoadLibraryW").unwrap();
 
-    debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res.0);
+        let proc_addr = unsafe {
+            GetProcAddress(
+                GetModuleHandleA(PCSTR(kernel32.as_ptr() as _))?,
+                PCSTR(loadlibraryw.as_ptr() as _),
+            )
+        };
 
-    unsafe {
-        let thread = CreateRemoteThread(
-            hproc,
-            null(),
-            0,
-            Some(std::mem::transmute(proc_addr)),
-            dllp,
-            0,
-            null_mut(),
-        )?;
-        WaitForSingleObject(thread, INFINITE);
-        let mut exit_code = 0u32;
-        GetExitCodeThread(thread, &mut exit_code as *mut u32);
-        CloseHandle(thread);
-        VirtualFreeEx(hproc, dllp, 0, MEM_RELEASE);
-        CloseHandle(hproc);
-    };
+        let dll_path =
+            widestring::WideCString::from_os_str(dll_path.canonicalize().unwrap().as_os_str())
+                .unwrap();
+        let dll_path_buf = unsafe {
+            VirtualAllocEx(
+                self.0,
+                null_mut(),
+                (MAX_PATH as usize) * size_of::<u16>(),
+                MEM_RESERVE | MEM_COMMIT,
+                PAGE_READWRITE,
+            )
+        };
 
-    Ok(())
+        let mut bytes_written = 0usize;
+        let res = unsafe {
+            WriteProcessMemory(
+                self.0,
+                dll_path_buf,
+                dll_path.as_ptr() as *const std::ffi::c_void,
+                (MAX_PATH as usize) * size_of::<u16>(),
+                (&mut bytes_written) as *mut _,
+            )
+        };
+
+        debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res.0);
+
+        let thread = unsafe {
+            CreateRemoteThread(
+                self.0,
+                null(),
+                0,
+                Some(std::mem::transmute(proc_addr)),
+                dll_path_buf,
+                0,
+                null_mut(),
+            )
+        }?;
+
+        unsafe {
+            WaitForSingleObject(thread, INFINITE);
+            let mut exit_code = 0u32;
+            GetExitCodeThread(thread, &mut exit_code as *mut u32);
+            CloseHandle(thread);
+            VirtualFreeEx(self.0, dll_path_buf, 0, MEM_RELEASE);
+
+            Ok(())
+        }
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
 }
 
 // Find process given the title of one of its windows.
@@ -96,25 +118,6 @@ fn get_process_by_title(title: &str) -> Result<HANDLE> {
     } else {
         panic!("This architecture is not supported")
     }
-}
-
-// 64-bit implementation. Uses [`widestring::U16CString`] and `FindWindowW`.
-unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
-    let title = U16CString::from_str_truncate(title);
-    let hwnd = FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr()));
-
-    if hwnd.0 == 0 {
-        let last_error = GetLastError();
-        return Err(Error::new(
-            HRESULT(last_error.0 as _),
-            format!("FindWindowW returned NULL: {}", last_error.0).into(),
-        ));
-    }
-
-    let mut pid: u32 = 0;
-    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
-
-    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
 
 // 32-bit implementation. Uses [`std::ffi::CString`] and `FindWindowA`.
@@ -137,6 +140,113 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
 
+// 64-bit implementation. Uses [`widestring::U16CString`] and `FindWindowW`.
+unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
+    let title = U16CString::from_str_truncate(title);
+    let hwnd = FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr()));
+
+    if hwnd.0 == 0 {
+        let last_error = GetLastError();
+        return Err(Error::new(
+            HRESULT(last_error.0 as _),
+            format!("FindWindowW returned NULL: {}", last_error.0).into(),
+        ));
+    }
+
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
+
+    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+}
+
+// Find process given the process name.
+fn get_process_by_name(name: &str) -> Result<HANDLE> {
+    if cfg!(target_arch = "x86") {
+        unsafe { get_process_by_name32(name) }
+    } else if cfg!(any(target_arch = "x86_64", target_arch = "aarch64")) {
+        unsafe { get_process_by_name64(name) }
+    } else {
+        panic!("This architecture is not supported")
+    }
+}
+
+// 32-bit implementation. Uses [`PROCESSENTRY32`].
+unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
+    let name = name.split_once('\0').map(|(t, _)| t).unwrap_or(name);
+    let name = CString::new(name).unwrap();
+
+    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
+    let mut pe32 =
+        PROCESSENTRY32 { dwSize: mem::size_of::<PROCESSENTRY32>() as u32, ..Default::default() };
+
+    if !Process32First(snapshot, &mut pe32).as_bool() {
+        CloseHandle(snapshot);
+        return Err(Error::new(
+            HRESULT(GetLastError().0 as _),
+            "Process32First failed".to_string().into(),
+        ));
+    }
+
+    let pid = loop {
+        let proc_name = CStr::from_ptr(pe32.szExeFile.as_ptr() as *const i8);
+
+        if proc_name == name.as_ref() {
+            break Ok(pe32.th32ProcessID);
+        }
+
+        if !Process32Next(snapshot, &mut pe32).as_bool() {
+            CloseHandle(snapshot);
+            break Err(Error::new(
+                HRESULT(0),
+                format!("Process {} not found", name.to_string_lossy()).into(),
+            ));
+        }
+    }?;
+
+    CloseHandle(snapshot);
+
+    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+}
+
+// 64-bit implementation. Uses [`PROCESSENTRY32W`] and
+// [`widestring::U16CString`].
+unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
+    let name = U16CString::from_str_truncate(name);
+
+    let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
+    let mut pe32 =
+        PROCESSENTRY32W { dwSize: mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+
+    if !Process32FirstW(snapshot, &mut pe32).as_bool() {
+        CloseHandle(snapshot);
+        return Err(Error::new(
+            HRESULT(GetLastError().0 as _),
+            "Process32First failed".to_string().into(),
+        ));
+    }
+
+    let pid = loop {
+        let proc_name =
+            U16CStr::from_ptr_truncate(pe32.szExeFile.as_ptr(), pe32.szExeFile.len()).unwrap();
+
+        if proc_name == name {
+            break Ok(pe32.th32ProcessID);
+        }
+
+        if !Process32NextW(snapshot, &mut pe32).as_bool() {
+            CloseHandle(snapshot);
+            break Err(Error::new(
+                HRESULT(0),
+                format!("Process {} not found", name.to_string_lossy()).into(),
+            ));
+        }
+    }?;
+
+    CloseHandle(snapshot);
+
+    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+}
+
 #[cfg(test)]
 mod tests {
     use std::process::Command;
@@ -146,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_get_process_by_title() {
-        let mut child = Command::new("notepad.exe").spawn().expect("Couldn't start notepad");
+        let mut child = Command::new("Notepad.exe").spawn().expect("Couldn't start notepad");
         std::thread::sleep(Duration::from_millis(500));
 
         let pbt32 =
@@ -161,5 +271,22 @@ mod tests {
 
         assert!(pbt32.is_ok());
         assert!(pbt64.is_ok());
+    }
+
+    #[test]
+    fn test_get_process_by_name() {
+        let mut child = Command::new("Notepad.exe").spawn().expect("Couldn't start notepad");
+        std::thread::sleep(Duration::from_millis(500));
+
+        let pbn32 = unsafe { get_process_by_name32("Notepad.exe\0I don't care about this stuff") };
+        println!("{:?}", pbn32);
+
+        let pbn64 = unsafe { get_process_by_name64("Notepad.exe\0I don't care about this stuff") };
+        println!("{:?}", pbn64);
+
+        child.kill().expect("Couldn't kill notepad");
+
+        assert!(pbn32.is_ok());
+        assert!(pbn64.is_ok());
     }
 }
