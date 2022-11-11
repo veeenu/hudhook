@@ -2,7 +2,6 @@
 
 use std::ffi::{CStr, CString};
 use std::mem::{self, size_of};
-
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 
