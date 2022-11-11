@@ -72,12 +72,12 @@ where
     match umsg {
         WM_KEYDOWN | WM_SYSKEYDOWN => {
             if wparam < 256 {
-                io.keys_down[wparam as usize] = true;
+                io.keys_down[wparam] = true;
             }
         },
         WM_KEYUP | WM_SYSKEYUP => {
             if wparam < 256 {
-                io.keys_down[wparam as usize] = false;
+                io.keys_down[wparam] = false;
             }
         },
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {

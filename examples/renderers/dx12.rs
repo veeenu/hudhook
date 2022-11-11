@@ -68,11 +68,12 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut dev) }.unwrap();
     let dev = dev.unwrap();
 
-    let mut queue_desc = D3D12_COMMAND_QUEUE_DESC::default();
-    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    queue_desc.Priority = 0;
-    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queue_desc.NodeMask = 0;
+    let queue_desc = D3D12_COMMAND_QUEUE_DESC {
+        Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+        Priority: 0,
+        Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
+        NodeMask: 0,
+    };
 
     let command_queue: ID3D12CommandQueue =
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
@@ -150,7 +151,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         dev,
         2,
         DXGI_FORMAT_R8G8B8A8_UNORM,
-        renderer_heap.clone(),
+        renderer_heap,
         cpu_dh,
         gpu_dh,
     );
@@ -186,7 +187,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         let ui = ctx.frame();
         {
             let ui = &ui;
-            Window::new("Hello world").size([640.0, 480.0], Condition::Always).build(&ui, || {
+            Window::new("Hello world").size([640.0, 480.0], Condition::Always).build(ui, || {
                 ui.text("Hello world!");
                 ui.text("こんにちは世界！");
                 ui.text("This...is...imgui-rs!");
@@ -244,6 +245,7 @@ fn handle_message(window: HWND) -> bool {
     }
 }
 
+/// # Safety
 pub unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,

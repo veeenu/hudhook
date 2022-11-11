@@ -117,6 +117,7 @@ fn handle_message(window: HWND) -> bool {
     }
 }
 
+/// # Safety
 pub unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,

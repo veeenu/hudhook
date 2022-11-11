@@ -311,7 +311,7 @@ impl RenderEngine {
         }
 
         {
-            self.setup_render_state(draw_data, cmd_list, frame_resources_idx as usize);
+            self.setup_render_state(draw_data, cmd_list, frame_resources_idx);
         }
 
         let mut vtx_offset = 0usize;

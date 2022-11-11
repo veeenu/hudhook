@@ -42,7 +42,7 @@ fn hiword(l: u32) -> u16 {
 
 #[inline]
 fn get_wheel_delta_wparam(wparam: u32) -> u16 {
-    hiword(wparam) as u16
+    hiword(wparam)
 }
 
 #[allow(dead_code)]
