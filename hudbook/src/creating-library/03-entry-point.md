@@ -6,7 +6,7 @@ entry point. In Windows, that entails implementing the `DllMain` method. We coul
 line of code.
 
 The `hudhook!` macro takes in an object whose type is one of the hook structures.
-The one we care about is `ImguiDX12Hooks` as we are targeting a DirectX 12 host application.
+The one we care about is `ImguiDx12Hooks` as we are targeting a DirectX 12 host application.
 
 We don't have to implement this trait manually: all the objects implementing `ImguiRenderLoop` also
 have an `into_hook` method which is designed for that purpose. We only need to invoke it, also
@@ -15,7 +15,7 @@ specifying which hook type we want with a generic parameter:
 ```rust
 use hudhook::hooks::dx12::ImguiDX12Hooks;
 
-hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDX12Hooks>());
+hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDx12Hooks>());
 ```
 
 We are finally ready to build our library:
