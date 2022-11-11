@@ -43,7 +43,10 @@ jobs:
       - name: Build documentation
         run: |
           mdbook build hudbook
-          cargo doc --all --no-deps --target-dir target/doc/docs
+          cargo doc --all --no-deps 
+          mkdir -p target/all-docs/rustdoc
+          cp -a target/doc/* target/all-docs/rustdoc
+          cp -a target/hudbook/* target/all-docs
 
       - name: Setup Pages
         uses: actions/configure-pages@v2

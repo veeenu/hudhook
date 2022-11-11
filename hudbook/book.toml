@@ -6,4 +6,4 @@ src = "src"
 title = "hudbook"
 
 [build]
-build-dir = "../target/doc"
+build-dir = "../target/hudbook"
