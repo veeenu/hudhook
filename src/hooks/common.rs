@@ -7,9 +7,9 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-use super::dx11::ImguiDX11Hooks;
-use super::dx12::ImguiDX12Hooks;
-use super::dx9::ImguiDX9Hooks;
+use super::dx11::ImguiDx11Hooks;
+use super::dx12::ImguiDx12Hooks;
+use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
@@ -147,21 +147,21 @@ pub trait HookableBackend: Hooks {
     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self;
 }
 
-impl HookableBackend for ImguiDX9Hooks {
+impl HookableBackend for ImguiDx9Hooks {
     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
-        unsafe { ImguiDX9Hooks::new(t) }
+        unsafe { ImguiDx9Hooks::new(t) }
     }
 }
 
-impl HookableBackend for ImguiDX11Hooks {
+impl HookableBackend for ImguiDx11Hooks {
     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
-        unsafe { ImguiDX11Hooks::new(t) }
+        unsafe { ImguiDx11Hooks::new(t) }
     }
 }
 
-impl HookableBackend for ImguiDX12Hooks {
+impl HookableBackend for ImguiDx12Hooks {
     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
-        unsafe { ImguiDX12Hooks::new(t) }
+        unsafe { ImguiDx12Hooks::new(t) }
     }
 }
 

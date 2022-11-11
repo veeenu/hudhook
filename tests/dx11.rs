@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use harness::dx11::Dx11Harness;
-use hudhook::hooks::dx11::ImguiDX11Hooks;
+use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 use simplelog::*;
@@ -45,7 +45,7 @@ fn test_imgui_dx11() {
     thread::sleep(Duration::from_millis(500));
 
     unsafe {
-        let hooks: Box<dyn hooks::Hooks> = { Dx11HookExample::new().into_hook::<ImguiDX11Hooks>() };
+        let hooks: Box<dyn hooks::Hooks> = { Dx11HookExample::new().into_hook::<ImguiDx11Hooks>() };
         hooks.hook();
         hudhook::lifecycle::global_state::set_hooks(hooks);
     }

@@ -67,7 +67,8 @@ path = "examples/renderers/dx12.rs"
 crate-type = ["bin"]
 
 [dependencies]
-detour = { package = "detour2", version = "0.9.0" }
+# detour = { package = "detour2", version = "0.9.0" }
+detour = { git = "https://github.com/veeenu/detour-rs" }
 imgui = "0.8.0"
 imgui-opengl-renderer = "0.11"
 gl_loader = "0.1"

@@ -1,6 +1,6 @@
 #![feature(once_cell)]
 
-use hudhook::hooks::dx9::ImguiDX9Hooks;
+use hudhook::hooks::dx9::ImguiDx9Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 struct Dx9HookExample;
@@ -29,4 +29,4 @@ impl ImguiRenderLoop for Dx9HookExample {
     }
 }
 
-hudhook::hudhook!(Dx9HookExample::new().into_hook::<ImguiDX9Hooks>());
+hudhook::hudhook!(Dx9HookExample::new().into_hook::<ImguiDx9Hooks>());
