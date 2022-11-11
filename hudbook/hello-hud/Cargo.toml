@@ -1,0 +1,18 @@
+[package]
+name = "hello-hud"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "hello_injector"
+path = "src/main.rs"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "hello_hud"
+
+[dependencies]
+hudhook = { version = "0.2.0", path = "../..", features = ["simplelog"] }
+imgui = "0.8.2"

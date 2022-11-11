@@ -62,7 +62,7 @@ const INDEX_BUF_ADD_CAPACITY: usize = 10000;
 
 const D3DTS_WORLDMATRIX: D3DTRANSFORMSTATETYPE = D3DTRANSFORMSTATETYPE(256);
 
-/// Reexport of windows::core::Result<T>
+/// Reexport of [`windows::core::Result<T>`]
 pub type Result<T> = windows::core::Result<T>;
 
 static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
