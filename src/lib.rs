@@ -98,7 +98,7 @@
 //!
 //! ```no_run
 //! // main.rs
-//! use hudhook::inject::inject;
+//! use hudhook::inject::Process;
 //!
 //! fn main() {
 //!     let mut cur_exe = std::env::current_exe().unwrap();
@@ -107,7 +107,7 @@
 //!
 //!     let cur_dll = cur_exe.canonicalize().unwrap();
 //!
-//!     inject("MyTargetApplication.exe", cur_dll).unwrap();
+//!     Process::by_name("MyTargetApplication.exe").unwrap().inject(cur_dll).unwrap();
 //! }
 //! ```
 #![allow(clippy::needless_doctest_main)]
