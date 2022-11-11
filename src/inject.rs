@@ -1,8 +1,8 @@
 //! Facilities for injecting compiled DLLs into target processes.
 
-use std::ffi::{CStr, CString, OsString};
+use std::ffi::{CStr, CString};
 use std::mem::{self, size_of};
-use std::os::windows::prelude::{OsStrExt, OsStringExt};
+
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 

@@ -2,15 +2,27 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use hudhook::inject::inject;
+use hudhook::inject::Process;
 
 #[test]
-fn test_inject() {
+fn test_inject_by_title() {
     let mut child = Command::new("notepad.exe").spawn().expect("Couldn't start notepad");
     std::thread::sleep(Duration::from_millis(500));
     println!("Should show a message box that says \"Hello\".");
 
-    inject("Untitled - Notepad", examples_path().join("dummy_hook.dll")).unwrap();
+    Process::by_title("Untitled - Notepad").unwrap().inject(examples_path().join("dummy_hook.dll")).unwrap();
+
+    std::thread::sleep(Duration::from_millis(1000));
+    child.kill().expect("Couldn't kill notepad");
+}
+
+#[test]
+fn test_inject_by_name() {
+    let mut child = Command::new("notepad.exe").spawn().expect("Couldn't start notepad");
+    std::thread::sleep(Duration::from_millis(500));
+    println!("Should show a message box that says \"Hello\".");
+
+    Process::by_name("Notepad.exe").unwrap().inject(examples_path().join("dummy_hook.dll")).unwrap();
 
     std::thread::sleep(Duration::from_millis(1000));
     child.kill().expect("Couldn't kill notepad");
