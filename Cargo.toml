@@ -33,6 +33,10 @@ crate-type = ["cdylib"]
 name = "opengl3_hook"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "dummy_hook"
+crate-type = ["cdylib"]
+
 # Hosts examples
 #
 # These examples contain code that creates an empty window with a rendering
