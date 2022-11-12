@@ -45,8 +45,8 @@ jobs:
           mdbook build hudbook
           cargo doc --all --no-deps 
           mkdir -p target/all-docs/rustdoc
-          cp -a target/doc/* target/all-docs/rustdoc
-          cp -a target/hudbook/* target/all-docs
+          Copy-Item -Path "target/doc/*" -Destination "target/all-docs/rustdoc" -Recurse
+          Copy-Item -Path "target/hudbook/*" -Destination "target/all-docs" -Recurse
 
       - name: Setup Pages
         uses: actions/configure-pages@v2

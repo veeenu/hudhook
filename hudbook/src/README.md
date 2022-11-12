@@ -19,7 +19,7 @@ back to the host application.
 In this book, you will be guided through creating a hookable library and injecting it into a
 [sample DirectX 12 application](samples).
 
-Refer to the [crate's documentation](https://veeenu.github.io/hudhook/docs) for the API.
+Refer to the [crate's documentation](https://veeenu.github.io/hudhook/rustdoc/hudhook) for the API.
 
 [detouring]: https://en.wikipedia.org/wiki/Microsoft_Detours
 [samples]: https://github.com/microsoft/DirectX-Graphics-Samples 
