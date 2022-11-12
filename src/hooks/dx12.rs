@@ -12,11 +12,12 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use widestring::{u16cstr, U16CStr};
+use windows::Win32::Graphics::Direct3D11::{D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION};
 use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
+use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL_11_0, D3D_DRIVER_TYPE_HARDWARE};
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
@@ -584,102 +585,6 @@ unsafe impl Sync for ImguiRenderer {}
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, ResizeBuffersType) {
-    // const CLASS_NAME: PCSTR = PCSTR("HUDHOOK_DUMMY\0".as_ptr());
-
-    // trace!("get_present_addr");
-    // trace!("  HWND");
-    // unsafe extern "system" fn wndproc(
-    //     hwnd: HWND,
-    //     msg: u32,
-    //     wparam: WPARAM,
-    //     lparam: LPARAM,
-    // ) -> LRESULT {
-    //     DefWindowProcA(hwnd, msg, wparam, lparam)
-    // }
-
-    // let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
-    // let wnd_class = WNDCLASSEXA {
-    //     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-    //     lpfnWndProc: Some(wndproc),
-    //     hInstance: hinstance,
-    //     lpszClassName: CLASS_NAME,
-    //     cbClsExtra: 0,
-    //     cbWndExtra: 0,
-    //     cbSize: size_of::<WNDCLASSEXA>() as u32,
-    //     hIcon: HICON(0),
-    //     hIconSm: HICON(0),
-    //     hCursor: HCURSOR(0),
-    //     hbrBackground: HBRUSH(0),
-    //     lpszMenuName: PCSTR(null()),
-    // };
-    // let hwnd = unsafe {
-    //     trace!("    RegisterClassExA");
-    //     RegisterClassExA(&wnd_class);
-    //     trace!("    CreateWindowExA");
-    //     CreateWindowExA(
-    //         WINDOW_EX_STYLE(0),
-    //         CLASS_NAME,
-    //         CLASS_NAME,
-    //         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-    //         0,
-    //         0,
-    //         100,
-    //         100,
-    //         None,
-    //         None,
-    //         hinstance,
-    //         null(),
-    //     )
-    // };
-
-    // let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
-    // let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
-
-    // let mut dev: Option<ID3D12Device> = None;
-    // unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut dev) }.unwrap();
-    // let dev = dev.unwrap();
-
-    // let queue_desc = D3D12_COMMAND_QUEUE_DESC {
-    //     Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-    //     Priority: 0,
-    //     Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
-    //     NodeMask: 0,
-    // };
-
-    // let command_queue: ID3D12CommandQueue =
-    //     unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
-
-    // let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
-    //     BufferDesc: DXGI_MODE_DESC {
-    //         Width: 100,
-    //         Height: 100,
-    //         RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
-    //         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-    //         ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-    //         Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-    //     },
-    //     SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-    //     BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-    //     BufferCount: 2,
-    //     OutputWindow: hwnd,
-    //     Windowed: BOOL::from(true),
-    //     SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    //     Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as u32,
-    // };
-
-    // let mut swap_chain = None;
-    // unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc, &mut swap_chain) }.unwrap();
-    // let swap_chain = swap_chain.unwrap();
-
-    // let present_ptr = swap_chain.vtable().Present;
-    // let ecl_ptr = command_queue.vtable().ExecuteCommandLists;
-    // let rbuf_ptr = swap_chain.vtable().ResizeBuffers;
-
-    // unsafe {
-    //     DestroyWindow(hwnd);
-    //     UnregisterClassA(CLASS_NAME, hinstance);
-    // }
-
     let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
@@ -697,36 +602,46 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     let command_queue: ID3D12CommandQueue =
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
 
-    let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
-        BufferDesc: DXGI_MODE_DESC {
-            Width: 100,
-            Height: 100,
-            RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-            Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-        },
-        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        BufferCount: 2,
-        OutputWindow: unsafe { GetDesktopWindow() },
-        Windowed: BOOL::from(true),
-        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-        Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as u32,
-    };
+    let mut p_device: Option<ID3D11Device> = None;
+    let mut p_context: Option<ID3D11DeviceContext> = None;
+    let mut p_swap_chain: Option<IDXGISwapChain> = None;
 
-    let mut swap_chain = None;
-    unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc, &mut swap_chain) }.unwrap();
-    let swap_chain = swap_chain.unwrap();
+    unsafe {
+        D3D11CreateDeviceAndSwapChain(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            None,
+            D3D11_CREATE_DEVICE_FLAG(0),
+            &[D3D_FEATURE_LEVEL_11_0],
+            D3D11_SDK_VERSION,
+            &DXGI_SWAP_CHAIN_DESC {
+                BufferDesc: DXGI_MODE_DESC {
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+                    Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
+                    ..Default::default()
+                },
+                BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                BufferCount: 1,
+                OutputWindow: GetDesktopWindow(),
+                Windowed: BOOL(1),
+                SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },
+                ..Default::default()
+            },
+            &mut p_swap_chain,
+            &mut p_device,
+            null_mut(),
+            &mut p_context,
+        )
+        .expect("D3D11CreateDeviceAndSwapChain failed");
+    }
+
+    let swap_chain = p_swap_chain.unwrap();
 
     let present_ptr = swap_chain.vtable().Present;
     let ecl_ptr = command_queue.vtable().ExecuteCommandLists;
     let rbuf_ptr = swap_chain.vtable().ResizeBuffers;
-
-    // unsafe {
-    //     DestroyWindow(hwnd);
-    //     UnregisterClassA(CLASS_NAME, hinstance);
-    // }
 
     unsafe {
         (
