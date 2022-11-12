@@ -4,12 +4,12 @@
 
 # Creating a library
 
-- [Setting up the project](./creating-library/01-project-setup.md)
-- [Writing the DLL code](./creating-library/02-writing-dll.md)
-- [Writing the entry point](./creating-library/03-entry-point.md)
-- [Advanced]()
-  - [Roll your own DLL entry point]()
-  - [Build a proxy DLL]()
+- [Setting up the project](./creating-library/project-setup.md)
+- [Writing the DLL code](./creating-library/writing-dll.md)
+- [Writing the entry point](./creating-library/entry-point.md)
+- [Advanced](./advanced/README.md)
+  - [Roll your own DLL entry point](./advanced/roll-your-own-dllmain.md)
+  - [Build a proxy DLL](./advanced/proxy-dll.md)
 
 # Injecting a library
 

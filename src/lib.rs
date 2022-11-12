@@ -8,6 +8,8 @@
 //!
 //! Currently, DirectX9, DirectX 11, DirectX 12 and OpenGL 3 are supported.
 //!
+//! This library **requires** Rust nightly.
+//!
 //! For complete, fully fledged examples of usage, check out the following
 //! projects:
 //!

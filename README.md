@@ -1,9 +1,18 @@
 # hudhook
 
+[![book](https://img.shields.io/badge/docs-book-brightgreen)](https://veeenu.github.io/hudhook)
+[![rustdoc](https://img.shields.io/badge/docs-rustdoc-brightgreen)](https://veeenu.github.io/hudhook/rustdoc/hudhook)
+
 A render loop hook library with [Dear ImGui](https://github.com/ocornut/imgui)
 overlays, largely inspired by [CheatEngine](https://cheatengine.org/).
 
 Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3.
+
+Compiles on Rust nightly only.
+
+Read the tutorial book [here](https://veeenu.github.io/hudhook).
+
+Read the API reference [here](https://veeenu.github.io/hudhook/rustdoc/hudhook).
 
 Read up on the underlying architecture [here](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/).
 

@@ -44,5 +44,3 @@ impl ImguiRenderLoop for HelloHud {
 ```
 
 That's it! Inside of the `render` method, we can deploy whatever logic and UI rendering we want.
-
-[samples]: https://github.com/microsoft/DirectX-Graphics-Samples 
