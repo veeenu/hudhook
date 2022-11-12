@@ -1,6 +1,6 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
-use std::mem::{size_of, ManuallyDrop};
+use std::mem::ManuallyDrop;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
@@ -12,20 +12,21 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use widestring::{u16cstr, U16CStr};
-use windows::Win32::Graphics::Direct3D11::{D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION};
-use windows::core::{Interface, HRESULT, PCSTR, PCWSTR};
+use windows::core::{Interface, HRESULT, PCWSTR};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL_11_0, D3D_DRIVER_TYPE_HARDWARE};
+use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
+};
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
+    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC, DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::System::WindowsProgramming::INFINITE;
 #[cfg(target_arch = "x86")]

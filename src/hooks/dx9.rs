@@ -1,11 +1,9 @@
-use std::ptr::null;
-
 use detour::RawDetour;
 use imgui::Context;
 use log::{debug, error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{Interface, HRESULT, PCSTR};
+use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
@@ -14,16 +12,15 @@ use windows::Win32::Graphics::Direct3D9::{
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, D3D_SDK_VERSION,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH, RGNDATA};
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::Graphics::Gdi::{ScreenToClient, RGNDATA};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, DefWindowProcA, DefWindowProcW, DestroyWindow, GetCursorPos,
-    GetForegroundWindow, IsChild, RegisterClassA, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, GWLP_WNDPROC,
-    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    DefWindowProcW, GetCursorPos,
+    GetForegroundWindow, IsChild, GWLP_WNDPROC,
+    GetDesktopWindow,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
@@ -311,51 +308,7 @@ impl Hooks for ImguiDx9Hooks {
 // Function address finders
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-unsafe fn create_dummy_window() -> HWND {
-    unsafe extern "system" fn def_window_proc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcA(hwnd, msg, wparam, lparam)
-    }
-
-    let hinstance = GetModuleHandleA(None).unwrap();
-    let wnd_class = WNDCLASSA {
-        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(def_window_proc),
-        hInstance: hinstance,
-        lpszClassName: PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hIcon: HICON(0),
-        hCursor: HCURSOR(0),
-        hbrBackground: HBRUSH(0),
-        lpszMenuName: PCSTR(null()),
-    };
-
-    RegisterClassA(&wnd_class);
-
-    CreateWindowExA(
-        WINDOW_EX_STYLE(0),
-        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        PCSTR("HUDHOOK_DUMMY\0".as_ptr()),
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        0,
-        0,
-        100,
-        100,
-        HWND(0),
-        HMENU(0),
-        hinstance,
-        null(),
-    )
-}
-
 unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
-    let hwnd = create_dummy_window();
-
     let d9 = Direct3DCreate9(D3D_SDK_VERSION).unwrap();
 
     let mut d3d_display_mode =
@@ -373,7 +326,7 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     d9.CreateDevice(
         D3DADAPTER_DEFAULT,
         D3DDEVTYPE_HAL,
-        hwnd,
+        GetDesktopWindow(),
         D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
         &mut present_params,
         &mut device,
@@ -385,7 +338,6 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     let present_ptr = device.vtable().Present;
     let reset_ptr = device.vtable().Reset;
 
-    DestroyWindow(hwnd);
     (
         std::mem::transmute(end_scene_ptr),
         std::mem::transmute(present_ptr),
