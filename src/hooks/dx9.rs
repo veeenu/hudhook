@@ -18,9 +18,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos,
-    GetForegroundWindow, IsChild, GWLP_WNDPROC,
-    GetDesktopWindow,
+    DefWindowProcW, GetCursorPos, GetDesktopWindow, GetForegroundWindow, IsChild, GWLP_WNDPROC,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
