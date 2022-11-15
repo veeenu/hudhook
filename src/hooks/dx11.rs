@@ -1,12 +1,12 @@
 use std::ffi::c_void;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use detour::RawDetour;
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{Interface, HRESULT, PCSTR};
+use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM,
 };
@@ -16,14 +16,13 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -300,93 +299,45 @@ unsafe impl Sync for ImguiRenderer {}
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
-    const CLASS_NAME: PCSTR = PCSTR("HUDHOOK_DUMMY\0".as_ptr());
-
-    trace!("Getting IDXGISwapChain::Present addr...");
-
-    unsafe extern "system" fn def_window_proc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcA(hwnd, msg, wparam, lparam)
-    }
-
-    let hinstance = unsafe { GetModuleHandleA(None) }.unwrap();
-    let wnd_class = WNDCLASSA {
-        style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(def_window_proc),
-        hInstance: hinstance,
-        lpszClassName: CLASS_NAME,
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hIcon: HICON(0),
-        hCursor: HCURSOR(0),
-        hbrBackground: HBRUSH(0),
-        lpszMenuName: PCSTR(null()),
-    };
-    let hwnd = unsafe {
-        RegisterClassA(&wnd_class);
-        CreateWindowExA(
-            WINDOW_EX_STYLE(0),
-            CLASS_NAME,
-            CLASS_NAME,
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-            0,
-            0,
-            16,
-            16,
-            HWND(0),
-            HMENU(0),
-            hinstance,
-            null(),
-        )
-    };
-
-    let feature_level = D3D_FEATURE_LEVEL_11_0;
-    let mut swap_chain_desc: DXGI_SWAP_CHAIN_DESC = unsafe { std::mem::zeroed() };
     let mut p_device: Option<ID3D11Device> = None;
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
 
-    swap_chain_desc.BufferCount = 1;
-    swap_chain_desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swap_chain_desc.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-    swap_chain_desc.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-    swap_chain_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-    swap_chain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swap_chain_desc.OutputWindow = hwnd;
-    swap_chain_desc.SampleDesc.Count = 1;
-    swap_chain_desc.Windowed = BOOL(1);
-
-    trace!("Creating device and swap chain...");
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
             D3D_DRIVER_TYPE_HARDWARE,
             None,
             D3D11_CREATE_DEVICE_FLAG(0),
-            &[feature_level],
+            &[D3D_FEATURE_LEVEL_11_0],
             D3D11_SDK_VERSION,
-            &swap_chain_desc,
+            &DXGI_SWAP_CHAIN_DESC {
+                BufferDesc: DXGI_MODE_DESC {
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+                    Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
+                    ..Default::default()
+                },
+                BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                BufferCount: 1,
+                OutputWindow: GetDesktopWindow(),
+                Windowed: BOOL(1),
+                SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },
+                ..Default::default()
+            },
             &mut p_swap_chain,
             &mut p_device,
             null_mut(),
             &mut p_context,
         )
-        .expect("D3D11CreateDeviceAndSwapChain failed")
-    };
+        .expect("D3D11CreateDeviceAndSwapChain failed");
+    }
 
     let swap_chain = p_swap_chain.unwrap();
 
     let present_ptr = swap_chain.vtable().Present;
     let resize_buffers_ptr = swap_chain.vtable().ResizeBuffers;
-
-    unsafe {
-        DestroyWindow(hwnd);
-        UnregisterClassA(CLASS_NAME, hinstance);
-    }
 
     unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
 }
