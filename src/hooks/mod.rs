@@ -31,6 +31,8 @@ pub trait Hooks {
     unsafe fn unhook(&mut self);
 }
 
+pub fn initialize() {}
+
 #[inline]
 fn loword(l: u32) -> u16 {
     (l & 0xffff) as u16

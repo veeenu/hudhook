@@ -114,6 +114,8 @@
 //! ```
 #![allow(clippy::needless_doctest_main)]
 
+mod mh;
+
 pub mod hooks;
 pub mod inject;
 pub mod renderers;
@@ -234,7 +236,6 @@ pub use log;
 
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
-    pub use detour::RawDetour;
     pub use windows::Win32::Foundation::HINSTANCE;
     pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};

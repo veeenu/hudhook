@@ -1,6 +1,7 @@
-use detour::RawDetour;
+use std::mem;
+
 use imgui::Context;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT};
@@ -23,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
 
 unsafe fn draw(this: &IDirect3DDevice9) {
@@ -233,12 +235,7 @@ unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiDx9Hooks {
-    #[allow(dead_code)]
-    hook_dx9_end_scene: RawDetour,
-    hook_dx9_present: RawDetour,
-    hook_dx9_reset: RawDetour,
-}
+pub struct ImguiDx9Hooks(MhHooks);
 
 impl ImguiDx9Hooks {
     /// # Safety
@@ -252,48 +249,41 @@ impl ImguiDx9Hooks {
         let (hook_dx9_end_scene_address, dx9_present_address, dx9_reset_address) =
             get_dx9_present_addr();
 
-        let hook_dx9_end_scene = RawDetour::new(
-            hook_dx9_end_scene_address as *const _,
-            imgui_dx9_end_scene_impl as *const _,
-        )
-        .expect("IDirect3DDevice9::EndScene hook");
+        let hook_dx9_end_scene =
+            MhHook::new(hook_dx9_end_scene_address as *mut _, imgui_dx9_end_scene_impl as *mut _)
+                .expect("couldn't create IDirect3DDevice9::EndScene hook");
 
         let hook_dx9_present =
-            RawDetour::new(dx9_present_address as *const _, imgui_dx9_present_impl as *const _)
-                .expect("IDirect3DDevice9::Present hook");
+            MhHook::new(dx9_present_address as *mut _, imgui_dx9_present_impl as *mut _)
+                .expect("couldn't create IDirect3DDevice9::Present hook");
 
         let hook_dx9_reset =
-            RawDetour::new(dx9_reset_address as *const _, imgui_dx9_reset_impl as *const _)
-                .expect("IDirect3DDevice9::Reset hook");
+            MhHook::new(dx9_reset_address as *mut _, imgui_dx9_reset_impl as *mut _)
+                .expect("couldn't create IDirect3DDevice9::Reset hook");
 
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {
             (
-                std::mem::transmute(hook_dx9_end_scene.trampoline()),
-                std::mem::transmute(hook_dx9_present.trampoline()),
-                std::mem::transmute(hook_dx9_reset.trampoline()),
+                mem::transmute(hook_dx9_end_scene.trampoline()),
+                mem::transmute(hook_dx9_present.trampoline()),
+                mem::transmute(hook_dx9_reset.trampoline()),
             )
         });
 
-        Self { hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset }
+        Self(
+            MhHooks::new([hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset])
+                .expect("couldn't create hooks"),
+        )
     }
 }
 
 impl Hooks for ImguiDx9Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
-            if let Err(e) = hook.enable() {
-                error!("Couldn't enable hook: {e}");
-            }
-        }
+        self.0.apply();
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
-            if let Err(e) = hook.disable() {
-                error!("Couldn't disable hook: {e}");
-            }
-        }
+        self.0.unapply();
 
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();
