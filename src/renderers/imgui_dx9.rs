@@ -420,7 +420,7 @@ impl Renderer {
     // FIXME, imgui hands us an rgba texture while we make dx9 think it receives an
     // argb texture
     unsafe fn create_font_texture(
-        mut fonts: imgui::FontAtlasRefMut<'_>,
+        mut fonts: &mut imgui::FontAtlas,
         device: &IDirect3DDevice9,
     ) -> Result<IDirect3DTexture9> {
         let texture = fonts.build_rgba32_texture();

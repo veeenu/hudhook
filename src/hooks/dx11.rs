@@ -229,7 +229,7 @@ impl ImguiRenderer {
         let ctx = &mut self.ctx;
         let mut ui = ctx.frame();
         IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
-        let draw_data = ui.render();
+        let draw_data = ctx.render();
 
         if let Err(e) = self.engine.render_draw_data(draw_data) {
             // if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui,

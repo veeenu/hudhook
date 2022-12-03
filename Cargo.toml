@@ -67,8 +67,8 @@ path = "examples/renderers/dx12.rs"
 crate-type = ["bin"]
 
 [dependencies]
-imgui = "0.8.0"
-imgui-opengl-renderer = "0.11"
+imgui = "0.9.0"
+imgui-opengl-renderer = { git = "https://github.com/veeenu/rust-imgui-opengl-renderer" }
 gl_loader = "0.1"
 log = "0.4.17"
 memoffset = "0.6.5"

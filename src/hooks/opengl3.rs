@@ -182,7 +182,8 @@ impl ImguiRenderer {
         let mut ui = self.ctx.frame();
 
         IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
-        self.renderer.render(ui);
+        drop(ui);
+        self.renderer.render(&mut self.ctx);
     }
 
     unsafe fn cleanup(&mut self) {}
