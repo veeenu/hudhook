@@ -1,12 +1,11 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
-use std::mem::ManuallyDrop;
+use std::mem::{self, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use detour::RawDetour;
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
@@ -40,6 +39,7 @@ use crate::hooks::common::{
     WndProcType,
 };
 use crate::hooks::Hooks;
+use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx12::RenderEngine;
 
 type DXGISwapChainPresentType =
@@ -666,11 +666,12 @@ pub fn disable_dxgi_debug() {
 }
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiDx12Hooks {
-    hook_dscp: RawDetour,
-    hook_cqecl: RawDetour,
-    hook_rbuf: RawDetour,
-}
+pub struct ImguiDx12Hooks(MhHooks);
+// {
+//     hook_dscp: RawDetour,
+//     hook_cqecl: RawDetour,
+//     hook_rbuf: RawDetour,
+// }
 
 impl ImguiDx12Hooks {
     /// Construct a set of [`RawDetour`]s that will render UI via the provided
@@ -690,58 +691,67 @@ impl ImguiDx12Hooks {
     {
         let (dxgi_swap_chain_present_addr, execute_command_lists_addr, resize_buffers_addr) =
             get_present_addr();
-        trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
+
+        trace!(
+            "IDXGISwapChain::Present                 = {:p}",
+            dxgi_swap_chain_present_addr as *const c_void
+        );
         trace!(
             "ID3D12CommandQueue::ExecuteCommandLists = {:p}",
             execute_command_lists_addr as *const c_void
         );
-        trace!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *const c_void);
+        trace!(
+            "IDXGISwapChain::ResizeBuffers            = {:p}",
+            resize_buffers_addr as *const c_void
+        );
 
-        let hook_dscp = RawDetour::new(
-            dxgi_swap_chain_present_addr as *const _,
-            imgui_dxgi_swap_chain_present_impl as *const _,
+        let hook_dscp = MhHook::new(
+            dxgi_swap_chain_present_addr as *mut _,
+            imgui_dxgi_swap_chain_present_impl as *mut _,
         )
-        .expect("IDXGISwapChain::Present hook");
+        .expect("couldn't create IDXGISwapChain::Present hook");
 
-        let hook_cqecl = RawDetour::new(
-            execute_command_lists_addr as *const _,
-            imgui_execute_command_lists_impl as *const _,
+        let hook_cqecl = MhHook::new(
+            execute_command_lists_addr as *mut _,
+            imgui_execute_command_lists_impl as *mut _,
         )
-        .expect("ID3D12CommandQueue::ExecuteCommandLists hook");
+        .expect("couldn't create ID3D12CommandQueue::ExecuteCommandLists hook");
 
         let hook_rbuf =
-            RawDetour::new(resize_buffers_addr as *const _, imgui_resize_buffers_impl as *const _)
-                .expect("IDXGISwapChain::ResizeBuffers hook");
+            MhHook::new(resize_buffers_addr as *mut _, imgui_resize_buffers_impl as *mut _)
+                .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
 
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {
             (
-                std::mem::transmute(hook_dscp.trampoline()),
-                std::mem::transmute(hook_cqecl.trampoline()),
-                std::mem::transmute(hook_rbuf.trampoline()),
+                mem::transmute(hook_dscp.trampoline()),
+                mem::transmute(hook_cqecl.trampoline()),
+                mem::transmute(hook_rbuf.trampoline()),
             )
         });
 
-        Self { hook_dscp, hook_cqecl, hook_rbuf }
+        Self(MhHooks::new([hook_dscp, hook_cqecl, hook_rbuf]).expect("couldn't create hooks"))
     }
 }
 
 impl Hooks for ImguiDx12Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
-            if let Err(e) = hook.enable() {
-                error!("Couldn't enable hook: {e}");
-            }
-        }
+        self.0.apply();
+        // for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
+        //     if let Err(e) = hook.enable() {
+        //         error!("Couldn't enable hook: {e}");
+        //     }
+        // }
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
-            if let Err(e) = hook.disable() {
-                error!("Couldn't disable hook: {e}");
-            }
-        }
+        self.0.unapply();
+        // for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
+        //     if let Err(e) = hook.disable() {
+        //         error!("Couldn't disable hook: {e}");
+        //     }
+        // }
 
         CQECL_RUNNING.wait();
         PRESENT_RUNNING.wait();

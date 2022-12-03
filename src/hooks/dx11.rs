@@ -1,7 +1,7 @@
 use std::ffi::c_void;
+use std::mem;
 use std::ptr::null_mut;
 
-use detour::RawDetour;
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
@@ -33,6 +33,7 @@ use super::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
 };
 use super::Hooks;
+use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
 type DXGISwapChainPresentType =
@@ -342,10 +343,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
 }
 
-pub struct ImguiDx11Hooks {
-    hook_present: RawDetour,
-    hook_resize_buffers: RawDetour,
-}
+pub struct ImguiDx11Hooks(MhHooks);
 
 impl ImguiDx11Hooks {
     /// Construct a [`RawDetour`] that will render UI via the provided
@@ -362,44 +360,43 @@ impl ImguiDx11Hooks {
         debug!("IDXGISwapChain::Present = {:p}", present_addr as *mut c_void);
         debug!("IDXGISwapChain::ResizeBuffers = {:p}", resize_buffers_addr as *mut c_void);
 
-        let hook_present = RawDetour::new(
-            present_addr as *const _,
-            imgui_dxgi_swap_chain_present_impl as *const _,
-        )
-        .expect("Create detour");
-
+        let hook_present =
+            MhHook::new(present_addr as *mut _, imgui_dxgi_swap_chain_present_impl as *mut _)
+                .expect("couldn't create IDXGISwapChain::Present hook");
         let hook_resize_buffers =
-            RawDetour::new(resize_buffers_addr as *const _, imgui_resize_buffers_impl as *const _)
-                .expect("Create detour");
+            MhHook::new(resize_buffers_addr as *mut _, imgui_resize_buffers_impl as *mut _)
+                .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
 
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| {
             (
-                std::mem::transmute(hook_present.trampoline()),
-                std::mem::transmute(hook_resize_buffers.trampoline()),
+                mem::transmute(hook_present.trampoline()),
+                mem::transmute(hook_resize_buffers.trampoline()),
             )
         });
 
-        Self { hook_present, hook_resize_buffers }
+        Self(MhHooks::new([hook_present, hook_resize_buffers]).expect("couldn't create hooks"))
     }
 }
 
 impl Hooks for ImguiDx11Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_present, &self.hook_resize_buffers] {
-            if let Err(e) = hook.enable() {
-                error!("Couldn't enable hook: {e}");
-            }
-        }
+        self.0.apply();
+        // for hook in [&self.hook_present, &self.hook_resize_buffers] {
+        //     if let Err(e) = hook.enable() {
+        //         error!("Couldn't enable hook: {e}");
+        //     }
+        // }
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        for hook in [&self.hook_present, &self.hook_resize_buffers] {
-            if let Err(e) = hook.disable() {
-                error!("Couldn't disable hook: {e}");
-            }
-        }
+        self.0.unapply();
+        // for hook in [&self.hook_present, &self.hook_resize_buffers] {
+        //     if let Err(e) = hook.disable() {
+        //         error!("Couldn't disable hook: {e}");
+        //     }
+        // }
 
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {
