@@ -282,7 +282,6 @@ macro_rules! hudhook {
 
                 trace!("DllMain()");
                 std::thread::spawn(move || {
-                    hooks::initialize();
                     let hooks: Box<dyn hooks::Hooks> = { $hooks };
                     hooks.hook();
                     hudhook::lifecycle::global_state::set_hooks(hooks);

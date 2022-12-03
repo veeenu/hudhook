@@ -236,12 +236,6 @@ unsafe impl Sync for ImguiRenderer {}
 
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct ImguiDx9Hooks(MhHooks);
-// {
-//     #[allow(dead_code)]
-//     hook_dx9_end_scene: RawDetour,
-//     hook_dx9_present: RawDetour,
-//     hook_dx9_reset: RawDetour,
-// }
 
 impl ImguiDx9Hooks {
     /// # Safety
@@ -283,20 +277,10 @@ impl ImguiDx9Hooks {
 impl Hooks for ImguiDx9Hooks {
     unsafe fn hook(&self) {
         self.0.apply();
-        // for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
-        //     if let Err(e) = hook.enable() {
-        //         error!("Couldn't enable hook: {e}");
-        //     }
-        // }
     }
 
     unsafe fn unhook(&mut self) {
         self.0.unapply();
-        // for hook in [&self.hook_dx9_present, &self.hook_dx9_reset] {
-        //     if let Err(e) = hook.disable() {
-        //         error!("Couldn't disable hook: {e}");
-        //     }
-        // }
 
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();

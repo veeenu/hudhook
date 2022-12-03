@@ -33,10 +33,6 @@ pub trait Hooks {
 }
 
 pub fn initialize() {
-    let status = unsafe { crate::mh::MH_Initialize() };
-    debug!("MH_Initialize: {:?}", status);
-
-    status.ok().expect("Couldn't initialize hooks");
 }
 
 #[inline]

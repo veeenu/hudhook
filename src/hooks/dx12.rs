@@ -667,11 +667,6 @@ pub fn disable_dxgi_debug() {
 
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct ImguiDx12Hooks(MhHooks);
-// {
-//     hook_dscp: RawDetour,
-//     hook_cqecl: RawDetour,
-//     hook_rbuf: RawDetour,
-// }
 
 impl ImguiDx12Hooks {
     /// Construct a set of [`RawDetour`]s that will render UI via the provided
@@ -737,21 +732,11 @@ impl ImguiDx12Hooks {
 impl Hooks for ImguiDx12Hooks {
     unsafe fn hook(&self) {
         self.0.apply();
-        // for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
-        //     if let Err(e) = hook.enable() {
-        //         error!("Couldn't enable hook: {e}");
-        //     }
-        // }
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
         self.0.unapply();
-        // for hook in [&self.hook_dscp, &self.hook_cqecl, &self.hook_rbuf] {
-        //     if let Err(e) = hook.disable() {
-        //         error!("Couldn't disable hook: {e}");
-        //     }
-        // }
 
         CQECL_RUNNING.wait();
         PRESENT_RUNNING.wait();

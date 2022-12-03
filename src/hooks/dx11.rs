@@ -382,21 +382,11 @@ impl ImguiDx11Hooks {
 impl Hooks for ImguiDx11Hooks {
     unsafe fn hook(&self) {
         self.0.apply();
-        // for hook in [&self.hook_present, &self.hook_resize_buffers] {
-        //     if let Err(e) = hook.enable() {
-        //         error!("Couldn't enable hook: {e}");
-        //     }
-        // }
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
         self.0.unapply();
-        // for hook in [&self.hook_present, &self.hook_resize_buffers] {
-        //     if let Err(e) = hook.disable() {
-        //         error!("Couldn't disable hook: {e}");
-        //     }
-        // }
 
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {

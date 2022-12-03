@@ -229,9 +229,6 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
 
 /// Stores hook detours and implements the [`Hooks`] trait.
 pub struct ImguiOpenGl3Hooks(MhHooks);
-// {
-//     hook_opengl_wgl_swap_buffers: RawDetour,
-// }
 
 impl ImguiOpenGl3Hooks {
     /// # Safety
@@ -263,20 +260,10 @@ impl ImguiOpenGl3Hooks {
 impl Hooks for ImguiOpenGl3Hooks {
     unsafe fn hook(&self) {
         self.0.apply();
-        // for hook in [&self.hook_opengl_wgl_swap_buffers] {
-        //     if let Err(e) = hook.enable() {
-        //         error!("Couldn't enable hook: {e}");
-        //     }
-        // }
     }
 
     unsafe fn unhook(&mut self) {
         self.0.unapply();
-        // for hook in [&self.hook_opengl_wgl_swap_buffers] {
-        //     if let Err(e) = hook.disable() {
-        //         error!("Couldn't disable hook: {e}");
-        //     }
-        // }
 
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();
