@@ -1,8 +1,8 @@
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 
 use std::ffi::c_void;
-use std::lazy::SyncLazy;
 use std::ptr::null_mut;
+use std::sync::LazyLock;
 
 use log::*;
 
@@ -79,14 +79,14 @@ pub struct MhHook {
 impl MhHook {
     /// # Safety
     pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Result<Self, MH_STATUS> {
-        static INIT_CELL: SyncLazy<()> = SyncLazy::new(|| {
+        static INIT_CELL: LazyLock<()> = LazyLock::new(|| {
             let status = unsafe { crate::mh::MH_Initialize() };
             debug!("MH_Initialize: {:?}", status);
 
             status.ok().expect("Couldn't initialize hooks");
         });
 
-        INIT_CELL.force();
+        LazyLock::force(&INIT_CELL);
 
         let mut trampoline = null_mut();
         let status = MH_CreateHook(addr, hook_impl, &mut trampoline);
