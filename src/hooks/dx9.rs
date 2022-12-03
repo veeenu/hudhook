@@ -270,7 +270,10 @@ impl ImguiDx9Hooks {
             )
         });
 
-        Self(MhHooks::new([hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset]).expect("couldn't create hooks"))
+        Self(
+            MhHooks::new([hook_dx9_end_scene, hook_dx9_present, hook_dx9_reset])
+                .expect("couldn't create hooks"),
+        )
     }
 }
 

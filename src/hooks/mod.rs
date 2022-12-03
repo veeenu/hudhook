@@ -12,7 +12,6 @@ pub mod dx9;
 pub mod opengl3;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use log::debug;
 
 /// Generic trait for platform-specific hooks.
 pub trait Hooks {
@@ -32,8 +31,7 @@ pub trait Hooks {
     unsafe fn unhook(&mut self);
 }
 
-pub fn initialize() {
-}
+pub fn initialize() {}
 
 #[inline]
 fn loword(l: u32) -> u16 {
