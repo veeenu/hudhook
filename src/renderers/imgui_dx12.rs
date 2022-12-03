@@ -340,14 +340,12 @@ impl RenderEngine {
                                 cmd_list.DrawIndexedInstanced(
                                     count as _,
                                     1,
-                                    idx_offset as _,
-                                    vtx_offset as _,
+                                    (cmd_params.idx_offset + idx_offset) as _,
+                                    (cmd_params.vtx_offset + vtx_offset) as _,
                                     0,
                                 );
                             }
                         }
-
-                        idx_offset += count;
                     },
                     DrawCmd::ResetRenderState => {
                         self.setup_render_state(draw_data, cmd_list, frame_resources_idx);
@@ -357,6 +355,7 @@ impl RenderEngine {
                     },
                 }
             }
+            idx_offset += cl.idx_buffer().len();
             vtx_offset += cl.vtx_buffer().len();
         }
 
