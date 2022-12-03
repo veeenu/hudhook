@@ -1,3 +1,0 @@
-[submodule "vendor/minhook"]
-	path = vendor/minhook
-	url = https://github.com/TsudaKageyu/minhook
