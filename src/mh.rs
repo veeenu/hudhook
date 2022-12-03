@@ -109,11 +109,6 @@ unsafe impl Sync for MhHooks {}
 
 impl MhHooks {
     pub fn new<T: IntoIterator<Item = MhHook>>(hooks: T) -> Result<Self, MH_STATUS> {
-        let status = unsafe { MH_Initialize() };
-        debug!("MH_Initialize: {:?}", status);
-
-        status.ok()?;
-
         Ok(MhHooks(hooks.into_iter().collect::<Vec<_>>()))
     }
 

@@ -12,6 +12,7 @@ pub mod dx9;
 pub mod opengl3;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use log::debug;
 
 /// Generic trait for platform-specific hooks.
 pub trait Hooks {
@@ -29,6 +30,13 @@ pub trait Hooks {
     ///
     /// Is most definitely UB.
     unsafe fn unhook(&mut self);
+}
+
+pub fn initialize() {
+    let status = unsafe { crate::mh::MH_Initialize() };
+    debug!("MH_Initialize: {:?}", status);
+
+    status.ok().expect("Couldn't initialize hooks");
 }
 
 #[inline]
