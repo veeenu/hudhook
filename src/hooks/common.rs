@@ -70,15 +70,22 @@ where
 {
     let mut io = imgui_renderer.io_mut();
     match umsg {
-        WM_KEYDOWN | WM_SYSKEYDOWN => {
-            if wparam < 256 {
-                io.keys_down[wparam] = true;
-            }
-        },
-        WM_KEYUP | WM_SYSKEYUP => {
-            if wparam < 256 {
-                io.keys_down[wparam] = false;
-            }
+        state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
+            let pressed = (state == WM_KEYDOWN) || (state == WM_SYSKEYDOWN);
+            io.keys_down[wparam] = pressed;
+
+            // According to the winit implementation [1], it's ok to check twice, and the
+            // logic isn't flawed either.
+            //
+            // [1] https://github.com/imgui-rs/imgui-rs/blob/b1e66d050e84dbb2120001d16ce59d15ef6b5303/imgui-winit-support/src/lib.rs#L401-L404
+            let key_pressed = VIRTUAL_KEY(wparam as u16);
+            match key_pressed {
+                VK_CONTROL | VK_LCONTROL | VK_RCONTROL => io.key_ctrl = pressed,
+                VK_SHIFT | VK_LSHIFT | VK_RSHIFT => io.key_shift = pressed,
+                VK_MENU | VK_LMENU | VK_RMENU => io.key_alt = pressed,
+                VK_LWIN | VK_RWIN => io.key_super = pressed,
+                _ => (),
+            };
         },
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
             io.mouse_down[0] = true;
