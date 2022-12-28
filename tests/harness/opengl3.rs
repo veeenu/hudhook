@@ -29,8 +29,9 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
 use windows::Win32::Graphics::OpenGL::{
-    wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER,
-    PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+    glClearColor, wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, SwapBuffers,
+    GL_COLOR_BUFFER_BIT, GL_DEPTH_BUFFER_BIT, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE,
+    PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR, glClear,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -130,6 +131,11 @@ impl Opengl3Harness {
 
                 loop {
                     trace!("Debug");
+
+                    unsafe { glClearColor(1.0, 0.5, 0.5, 1.0) }
+                    unsafe { glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) };
+
+                    unsafe { SwapBuffers(window_handle) };
                 }
             }
         }));
