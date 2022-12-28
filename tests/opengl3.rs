@@ -41,7 +41,7 @@ fn test_imgui_opengl3() {
     TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
         .ok();
 
-    let dx12_harness = Opengl3Harness::new("Opengl3 hook example");
+    let opengl3_harness = Opengl3Harness::new("Opengl3 hook example");
     thread::sleep(Duration::from_millis(500));
 
     unsafe {
@@ -52,5 +52,5 @@ fn test_imgui_opengl3() {
     }
 
     thread::sleep(Duration::from_millis(5000));
-    drop(dx12_harness);
+    drop(opengl3_harness);
 }
