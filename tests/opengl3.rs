@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use harness::opengl3::Opengl3Harness;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
+use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
 use simplelog::*;
@@ -46,7 +47,7 @@ fn test_imgui_opengl3() {
 
     unsafe {
         let hooks: Box<dyn hooks::Hooks> =
-            { Opengl3HookExample::new().into_hook::<ImguiDx12Hooks>() };
+            { Opengl3HookExample::new().into_hook::<ImguiOpenGl3Hooks>() };
         hooks.hook();
         hudhook::lifecycle::global_state::set_hooks(hooks);
     }
