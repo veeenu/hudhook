@@ -29,8 +29,8 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
 use windows::Win32::Graphics::OpenGL::{
-    ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE,
-    PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+    wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER,
+    PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE, PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -124,6 +124,9 @@ impl Opengl3Harness {
 
                 let pixel_format = unsafe { ChoosePixelFormat(window_handle, &pfd) };
                 unsafe { SetPixelFormat(window_handle, pixel_format, &pfd) };
+
+                let con = unsafe { wglCreateContext(window_handle) }.unwrap();
+                unsafe { wglMakeCurrent(window_handle, con) };
 
                 loop {
                     trace!("Debug");
