@@ -132,10 +132,18 @@ impl Opengl3Harness {
                 loop {
                     trace!("Debug");
 
-                    unsafe { glClearColor(1.0, 0.5, 0.5, 1.0) }
+                    unsafe { glClearColor(0.0, 0.0, 0.0, 1.0) }
                     unsafe { glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) };
 
                     unsafe { SwapBuffers(window_handle) };
+
+                    if !handle_message(hwnd) {
+                        break;
+                    }
+
+                    if done.load(Ordering::SeqCst) {
+                        break;
+                    }
                 }
             }
         }));

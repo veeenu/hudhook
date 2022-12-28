@@ -42,7 +42,7 @@ fn test_imgui_opengl3() {
     TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
         .ok();
 
-    let opengl3_harness = Opengl3Harness::new("Opengl3 hook example");
+    let opengl3_harness = Opengl3Harness::new("OpenGL3 hook example");
     thread::sleep(Duration::from_millis(500));
 
     unsafe {
