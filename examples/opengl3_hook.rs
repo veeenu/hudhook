@@ -2,7 +2,7 @@
 
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui::{Condition, Window};
+use imgui::Condition;
 struct HookYou;
 
 impl HookYou {
