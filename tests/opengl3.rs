@@ -4,7 +4,6 @@ use std::thread;
 use std::time::Duration;
 
 use harness::opengl3::Opengl3Harness;
-use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, Window};
