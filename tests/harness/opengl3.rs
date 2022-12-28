@@ -27,7 +27,11 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::HBRUSH;
+use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
+use windows::Win32::Graphics::OpenGL::{
+    ChoosePixelFormat, SetPixelFormat, PFD_DOUBLEBUFFER, PFD_DRAW_TO_WINDOW, PFD_MAIN_PLANE,
+    PFD_SUPPORT_OPENGL, PFD_TYPE_RGBA, PIXELFORMATDESCRIPTOR,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
@@ -86,6 +90,40 @@ impl Opengl3Harness {
                         null(),
                     )
                 }; // lpParam
+
+                let pfd = PIXELFORMATDESCRIPTOR {
+                    nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
+                    nVersion: 1,
+                    dwFlags: PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+                    iPixelType: PFD_TYPE_RGBA,
+                    cColorBits: 32,
+                    cRedBits: 0,
+                    cRedShift: 0,
+                    cGreenBits: 0,
+                    cGreenShift: 0,
+                    cBlueBits: 0,
+                    cBlueShift: 0,
+                    cAlphaBits: 0,
+                    cAlphaShift: 0,
+                    cAccumBits: 0,
+                    cAccumRedBits: 0,
+                    cAccumGreenBits: 0,
+                    cAccumBlueBits: 0,
+                    cAccumAlphaBits: 0,
+                    cDepthBits: 24,
+                    cStencilBits: 8,
+                    cAuxBuffers: 0,
+                    iLayerType: PFD_MAIN_PLANE,
+                    bReserved: 0,
+                    dwLayerMask: 0,
+                    dwVisibleMask: 0,
+                    dwDamageMask: 0,
+                };
+
+                let window_handle = unsafe { GetDC(hwnd) };
+
+                let pixel_format = unsafe { ChoosePixelFormat(window_handle, &pfd) };
+                unsafe { SetPixelFormat(window_handle, pixel_format, &pfd) };
 
                 loop {
                     trace!("Debug");
