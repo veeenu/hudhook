@@ -18,7 +18,7 @@ impl HookYou {
 
 impl ImguiRenderLoop for HookYou {
     fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
-        Window::new("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(ui, || {
+        ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");
             ui.text("This...is...imgui-rs!");
