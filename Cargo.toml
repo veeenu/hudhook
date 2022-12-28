@@ -68,7 +68,7 @@ crate-type = ["bin"]
 
 [dependencies]
 imgui = "0.9.0"
-imgui-opengl-renderer = { git = "https://github.com/veeenu/rust-imgui-opengl-renderer" }
+imgui-opengl = "0.0.0"
 gl_loader = "0.1"
 log = "0.4.17"
 memoffset = "0.6.5"
