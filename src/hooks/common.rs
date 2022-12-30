@@ -166,8 +166,8 @@ impl HookableBackend for ImguiDx12Hooks {
 }
 
 // impl HookableBackend for ImguiOpenGl3Hooks {
-//     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
-//         unsafe { ImguiOpenGl3Hooks::new(t) }
+//     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T)
+// -> Self {         unsafe { ImguiOpenGl3Hooks::new(t) }
 //     }
 // }
 
