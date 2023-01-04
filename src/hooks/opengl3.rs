@@ -178,10 +178,9 @@ impl ImguiRenderer {
         self.ctx.io_mut().update_delta_time(now.duration_since(*last_frame));
         *last_frame = now;
 
-        let mut ui = self.ctx.frame();
+        let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
-        drop(ui);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
         self.renderer.render(&mut self.ctx);
     }
 

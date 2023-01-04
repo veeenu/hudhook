@@ -10,7 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBU
 use super::dx11::ImguiDx11Hooks;
 use super::dx12::ImguiDx12Hooks;
 use super::dx9::ImguiDx9Hooks;
-// use super::opengl3::ImguiOpenGl3Hooks;
+use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
 pub(crate) type WndProcType =
@@ -172,11 +172,11 @@ impl HookableBackend for ImguiDx12Hooks {
     }
 }
 
-// impl HookableBackend for ImguiOpenGl3Hooks {
-//     fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T)
-// -> Self {         unsafe { ImguiOpenGl3Hooks::new(t) }
-//     }
-// }
+impl HookableBackend for ImguiOpenGl3Hooks {
+    fn from_struct<T: ImguiRenderLoop + Send + Sync + Sized + 'static>(t: T) -> Self {
+        unsafe { ImguiOpenGl3Hooks::new(t) }
+    }
+}
 
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
