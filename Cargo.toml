@@ -1,6 +1,6 @@
 [package]
 name = "hudhook"
-version = "0.2.0"
+version = "0.4.0"
 edition = "2021"
 description = "A graphics API hook with dear imgui render loop. Supports DirectX 11 and 12."
 homepage = "https://github.com/veeenu/hudhook"
@@ -67,10 +67,8 @@ path = "examples/renderers/dx12.rs"
 crate-type = ["bin"]
 
 [dependencies]
-# detour = { package = "detour2", version = "0.9.0" }
-detour = { git = "https://github.com/veeenu/detour-rs" }
-imgui = "0.8.0"
-imgui-opengl-renderer = "0.11"
+imgui = "0.9.0"
+imgui-opengl = "0.0.0"
 gl_loader = "0.1"
 log = "0.4.17"
 memoffset = "0.6.5"

@@ -2,6 +2,7 @@
 
 use std::ffi::c_void;
 use std::ptr::null_mut;
+use std::sync::LazyLock;
 
 use log::*;
 
@@ -57,18 +58,43 @@ extern "system" {
     pub fn MH_ApplyQueued() -> MH_STATUS;
 }
 
+impl MH_STATUS {
+    pub fn ok(self) -> Result<(), MH_STATUS> {
+        if self == MH_STATUS::MH_OK {
+            Ok(())
+        } else {
+            Err(self)
+        }
+    }
+}
+
 /// Structure that holds original address, hook function address, and trampoline
 /// address for a given hook.
-pub struct Hook {
+pub struct MhHook {
     addr: *mut c_void,
     hook_impl: *mut c_void,
     trampoline: *mut c_void,
 }
 
-impl Hook {
+impl MhHook {
     /// # Safety
-    pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Hook {
-        Hook { addr, hook_impl, trampoline: null_mut() }
+    pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Result<Self, MH_STATUS> {
+        static INIT_CELL: LazyLock<()> = LazyLock::new(|| {
+            let status = unsafe { crate::mh::MH_Initialize() };
+            debug!("MH_Initialize: {:?}", status);
+
+            status.ok().expect("Couldn't initialize hooks");
+        });
+
+        LazyLock::force(&INIT_CELL);
+
+        let mut trampoline = null_mut();
+        let status = MH_CreateHook(addr, hook_impl, &mut trampoline);
+        debug!("MH_CreateHook: {:?}", status);
+
+        status.ok()?;
+
+        Ok(Self { addr, hook_impl, trampoline })
     }
 
     pub fn trampoline(&self) -> *mut c_void {
@@ -87,28 +113,26 @@ impl Hook {
 }
 
 /// Wrapper for a queue of hooks to be applied via Minhook.
-pub struct Hooks(Vec<Hook>);
-unsafe impl Send for Hooks {}
-unsafe impl Sync for Hooks {}
+pub struct MhHooks(Vec<MhHook>);
+unsafe impl Send for MhHooks {}
+unsafe impl Sync for MhHooks {}
 
-impl Hooks {
-    pub fn new<F: Fn() -> T, T: IntoIterator<Item = Hook>>(hooks: F) -> Hooks {
-        let status = unsafe { MH_Initialize() };
-        debug!("MH_Initialize: {:?}", status);
+impl MhHooks {
+    pub fn new<T: IntoIterator<Item = MhHook>>(hooks: T) -> Result<Self, MH_STATUS> {
+        Ok(MhHooks(hooks.into_iter().collect::<Vec<_>>()))
+    }
 
-        let hooks = hooks().into_iter().collect::<Vec<_>>();
-
-        unsafe { Hooks::apply_hooks(&hooks) };
-        Hooks(hooks)
+    pub fn apply(&self) {
+        unsafe { MhHooks::apply_hooks(&self.0) };
     }
 
     pub fn unapply(&self) {
-        unsafe { Hooks::unapply_hooks(&self.0) };
+        unsafe { MhHooks::unapply_hooks(&self.0) };
         let status = unsafe { MH_Uninitialize() };
         debug!("MH_Uninitialize: {:?}", status);
     }
 
-    unsafe fn apply_hooks(hooks: &[Hook]) {
+    unsafe fn apply_hooks(hooks: &[MhHook]) {
         for hook in hooks {
             let status = MH_QueueEnableHook(hook.addr);
             debug!("MH_QueueEnable: {:?}", status);
@@ -117,7 +141,7 @@ impl Hooks {
         debug!("MH_ApplyQueued: {:?}", status);
     }
 
-    unsafe fn unapply_hooks(hooks: &[Hook]) {
+    unsafe fn unapply_hooks(hooks: &[MhHook]) {
         for hook in hooks {
             let status = MH_QueueDisableHook(hook.addr);
             debug!("MH_QueueDisable: {:?}", status);
@@ -127,7 +151,7 @@ impl Hooks {
     }
 }
 
-impl Drop for Hooks {
+impl Drop for MhHooks {
     fn drop(&mut self) {
         // self.unapply();
     }

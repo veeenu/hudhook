@@ -1,9 +1,8 @@
 use std::ffi::CString;
 use std::time::Instant;
 
-use detour::RawDetour;
 use imgui::Context;
-use log::{debug, error, trace};
+use log::{debug, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::PCSTR;
@@ -22,6 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::mh::{MhHook, MhHooks};
 
 unsafe fn draw(dc: HDC) {
     // Get the imgui renderer, or create it if it does not exist
@@ -36,9 +36,8 @@ unsafe fn draw(dc: HDC) {
 
             // Init the OpenGL loader (used for grabbing the OpenGL functions)
             gl_loader::init_gl();
-            let renderer = imgui_opengl_renderer::Renderer::new(&mut context, |s| {
-                gl_loader::get_proc_address(s) as _
-            });
+            let renderer =
+                imgui_opengl::Renderer::new(&mut context, |s| gl_loader::get_proc_address(s) as _);
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
@@ -131,7 +130,7 @@ static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 
 struct ImguiRenderer {
     ctx: Context,
-    renderer: imgui_opengl_renderer::Renderer,
+    renderer: imgui_opengl::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
@@ -179,10 +178,10 @@ impl ImguiRenderer {
         self.ctx.io_mut().update_delta_time(now.duration_since(*last_frame));
         *last_frame = now;
 
-        let mut ui = self.ctx.frame();
+        let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
-        self.renderer.render(ui);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        self.renderer.render(&mut self.ctx);
     }
 
     unsafe fn cleanup(&mut self) {}
@@ -228,9 +227,7 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
 }
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiOpenGl3Hooks {
-    hook_opengl_wgl_swap_buffers: RawDetour,
-}
+pub struct ImguiOpenGl3Hooks(MhHooks);
 
 impl ImguiOpenGl3Hooks {
     /// # Safety
@@ -245,35 +242,27 @@ impl ImguiOpenGl3Hooks {
         let hook_opengl_swapbuffers_address = get_opengl_wglswapbuffers_addr();
 
         // Create detours
-        let hook_opengl_wgl_swap_buffers = RawDetour::new(
-            hook_opengl_swapbuffers_address as *const _,
-            imgui_opengl32_wglSwapBuffers_impl as *const _,
+        let hook_opengl_wgl_swap_buffers = MhHook::new(
+            hook_opengl_swapbuffers_address as *mut _,
+            imgui_opengl32_wglSwapBuffers_impl as *mut _,
         )
-        .expect("opengl32.wglSwapBuffers hook");
+        .expect("couldn't create opengl32.wglSwapBuffers hook");
 
         // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wgl_swap_buffers.trampoline()));
 
-        Self { hook_opengl_wgl_swap_buffers }
+        Self(MhHooks::new([hook_opengl_wgl_swap_buffers]).expect("couldn't create hooks"))
     }
 }
 
 impl Hooks for ImguiOpenGl3Hooks {
     unsafe fn hook(&self) {
-        for hook in [&self.hook_opengl_wgl_swap_buffers] {
-            if let Err(e) = hook.enable() {
-                error!("Couldn't enable hook: {e}");
-            }
-        }
+        self.0.apply();
     }
 
     unsafe fn unhook(&mut self) {
-        for hook in [&self.hook_opengl_wgl_swap_buffers] {
-            if let Err(e) = hook.disable() {
-                error!("Couldn't disable hook: {e}");
-            }
-        }
+        self.0.unapply();
 
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();

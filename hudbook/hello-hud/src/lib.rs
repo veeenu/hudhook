@@ -2,7 +2,7 @@ use std::time::Instant;
 
 
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use hudhook::hooks::dx12::ImguiDX12Hooks;
+use hudhook::hooks::dx12::ImguiDx12Hooks;
 use imgui::*;
 
 struct HelloHud {
@@ -17,13 +17,13 @@ impl HelloHud {
 
 impl ImguiRenderLoop for HelloHud {
     fn render(&mut self, ui: &mut Ui, _flags: &ImguiRenderLoopFlags) {
-        Window::new("##hello")
+        ui.window("##hello")
             .size([320., 200.], Condition::Always)
-            .build(ui, || {
+            .build(|| {
                 ui.text("Hello, world!");
                 ui.text(format!("Elapsed: {:?}", self.start_time.elapsed()));
             });
     }
 }
 
-hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDX12Hooks>());
+hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDx12Hooks>());

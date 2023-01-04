@@ -22,7 +22,7 @@ impl Texture {
     // TODO FontAtlasTexture may be too specific?
     pub(crate) fn new(
         dasc: &DeviceAndSwapChain,
-        fonts: &mut imgui::FontAtlasRefMut,
+        fonts: &mut imgui::FontAtlas,
     ) -> Result<Texture, Error> {
         let texture = fonts.build_rgba32_texture();
         let data = texture.data.to_vec();

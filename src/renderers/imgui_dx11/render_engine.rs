@@ -25,7 +25,7 @@ impl RenderEngine {
         let dasc = DeviceAndSwapChain::new(hwnd);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+        let texture = Texture::new(&dasc, ctx.fonts()).expect("Texture");
 
         ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
@@ -41,7 +41,7 @@ impl RenderEngine {
         let dasc = DeviceAndSwapChain::new_with_ptrs(dev, dev_ctx, swap_chain);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+        let texture = Texture::new(&dasc, ctx.fonts()).expect("Texture");
 
         ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
@@ -72,7 +72,7 @@ impl RenderEngine {
         let [width, height] = draw_data.display_size;
 
         if width <= 0. && height <= 0. {
-            return Err(format!("Insufficient display size {} x {}", width, height));
+            return Err(format!("Insufficient display size {width} x {height}"));
         }
 
         let rect = RECT { left: 0, right: width as i32, top: 0, bottom: height as i32 };
@@ -129,9 +129,11 @@ impl RenderEngine {
                             self.dasc.set_shader_resources(self.texture.tex_view());
 
                             trace!("Drawing indexed {count}, {idx_offset}, {vtx_offset}");
-                            dev_ctx.DrawIndexed(count as u32, idx_offset as _, vtx_offset as _);
-
-                            idx_offset += count;
+                            dev_ctx.DrawIndexed(
+                                count as u32,
+                                (cmd_params.idx_offset + idx_offset) as _,
+                                (cmd_params.vtx_offset + vtx_offset) as _,
+                            );
                         },
                         DrawCmd::ResetRenderState => {
                             trace!("Resetting render state");
@@ -144,6 +146,7 @@ impl RenderEngine {
                         },
                     }
                 }
+                idx_offset += cl.idx_buffer().len();
                 vtx_offset += cl.vtx_buffer().len();
             }
         }
