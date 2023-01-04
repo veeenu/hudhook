@@ -8,7 +8,7 @@ First of all, let's create a new Rust project and add `hudhook` as a dependency.
 ```
 cargo init --lib hello-hud
 cd hello-hud
-cargo add hudhook imgui@0.8.2
+cargo add hudhook@0.3 imgui@0.8
 ```
 
 We need to specify that our library is a DLL, so let's add that to `Cargo.toml`:

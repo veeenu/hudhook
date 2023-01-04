@@ -13,4 +13,4 @@
 
 # Injecting a library
 
-- [Injecting a library](./injecting-library/01-injecting.md)
+- [Injecting a library](./injecting-library/injecting.md)
