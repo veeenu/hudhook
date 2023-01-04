@@ -25,7 +25,7 @@ impl RenderEngine {
         let dasc = DeviceAndSwapChain::new(hwnd);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+        let texture = Texture::new(&dasc, ctx.fonts()).expect("Texture");
 
         ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
@@ -41,7 +41,7 @@ impl RenderEngine {
         let dasc = DeviceAndSwapChain::new_with_ptrs(dev, dev_ctx, swap_chain);
         let shader_program = ShaderProgram::new(&dasc).expect("ShaderProgram");
         let buffers = Buffers::new(&dasc);
-        let texture = Texture::new(&dasc, &mut ctx.fonts()).expect("Texture");
+        let texture = Texture::new(&dasc, ctx.fonts()).expect("Texture");
 
         ctx.set_renderer_name(String::from(concat!("imgui-dx11@", env!("CARGO_PKG_VERSION"))));
 
@@ -72,7 +72,7 @@ impl RenderEngine {
         let [width, height] = draw_data.display_size;
 
         if width <= 0. && height <= 0. {
-            return Err(format!("Insufficient display size {} x {}", width, height));
+            return Err(format!("Insufficient display size {width} x {height}"));
         }
 
         let rect = RECT { left: 0, right: width as i32, top: 0, bottom: height as i32 };

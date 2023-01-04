@@ -11,11 +11,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          profile: minimal
-          components: rustfmt
-      - name: Lint
-        run: cargo +nightly fmt --all -- --check
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal -c rustfmt,clippy
+
+      - name: Format
+        run: |
+          cargo +nightly fmt --all -- --check
+
+      - name: Clippy
+        run: |
+          cargo +nightly clippy --all-targets -- -D clippy::all

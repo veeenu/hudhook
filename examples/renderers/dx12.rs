@@ -201,7 +201,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
                 ui.selectable("test5");
             });
 
-            if let Some(_) = ui.begin_combo("##combo", "test") {
+            if ui.begin_combo("##combo", "test").is_some() {
                 ui.selectable("test1");
                 ui.selectable("test2");
                 ui.selectable_config("test3").selected(true).build();

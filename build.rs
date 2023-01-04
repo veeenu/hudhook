@@ -11,13 +11,13 @@ fn main() {
     let sys = parts[2];
 
     if sys != "windows" {
-        panic!("Platform '{}' not supported.", sys);
+        panic!("Platform '{sys}' not supported.");
     }
 
     let hde = match arch {
         "i686" => "hde/hde32.c",
         "x86_64" => "hde/hde64.c",
-        _ => panic!("Architecture '{}' not supported.", arch),
+        _ => panic!("Architecture '{arch}' not supported."),
     };
 
     let mh_src_dir = Path::new(&root_dir).join("vendor/minhook/src");

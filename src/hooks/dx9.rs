@@ -200,9 +200,9 @@ impl ImguiRenderer {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
 
-        let mut ui = self.ctx.frame();
+        let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(&mut ui, &self.flags);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
         let draw_data = self.ctx.render();
         self.renderer.render(draw_data).unwrap();
     }

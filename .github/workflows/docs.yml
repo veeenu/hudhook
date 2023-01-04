@@ -31,14 +31,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          profile: minimal
-
-      - name: Install mdBook
-        run: cargo install mdbook
+      - name: Install Rust toolchain and mdbook
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+          cargo install mdbook
 
       - name: Build documentation
         run: |

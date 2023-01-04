@@ -473,8 +473,8 @@ impl ImguiRenderer {
 
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;
-        let mut ui = ctx.frame();
-        unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(&mut ui, &self.flags);
+        let ui = ctx.frame();
+        unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui, &self.flags);
         let draw_data = ctx.render();
 
         let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
