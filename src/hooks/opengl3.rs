@@ -36,9 +36,8 @@ unsafe fn draw(dc: HDC) {
 
             // Init the OpenGL loader (used for grabbing the OpenGL functions)
             gl_loader::init_gl();
-            let renderer = imgui_opengl_renderer::Renderer::new(&mut context, |s| {
-                gl_loader::get_proc_address(s) as _
-            });
+            let renderer =
+                imgui_opengl::Renderer::new(&mut context, |s| gl_loader::get_proc_address(s) as _);
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
@@ -131,7 +130,7 @@ static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 
 struct ImguiRenderer {
     ctx: Context,
-    renderer: imgui_opengl_renderer::Renderer,
+    renderer: imgui_opengl::Renderer,
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
