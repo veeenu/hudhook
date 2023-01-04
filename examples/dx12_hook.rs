@@ -2,7 +2,7 @@
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui::{Condition, Window};
+use imgui::Condition;
 struct Dx12HookExample;
 
 impl Dx12HookExample {
@@ -10,7 +10,7 @@ impl Dx12HookExample {
         println!("Initializing");
         hudhook::utils::alloc_console();
         #[cfg(feature = "simplelog")]
-        hudhook::utils::simplelog();
+        hudhook::utils::simplelog()
 
         Dx12HookExample
     }
@@ -18,7 +18,7 @@ impl Dx12HookExample {
 
 impl ImguiRenderLoop for Dx12HookExample {
     fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
-        Window::new("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(ui, || {
+        ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");
             ui.text("This...is...imgui-rs!");
