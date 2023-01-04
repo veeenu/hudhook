@@ -260,11 +260,11 @@ mod tests {
 
         let pbt32 =
             unsafe { get_process_by_title32("Untitled - Notepad\0I don't care about this stuff") };
-        println!("{:?}", pbt32);
+        println!("{pbt32:?}");
 
         let pbt64 =
             unsafe { get_process_by_title64("Untitled - Notepad\0I don't care about this stuff") };
-        println!("{:?}", pbt64);
+        println!("{pbt64:?}");
 
         child.kill().expect("Couldn't kill notepad");
 
@@ -278,10 +278,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(500));
 
         let pbn32 = unsafe { get_process_by_name32("Notepad.exe\0I don't care about this stuff") };
-        println!("{:?}", pbn32);
+        println!("{pbn32:?}");
 
         let pbn64 = unsafe { get_process_by_name64("Notepad.exe\0I don't care about this stuff") };
-        println!("{:?}", pbn64);
+        println!("{pbn64:?}");
 
         child.kill().expect("Couldn't kill notepad");
 

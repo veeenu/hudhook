@@ -72,7 +72,7 @@ impl RenderEngine {
         let [width, height] = draw_data.display_size;
 
         if width <= 0. && height <= 0. {
-            return Err(format!("Insufficient display size {} x {}", width, height));
+            return Err(format!("Insufficient display size {width} x {height}"));
         }
 
         let rect = RECT { left: 0, right: width as i32, top: 0, bottom: height as i32 };
