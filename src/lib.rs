@@ -59,10 +59,10 @@
 //!
 //! impl ImguiRenderLoop for MyRenderLoop {
 //!     fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
-//!         imgui::Window::new("My first render loop")
+//!         ui.window("My first render loop")
 //!             .position([0., 0.], imgui::Condition::FirstUseEver)
 //!             .size([320., 200.], imgui::Condition::FirstUseEver)
-//!             .build(ui, || {
+//!             .build(|| {
 //!                 ui.text("Hello, hello!");
 //!             });
 //!     }
