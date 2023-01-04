@@ -33,9 +33,9 @@ use imgui::*;
 
 impl ImguiRenderLoop for HelloHud {
     fn render(&mut self, ui: &mut Ui, _flags: &ImguiRenderLoopFlags) {
-        Window::new("##hello")
+        ui.window("##hello")
             .size([320., 200.], Condition::Always)
-            .build(ui, || {
+            .build(|| {
                 ui.text("Hello, world!");
                 ui.text(format!("Elapsed: {:?}", self.start_time.elapsed()));
             });
