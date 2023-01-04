@@ -2,7 +2,7 @@
 
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui::{Condition, Window};
+use imgui::Condition;
 struct Dx11HookExample;
 
 impl Dx11HookExample {
@@ -18,7 +18,7 @@ impl Dx11HookExample {
 
 impl ImguiRenderLoop for Dx11HookExample {
     fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
-        Window::new("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(ui, || {
+        ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");
             ui.text("This...is...imgui-rs!");
