@@ -7,7 +7,7 @@ use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 
 use hudhook::renderers::imgui_dx11::RenderEngine;
-use imgui::{Condition, Window};
+use imgui::Condition;
 use log::LevelFilter;
 use simplelog::*;
 use windows::core::PCSTR;
@@ -62,12 +62,12 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         )
     }; // lpParam
 
-    let mut imgui = imgui::Context::create();
-    imgui.set_ini_filename(None);
-    imgui.io_mut().display_size = [800., 600.];
+    let mut ctx = imgui::Context::create();
+    ctx.set_ini_filename(None);
+    ctx.io_mut().display_size = [800., 600.];
 
     eprintln!("Creating renderer");
-    let mut renderer = RenderEngine::new(handle, &mut imgui);
+    let mut renderer = RenderEngine::new(handle, &mut ctx);
 
     let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
 
@@ -92,8 +92,8 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             diq.ClearStoredMessages(DXGI_DEBUG_ALL);
         }
 
-        let ui = imgui.frame();
-        Window::new("Hello world").size([640.0, 480.0], Condition::Always).build(&ui, || {
+        let ui = ctx.frame();
+        ui.window("Hello world").size([640.0, 480.0], Condition::Always).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");
             ui.text("This...is...imgui-rs!");
@@ -101,25 +101,25 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             let mouse_pos = ui.io().mouse_pos;
             ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
 
-            imgui::ListBox::new("##listbox").size([300., 150.]).build(&ui, || {
-                imgui::Selectable::new("test1").build(&ui);
-                imgui::Selectable::new("test2").build(&ui);
-                imgui::Selectable::new("test3").selected(true).build(&ui);
-                imgui::Selectable::new("test4").build(&ui);
-                imgui::Selectable::new("test5").build(&ui);
+            imgui::ListBox::new("##listbox").size([300., 150.]).build(ui, || {
+                ui.selectable("test1");
+                ui.selectable("test2");
+                ui.selectable_config("test3").selected(true).build();
+                ui.selectable("test4");
+                ui.selectable("test5");
             });
 
-            imgui::ComboBox::new("##combo").preview_value("test").build(&ui, || {
-                imgui::Selectable::new("test1").build(&ui);
-                imgui::Selectable::new("test2").build(&ui);
-                imgui::Selectable::new("test3").selected(true).build(&ui);
-                imgui::Selectable::new("test4").build(&ui);
-                imgui::Selectable::new("test5").build(&ui);
-            });
+            if let Some(_) = ui.begin_combo("##combo", "test") {
+                ui.selectable("test1");
+                ui.selectable("test2");
+                ui.selectable_config("test3").selected(true).build();
+                ui.selectable("test4");
+                ui.selectable("test5");
+            };
             ui.open_popup("##combo");
         });
 
-        renderer.render_draw_data(ui.render()).unwrap();
+        renderer.render_draw_data(ctx.render()).unwrap();
 
         eprintln!("Present...");
         renderer.present();

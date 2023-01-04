@@ -9,7 +9,10 @@ pub(crate) mod common;
 pub mod dx11;
 pub mod dx12;
 pub mod dx9;
-pub mod opengl3;
+
+// TODO Choose whether to switch to a different, supported backend or to drop
+// OpenGL support entirely.
+// pub mod opengl3;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
 

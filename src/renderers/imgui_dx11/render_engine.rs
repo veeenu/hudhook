@@ -129,9 +129,11 @@ impl RenderEngine {
                             self.dasc.set_shader_resources(self.texture.tex_view());
 
                             trace!("Drawing indexed {count}, {idx_offset}, {vtx_offset}");
-                            dev_ctx.DrawIndexed(count as u32, idx_offset as _, vtx_offset as _);
-
-                            idx_offset += count;
+                            dev_ctx.DrawIndexed(
+                                count as u32,
+                                (cmd_params.idx_offset + idx_offset) as _,
+                                (cmd_params.vtx_offset + vtx_offset) as _,
+                            );
                         },
                         DrawCmd::ResetRenderState => {
                             trace!("Resetting render state");
@@ -144,6 +146,7 @@ impl RenderEngine {
                         },
                     }
                 }
+                idx_offset += cl.idx_buffer().len();
                 vtx_offset += cl.vtx_buffer().len();
             }
         }
