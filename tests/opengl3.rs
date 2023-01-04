@@ -6,7 +6,7 @@ use std::time::Duration;
 use harness::opengl3::Opengl3Harness;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
-use imgui::{Condition, Window};
+use imgui::Condition;
 use simplelog::*;
 
 #[test]
