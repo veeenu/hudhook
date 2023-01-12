@@ -16,15 +16,13 @@ use windows::w;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION,
-};
+use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
-use windows::Win32::Graphics::Dxgi::Common::*;
+use windows::Win32::Graphics::Dxgi::{Common::*, IDXGIFactory1, CreateDXGIFactory1, IDXGISwapChain, DXGIGetDebugInterface1, IDXGIInfoQueue};
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, IDXGIFactory, DXGI_SWAP_CHAIN_DESC, DXGI_USAGE_RENDER_TARGET_OUTPUT, *,
+    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -622,7 +620,7 @@ impl DummyHwnd {
                 0,
                 100,
                 100,
-                None,
+                HWND_MESSAGE,
                 None,
                 wndclass.hInstance,
                 null(),
@@ -652,7 +650,7 @@ impl Drop for DummyHwnd {
 /// Creates a swap chain + device instance and looks up its
 /// vtable to find the address.
 fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, ResizeBuffersType) {
-    let factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }.unwrap();
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
     let mut dev: Option<ID3D12Device> = None;
@@ -670,8 +668,6 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
 
     let dummy_hwnd = DummyHwnd::new();
-    // let mut p_device: Option<ID3D11Device> = None;
-    // let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
     if let Err(e) = unsafe {
         factory
