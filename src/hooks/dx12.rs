@@ -701,37 +701,6 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         }
     }
 
-    // unsafe {
-    //     D3D11CreateDeviceAndSwapChain(
-    //         None,
-    //         D3D_DRIVER_TYPE_HARDWARE,
-    //         None,
-    //         D3D11_CREATE_DEVICE_FLAG(0),
-    //         &[D3D_FEATURE_LEVEL_11_0],
-    //         D3D11_SDK_VERSION,
-    //         &DXGI_SWAP_CHAIN_DESC {
-    //             BufferDesc: DXGI_MODE_DESC {
-    //                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-    //                 ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-    //                 Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-    //                 ..Default::default()
-    //             },
-    //             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-    //             BufferCount: 1,
-    //             OutputWindow: GetDesktopWindow(),
-    //             Windowed: BOOL(1),
-    //             SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-    //             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },
-    //             ..Default::default()
-    //         },
-    //         &mut p_swap_chain,
-    //         &mut p_device,
-    //         null_mut(),
-    //         &mut p_context,
-    //     )
-    //     .expect("D3D11CreateDeviceAndSwapChain failed");
-    // }
-
     let swap_chain = p_swap_chain.unwrap();
 
     let present_ptr = swap_chain.vtable().Present;
