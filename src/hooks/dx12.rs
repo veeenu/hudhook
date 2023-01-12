@@ -18,8 +18,9 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
-use windows::Win32::Graphics::Dxgi::{Common::*, IDXGIFactory1, CreateDXGIFactory1, IDXGISwapChain, DXGIGetDebugInterface1, IDXGIInfoQueue};
+use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue, IDXGISwapChain,
     IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
