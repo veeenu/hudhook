@@ -71,14 +71,44 @@ where
     let mut io = imgui_renderer.io_mut();
     match umsg {
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
+            fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
+                match VIRTUAL_KEY(wparam) {
+                    VK_SHIFT => unsafe {
+                        match MapVirtualKeyA(
+                            ((lparam & 0x00ff0000) >> 16) as u32,
+                            MAPVK_VSC_TO_VK_EX,
+                        ) {
+                            0 => VIRTUAL_KEY(wparam),
+                            i => VIRTUAL_KEY(i as _),
+                        }
+                    },
+                    VK_CONTROL => {
+                        if lparam & 0x01000000 != 0 {
+                            VK_RCONTROL
+                        } else {
+                            VK_LCONTROL
+                        }
+                    },
+                    VK_MENU => {
+                        if lparam & 0x01000000 != 0 {
+                            VK_RMENU
+                        } else {
+                            VK_LMENU
+                        }
+                    },
+                    _ => VIRTUAL_KEY(wparam),
+                }
+            }
+
             let pressed = (state == WM_KEYDOWN) || (state == WM_SYSKEYDOWN);
-            io.keys_down[wparam] = pressed;
+            let key_pressed = map_vkey(wparam as _, lparam as _);
+            io.keys_down[key_pressed.0 as usize] = pressed;
 
             // According to the winit implementation [1], it's ok to check twice, and the
             // logic isn't flawed either.
             //
             // [1] https://github.com/imgui-rs/imgui-rs/blob/b1e66d050e84dbb2120001d16ce59d15ef6b5303/imgui-winit-support/src/lib.rs#L401-L404
-            let key_pressed = VIRTUAL_KEY(wparam as u16);
+            // let key_pressed = VIRTUAL_KEY(wparam as u16); // key pressed already mapped above
             match key_pressed {
                 VK_CONTROL | VK_LCONTROL | VK_RCONTROL => io.key_ctrl = pressed,
                 VK_SHIFT | VK_LSHIFT | VK_RSHIFT => io.key_shift = pressed,
