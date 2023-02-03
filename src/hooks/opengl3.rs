@@ -1,16 +1,18 @@
-use std::ffi::CString;
+use std::ffi::{CString, c_void, OsStr};
+use std::os::windows::prelude::OsStrExt;
 use std::time::Instant;
 
 use imgui::Context;
 use log::{debug, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::PCSTR;
+use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, FARPROC, PROC,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
-use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress, LoadLibraryW};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -23,6 +25,29 @@ use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 
+unsafe fn get_proc_address(function_string: &str) -> *const c_void {
+    let mut opengl_wide_string: Vec<u16> = OsStr::new("opengl32.dll")
+    .encode_wide()
+    .collect();
+    opengl_wide_string.push(0);
+
+    let module = LoadLibraryW(PCWSTR(opengl_wide_string.as_ptr())).unwrap();
+
+    let function_c_string = CString::new(function_string).unwrap();
+    let function_bytes_with_nul: &[u8] = function_c_string.as_bytes_with_nul();
+
+    let function_name_ptr: *const u8 = function_bytes_with_nul.as_ptr() as *const u8;
+
+    let wgl_proc_address: PROC = wglGetProcAddress(PCSTR(function_name_ptr));
+    
+    if wgl_proc_address.is_none() {
+        let proc_address: FARPROC = GetProcAddress(module, PCSTR(function_name_ptr));
+        proc_address.unwrap() as _
+    } else {
+        wgl_proc_address.unwrap() as _
+    }
+}
+
 unsafe fn draw(dc: HDC) {
     // Get the imgui renderer, or create it if it does not exist
     let mut imgui_renderer = IMGUI_RENDERER
@@ -34,10 +59,8 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            // Init the OpenGL loader (used for grabbing the OpenGL functions)
-            gl_loader::init_gl();
             let renderer =
-                imgui_opengl::Renderer::new(&mut context, |s| gl_loader::get_proc_address(s) as _);
+                imgui_opengl::Renderer::new(&mut context, |s| get_proc_address(s) as _);
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
