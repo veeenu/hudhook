@@ -125,21 +125,15 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
-    if IMGUI_RENDERER.get().is_some() {
-        match IMGUI_RENDERER.get_mut().unwrap().try_lock() {
-            Some(imgui_renderer) => imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-                IMGUI_RENDER_LOOP.get().unwrap(),
-            ),
-            None => {
-                debug!("Could not lock in WndProc");
-                DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            },
-        }
+    if let Some(Some(imgui_renderer)) = IMGUI_RENDERER.get_mut().map(|m| m.try_lock()) {
+        imgui_wnd_proc_impl(
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            imgui_renderer,
+            IMGUI_RENDER_LOOP.get().unwrap(),
+        )
     } else {
         debug!("WndProc called before hook was set");
         DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
