@@ -125,7 +125,7 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
-    if let Some(Some(imgui_renderer)) = IMGUI_RENDERER.get_mut().map(|m| m.try_lock()) {
+    if let Some(imgui_renderer) = IMGUI_RENDERER.get_mut().and_then(|m| m.try_lock()) {
         imgui_wnd_proc_impl(
             hwnd,
             umsg,
