@@ -29,7 +29,7 @@ use crate::renderers::imgui_dx9;
 
 unsafe fn draw(this: &IDirect3DDevice9) {
     let mut imgui_renderer = IMGUI_RENDERER
-        .get_or_insert_with(|| {
+        .get_or_init(|| {
             let mut context = imgui::Context::create();
             context.set_ini_filename(None);
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
@@ -87,7 +87,9 @@ unsafe extern "system" fn imgui_dx9_reset_impl(
         (*present_params).BackBufferHeight
     );
 
-    IMGUI_RENDERER = None;
+    if let Some(renderer) = IMGUI_RENDERER.take() {
+        renderer.lock().cleanup();
+    }
 
     let (_, _, trampoline_reset) =
         TRAMPOLINE.get().expect("IDirect3DDevice9::Reset trampoline uninitialized");
@@ -123,21 +125,15 @@ unsafe extern "system" fn imgui_wnd_proc(
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
 ) -> LRESULT {
-    if IMGUI_RENDERER.is_some() {
-        match IMGUI_RENDERER.as_mut().unwrap().try_lock() {
-            Some(imgui_renderer) => imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-                IMGUI_RENDER_LOOP.get().unwrap(),
-            ),
-            None => {
-                debug!("Could not lock in WndProc");
-                DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            },
-        }
+    if let Some(imgui_renderer) = IMGUI_RENDERER.get_mut().and_then(|m| m.try_lock()) {
+        imgui_wnd_proc_impl(
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            imgui_renderer,
+            IMGUI_RENDER_LOOP.get().unwrap(),
+        )
     } else {
         debug!("WndProc called before hook was set");
         DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
@@ -164,7 +160,7 @@ unsafe extern "system" fn imgui_dx9_present_impl(
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
+static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
 
 struct ImguiRenderer {
@@ -207,7 +203,13 @@ impl ImguiRenderer {
         self.renderer.render(draw_data).unwrap();
     }
 
-    unsafe fn cleanup(&mut self) {}
+    unsafe fn cleanup(&mut self) {
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        SetWindowLongPtrA(self.renderer.get_hwnd(), GWLP_WNDPROC, self.wnd_proc as usize as isize);
+
+        #[cfg(target_arch = "x86")]
+        SetWindowLongA(self.renderer.get_hwnd(), GWLP_WNDPROC, self.wnd_proc as usize as i32);
+    }
 }
 
 impl ImguiWindowsEventHandler for ImguiRenderer {
