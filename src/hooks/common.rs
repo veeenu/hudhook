@@ -108,7 +108,6 @@ where
             // logic isn't flawed either.
             //
             // [1] https://github.com/imgui-rs/imgui-rs/blob/b1e66d050e84dbb2120001d16ce59d15ef6b5303/imgui-winit-support/src/lib.rs#L401-L404
-            // let key_pressed = VIRTUAL_KEY(wparam as u16); // key pressed already mapped above
             match key_pressed {
                 VK_CONTROL | VK_LCONTROL | VK_RCONTROL => io.key_ctrl = pressed,
                 VK_SHIFT | VK_LSHIFT | VK_RSHIFT => io.key_shift = pressed,
