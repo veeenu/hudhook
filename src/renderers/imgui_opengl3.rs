@@ -17,6 +17,9 @@ unsafe fn get_opengl3_lib() -> HINSTANCE {
     LoadLibraryW(PCWSTR(opengl_wide_string.as_ptr() as _)).unwrap()
 }
 
+/// # Safety
+///
+/// Help me out lol
 pub unsafe fn get_proc_address(function_string: CString) -> *const c_void {
     let module = OPENGL3_LIB.get_or_init(|| Mutex::new(get_opengl3_lib())).lock();
 
