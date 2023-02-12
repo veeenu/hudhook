@@ -6,15 +6,14 @@ use parking_lot::Mutex;
 use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
-use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
 static mut OPENGL3_LIB: OnceCell<Mutex<HINSTANCE>> = OnceCell::new();
 
 unsafe fn get_opengl3_lib() -> HINSTANCE {
-    let mut opengl_wide_string: Vec<u16> = OsStr::new("opengl32.dll").encode_wide().collect();
-    opengl_wide_string.push(0);
+    let opengl3_cstring = CString::new("opengl32.dll").unwrap();
 
-    LoadLibraryW(PCWSTR(opengl_wide_string.as_ptr() as _)).unwrap()
+    LoadLibraryA(PCSTR(opengl3_cstring.as_ptr() as _)).unwrap()
 }
 
 /// # Safety
