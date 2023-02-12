@@ -1,9 +1,8 @@
-use std::ffi::{c_void, CString, OsStr};
-use std::os::windows::prelude::OsStrExt;
+use std::ffi::{c_void, CString};
 
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{PCSTR, PCWSTR};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
