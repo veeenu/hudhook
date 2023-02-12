@@ -35,7 +35,9 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            let renderer = imgui_opengl::Renderer::new(&mut context, |s| get_proc_address(s) as _);
+            let renderer = imgui_opengl::Renderer::new(&mut context, |s| {
+                get_proc_address(CString::new(s).unwrap()) as _
+            });
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
