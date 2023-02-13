@@ -1,13 +1,12 @@
 use std::ffi::{c_void, CString};
 
 use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
-static mut OPENGL3_LIB: OnceCell<Mutex<HINSTANCE>> = OnceCell::new();
+static mut OPENGL3_LIB: OnceCell<HINSTANCE> = OnceCell::new();
 
 unsafe fn get_opengl3_lib() -> HINSTANCE {
     let opengl3_cstring = CString::new("opengl32.dll").unwrap();
@@ -19,7 +18,7 @@ unsafe fn get_opengl3_lib() -> HINSTANCE {
 ///
 /// Help me out lol
 pub unsafe fn get_proc_address(function_string: CString) -> *const c_void {
-    let module = OPENGL3_LIB.get_or_init(|| Mutex::new(get_opengl3_lib())).lock();
+    let module = OPENGL3_LIB.get_or_init(|| get_opengl3_lib());
 
     if let Some(wgl_proc_address) = wglGetProcAddress(PCSTR(function_string.as_ptr() as _)) {
         wgl_proc_address as _
