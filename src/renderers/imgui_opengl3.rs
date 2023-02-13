@@ -6,7 +6,7 @@ use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
-static mut OPENGL3_LIB: OnceCell<HINSTANCE> = OnceCell::new();
+static OPENGL3_LIB: OnceCell<HINSTANCE> = OnceCell::new();
 
 unsafe fn get_opengl3_lib() -> HINSTANCE {
     let opengl3_cstring = CString::new("opengl32.dll").unwrap();
