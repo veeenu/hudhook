@@ -16,7 +16,7 @@ unsafe fn get_opengl3_lib() -> HINSTANCE {
 
 /// # Safety
 ///
-/// Help me out lol
+/// Undefined behaviour
 pub unsafe fn get_proc_address(function_string: CString) -> *const c_void {
     let module = OPENGL3_LIB.get_or_init(|| get_opengl3_lib());
 
