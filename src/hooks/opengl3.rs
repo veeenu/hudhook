@@ -22,6 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
+use crate::renderers::imgui_opengl3::get_proc_address;
 
 unsafe fn draw(dc: HDC) {
     // Get the imgui renderer, or create it if it does not exist
@@ -34,10 +35,9 @@ unsafe fn draw(dc: HDC) {
             // Initialize the render loop with the context
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
 
-            // Init the OpenGL loader (used for grabbing the OpenGL functions)
-            gl_loader::init_gl();
-            let renderer =
-                imgui_opengl::Renderer::new(&mut context, |s| gl_loader::get_proc_address(s) as _);
+            let renderer = imgui_opengl::Renderer::new(&mut context, |s| {
+                get_proc_address(CString::new(s).unwrap()) as _
+            });
 
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
