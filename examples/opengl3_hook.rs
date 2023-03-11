@@ -46,6 +46,7 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
             .with_thread_ids(true)
             .with_file(true)
             .with_line_number(true)
+            .with_thread_names(true)
             .init();
 
         trace!("DllMain()");
