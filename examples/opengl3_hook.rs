@@ -31,7 +31,7 @@ impl ImguiRenderLoop for HookYou {
 
 use hudhook::reexports::*;
 use hudhook::*;
-use tracing::info;
+use tracing::{info, trace};
 /// Entry point created by the `hudhook` library.
 #[no_mangle]
 pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) {
@@ -48,7 +48,7 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
             tracing::subscriber::set_global_default(subscriber).unwrap();
             info!("Ayy");
 
-            loop {}
+            // loop {}
         });
     }
 }
