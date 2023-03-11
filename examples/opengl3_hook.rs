@@ -41,14 +41,13 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
         // trace!("DllMain()");
         std::thread::spawn(move || {
             let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
+            hooks.hook();
+            hudhook::lifecycle::global_state::set_hooks(hooks);
 
             let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
             tracing_subscriber::fmt().with_writer(non_blocking).init();
-
+            println!("PRINTY");
             trace!("Testy");
-
-            hooks.hook();
-            hudhook::lifecycle::global_state::set_hooks(hooks);
         });
     }
 }
