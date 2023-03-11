@@ -29,4 +29,19 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-hudhook::hudhook!(HookYou::new().into_hook::<ImguiOpenGl3Hooks>());
+use hudhook::log::*;
+use hudhook::reexports::*;
+use hudhook::*;
+/// Entry point created by the `hudhook` library.
+#[no_mangle]
+pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) {
+    if reason == DLL_PROCESS_ATTACH {
+        hudhook::lifecycle::global_state::set_module(hmodule);
+        trace!("DllMain()");
+        std::thread::spawn(move || {
+            let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
+            hooks.hook();
+            hudhook::lifecycle::global_state::set_hooks(hooks);
+        });
+    }
+}
