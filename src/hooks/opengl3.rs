@@ -4,7 +4,7 @@ use std::time::Instant;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
