@@ -38,17 +38,17 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
     if reason == DLL_PROCESS_ATTACH {
         hudhook::lifecycle::global_state::set_module(hmodule);
 
-        // construct a subscriber that prints formatted traces to stdout
-        let subscriber = tracing_subscriber::FmtSubscriber::new();
-        // use that subscriber to process traces emitted after this point
-        tracing::subscriber::set_global_default(subscriber).unwrap();
-        info!("Ayy");
-
         // trace!("DllMain()");
         std::thread::spawn(move || {
             let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
             hooks.hook();
             hudhook::lifecycle::global_state::set_hooks(hooks);
+
+            let subscriber = tracing_subscriber::FmtSubscriber::new();
+            tracing::subscriber::set_global_default(subscriber).unwrap();
+            info!("Ayy");
+
+            loop {}
         });
     }
 }
