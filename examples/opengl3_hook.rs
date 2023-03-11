@@ -29,8 +29,6 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-use std::io::{stdout, Write};
-
 use hudhook::reexports::*;
 use hudhook::*;
 use tracing::trace;
@@ -47,11 +45,6 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
             hudhook::lifecycle::global_state::set_hooks(hooks);
 
             let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
-
-            let stdout = std::io::stdout();
-            let mut handle = stdout.lock();
-
-            handle.write_all(b"hello world").unwrap();
             tracing_subscriber::fmt().with_writer(non_blocking).init();
             println!("PRINTY");
             trace!("Testy");
