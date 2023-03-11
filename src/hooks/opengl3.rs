@@ -4,7 +4,7 @@ use std::time::Instant;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -111,7 +111,7 @@ unsafe extern "system" fn imgui_wnd_proc(
 
 #[allow(non_snake_case)]
 unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
-    trace!("opengl32.wglSwapBuffers invoked");
+    info!("opengl32.wglSwapBuffers invoked");
 
     // Draw ImGui
     draw(dc);
