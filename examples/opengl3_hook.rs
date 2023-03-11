@@ -31,6 +31,7 @@ impl ImguiRenderLoop for HookYou {
 
 use hudhook::reexports::*;
 use hudhook::*;
+use tracing::metadata::LevelFilter;
 use tracing::{info, trace};
 /// Entry point created by the `hudhook` library.
 #[no_mangle]
@@ -38,18 +39,21 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
     if reason == DLL_PROCESS_ATTACH {
         hudhook::lifecycle::global_state::set_module(hmodule);
 
-        let subscriber = tracing_subscriber::FmtSubscriber::new();
-        tracing::subscriber::set_global_default(subscriber).unwrap();
+        // Set up logging
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_max_level(LevelFilter::TRACE)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true)
+            .init();
 
-        // trace!("DllMain()");
+        trace!("DllMain()");
         std::thread::spawn(move || {
             let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
             hooks.hook();
             hudhook::lifecycle::global_state::set_hooks(hooks);
-
             info!("Ayy");
-
-            // loop {}
         });
     }
 }
