@@ -2,7 +2,7 @@
 name = "hudhook"
 version = "0.4.0"
 edition = "2021"
-description = "A graphics API hook with dear imgui render loop. Supports DirectX 11 and 12."
+description = "A graphics API hook with dear imgui render loop. Supports DirectX 9, 11, 12, and OpenGL 3"
 homepage = "https://github.com/veeenu/hudhook"
 repository = "https://github.com/veeenu/hudhook"
 documentation = "https://veeenu.github.io/hudhook"
