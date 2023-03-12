@@ -124,6 +124,8 @@ pub mod renderers;
 pub mod utils {
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use windows::Win32::System::Console::{CONSOLE_MODE, ENABLE_VIRTUAL_TERMINAL_PROCESSING};
+
     static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
     /// Allocate a Windows console.
@@ -131,6 +133,22 @@ pub mod utils {
         if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
             unsafe {
                 crate::reexports::AllocConsole();
+
+                // Get the stdout handle
+                let stdout_handle =
+                    crate::reexports::GetStdHandle(crate::reexports::STD_OUTPUT_HANDLE).unwrap();
+
+                // call GetConsoleMode to get the current mode of the console
+                let mut current_console_mode = CONSOLE_MODE(0);
+                crate::reexports::GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
+
+                // Create a new console mode with the virtual terminal processing bit set (this
+                // allows us to use ANSI escape sequences for colors)
+                let new_console_mode =
+                    CONSOLE_MODE(current_console_mode.0 | ENABLE_VIRTUAL_TERMINAL_PROCESSING.0);
+
+                // Call SetConsoleMode to set the new mode
+                crate::reexports::SetConsoleMode(stdout_handle, new_console_mode).unwrap();
             }
         }
     }
@@ -220,7 +238,10 @@ pub mod lifecycle {
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;
-    pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
+    pub use windows::Win32::System::Console::{
+        AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
+        STD_OUTPUT_HANDLE,
+    };
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 }
 

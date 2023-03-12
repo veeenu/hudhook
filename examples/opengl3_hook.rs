@@ -39,7 +39,6 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
 
         // Set up logging
         tracing_subscriber::fmt()
-            .with_ansi(false)
             .with_max_level(LevelFilter::TRACE)
             .with_thread_ids(true)
             .with_file(true)
