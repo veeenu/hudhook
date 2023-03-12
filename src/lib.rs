@@ -135,21 +135,6 @@ pub mod utils {
         }
     }
 
-    /// Initialize `simplelog` with sane defaults.
-    #[cfg(feature = "simplelog")]
-    pub fn simplelog() {
-        use log::*;
-        use simplelog::*;
-
-        TermLogger::init(
-            LevelFilter::Trace,
-            Config::default(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        )
-        .ok();
-    }
-
     /// Free the previously allocated Windows console.
     pub fn free_console() {
         if CONSOLE_ALLOCATED.swap(false, Ordering::SeqCst) {
