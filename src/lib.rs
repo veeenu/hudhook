@@ -264,9 +264,9 @@ pub mod reexports {
 #[macro_export]
 macro_rules! hudhook {
     ($hooks:expr) => {
-        use hudhook::log::*;
         use hudhook::reexports::*;
         use hudhook::*;
+        use tracing::*;
 
         /// Entry point created by the `hudhook` library.
         #[no_mangle]

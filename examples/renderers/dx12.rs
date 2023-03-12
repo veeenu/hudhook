@@ -8,7 +8,7 @@ use std::ptr::{null, null_mut};
 
 use hudhook::renderers::imgui_dx12::RenderEngine;
 use imgui::Condition;
-use log::trace;
+use tracing::trace;
 use windows::core::{Interface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -21,10 +21,6 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[no_mangle]
 pub fn main(_argc: i32, _argv: *const *const u8) {
-    use simplelog::*;
-    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
-        .ok();
-
     let hinstance = unsafe { GetModuleHandleA(PCSTR(null())).unwrap() };
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,

@@ -7,7 +7,6 @@ use harness::opengl3::Opengl3Harness;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
-use simplelog::*;
 
 #[test]
 fn test_imgui_opengl3() {
@@ -34,9 +33,6 @@ fn test_imgui_opengl3() {
             });
         }
     }
-
-    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
-        .ok();
 
     let opengl3_harness = Opengl3Harness::new("OpenGL3 hook example");
     thread::sleep(Duration::from_millis(500));

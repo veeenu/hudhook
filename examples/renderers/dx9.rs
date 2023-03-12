@@ -27,8 +27,6 @@ use std::ptr::{null, null_mut};
 
 use hudhook::renderers::imgui_dx9::Renderer;
 use imgui::Condition;
-use log::LevelFilter;
-use simplelog::{ColorChoice, Config, TermLogger, TerminalMode};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
@@ -91,9 +89,6 @@ unsafe fn setup_dx_context(hwnd: HWND) -> (IDirect3D9, IDirect3DDevice9) {
 
 #[no_mangle]
 pub fn main(_argc: i32, _argv: *const *const u8) {
-    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
-        .unwrap();
-
     let hinstance = unsafe { GetModuleHandleA(None).unwrap() };
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
