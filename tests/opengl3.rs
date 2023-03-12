@@ -17,7 +17,6 @@ fn test_imgui_opengl3() {
     impl Opengl3HookExample {
         fn new() -> Self {
             tracing_subscriber::fmt()
-                .with_ansi(false)
                 .with_max_level(LevelFilter::TRACE)
                 .with_thread_ids(true)
                 .with_file(true)
