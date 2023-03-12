@@ -130,6 +130,7 @@ pub mod utils {
     pub fn alloc_console() {
         if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
             unsafe {
+                // Allocate a console
                 crate::reexports::AllocConsole();
 
                 // Get the stdout handle
