@@ -1,4 +1,4 @@
-use log::trace;
+use tracing::trace;
 use windows::core::Error;
 use windows::Win32::Graphics::Direct3D::D3D11_SRV_DIMENSION_TEXTURE2D;
 use windows::Win32::Graphics::Direct3D11::{

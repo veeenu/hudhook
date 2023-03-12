@@ -232,8 +232,6 @@ pub mod lifecycle {
     }
 }
 
-pub use log;
-
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;

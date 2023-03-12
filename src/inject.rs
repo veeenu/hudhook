@@ -5,7 +5,7 @@ use std::mem::{self, size_of};
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 
-use log::*;
+use tracing::debug;
 use widestring::{U16CStr, U16CString};
 use windows::core::{Error, Result, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};

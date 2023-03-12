@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::ptr::null_mut;
 use std::sync::LazyLock;
 
-use log::*;
+use tracing::debug;
 
 #[allow(non_camel_case_types)]
 #[must_use]
