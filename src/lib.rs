@@ -141,14 +141,12 @@ pub mod utils {
                 let mut current_console_mode = crate::reexports::CONSOLE_MODE(0);
                 crate::reexports::GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
 
-                // Create a new console mode with the virtual terminal processing bit set (this
-                // allows us to use ANSI escape sequences for colors)
-                let new_console_mode = crate::reexports::CONSOLE_MODE(
-                    current_console_mode.0 | crate::reexports::ENABLE_VIRTUAL_TERMINAL_PROCESSING.0,
-                );
+                // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING for ANSI
+                // escape sequences
+                current_console_mode.0 |= crate::reexports::ENABLE_VIRTUAL_TERMINAL_PROCESSING.0;
 
                 // Call SetConsoleMode to set the new mode
-                crate::reexports::SetConsoleMode(stdout_handle, new_console_mode).unwrap();
+                crate::reexports::SetConsoleMode(stdout_handle, current_console_mode).unwrap();
             }
         }
     }
