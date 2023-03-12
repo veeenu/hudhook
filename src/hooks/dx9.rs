@@ -3,7 +3,7 @@ use std::mem;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{trace, debug};
+use tracing::{debug, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
