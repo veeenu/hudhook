@@ -51,7 +51,6 @@ pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut 
             let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
             hooks.hook();
             hudhook::lifecycle::global_state::set_hooks(hooks);
-            info!("Ayy");
         });
     }
 }
