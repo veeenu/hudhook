@@ -7,6 +7,7 @@ use harness::opengl3::Opengl3Harness;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
+use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_opengl3() {
@@ -16,6 +17,15 @@ fn test_imgui_opengl3() {
         fn new() -> Self {
             println!("Initializing");
             hudhook::utils::alloc_console();
+
+            tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_max_level(LevelFilter::TRACE)
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_names(true)
+                .init();
 
             Opengl3HookExample
         }
