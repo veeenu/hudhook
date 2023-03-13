@@ -132,7 +132,13 @@ pub mod utils {
             unsafe {
                 // Allocate a console
                 crate::reexports::AllocConsole();
+            }
+        }
+    }
 
+    pub fn enable_console_colors() {
+        if CONSOLE_ALLOCATED.load(Ordering::SeqCst) {
+            unsafe {
                 // Get the stdout handle
                 let stdout_handle =
                     crate::reexports::GetStdHandle(crate::reexports::STD_OUTPUT_HANDLE).unwrap();
