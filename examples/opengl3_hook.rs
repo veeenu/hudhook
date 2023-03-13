@@ -9,6 +9,7 @@ impl HookYou {
     fn new() -> Self {
         println!("Initializing");
         hudhook::utils::alloc_console();
+        hudhook::utils::enable_console_colors();
 
         HookYou
     }
