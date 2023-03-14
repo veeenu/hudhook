@@ -16,14 +16,6 @@ fn test_imgui_opengl3() {
 
     impl Opengl3HookExample {
         fn new() -> Self {
-            tracing_subscriber::fmt()
-                .with_max_level(LevelFilter::TRACE)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .with_thread_names(true)
-                .init();
-
             trace!("Initializing");
             hudhook::utils::alloc_console();
 
