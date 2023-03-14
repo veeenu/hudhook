@@ -9,7 +9,6 @@ impl HookYou {
     fn new() -> Self {
         println!("Initializing");
         hudhook::utils::alloc_console();
-        hudhook::utils::enable_console_colors();
 
         HookYou
     }
@@ -28,31 +27,4 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-use hudhook::reexports::*;
-use hudhook::*;
-use tracing::metadata::LevelFilter;
-use tracing::trace;
-/// Entry point created by the `hudhook` library.
-/// # Safety
-#[no_mangle]
-pub unsafe extern "stdcall" fn DllMain(hmodule: HINSTANCE, reason: u32, _: *mut std::ffi::c_void) {
-    if reason == DLL_PROCESS_ATTACH {
-        hudhook::lifecycle::global_state::set_module(hmodule);
-
-        // Set up logging
-        tracing_subscriber::fmt()
-            .with_max_level(LevelFilter::TRACE)
-            .with_thread_ids(true)
-            .with_file(true)
-            .with_line_number(true)
-            .with_thread_names(true)
-            .init();
-
-        trace!("DllMain()");
-        std::thread::spawn(move || {
-            let hooks: Box<dyn hooks::Hooks> = { HookYou::new().into_hook::<ImguiOpenGl3Hooks>() };
-            hooks.hook();
-            hudhook::lifecycle::global_state::set_hooks(hooks);
-        });
-    }
-}
+hudhook::hudhook!(HookYou::new().into_hook::<ImguiOpenGl3Hooks>());
