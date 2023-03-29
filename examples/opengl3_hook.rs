@@ -3,12 +3,23 @@
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
+use tracing::metadata::LevelFilter;
+use tracing_subscriber::FmtSubscriber;
 struct HookYou;
 
 impl HookYou {
     fn new() -> Self {
         println!("Initializing");
         hudhook::utils::alloc_console();
+        hudhook::utils::enable_console_colors();
+
+        tracing_subscriber::fmt()
+            .with_max_level(LevelFilter::TRACE)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true)
+            .with_thread_names(true)
+            .init();
 
         HookYou
     }

@@ -7,6 +7,7 @@ use harness::dx11::Dx11Harness;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, StyleColor};
+use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_dx11() {
@@ -16,6 +17,14 @@ fn test_imgui_dx11() {
         fn new() -> Self {
             println!("Initializing");
             hudhook::utils::alloc_console();
+
+            tracing_subscriber::fmt()
+                .with_max_level(LevelFilter::TRACE)
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_names(true)
+                .init();
 
             Dx11HookExample
         }
