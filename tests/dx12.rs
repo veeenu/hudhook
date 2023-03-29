@@ -7,6 +7,7 @@ use harness::dx12::Dx12Harness;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
+use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_dx12() {
@@ -16,6 +17,14 @@ fn test_imgui_dx12() {
         fn new() -> Self {
             println!("Initializing");
             hudhook::utils::alloc_console();
+
+            tracing_subscriber::fmt()
+                .with_max_level(LevelFilter::TRACE)
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_names(true)
+                .init();
 
             Dx12HookExample
         }
