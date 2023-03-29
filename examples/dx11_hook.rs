@@ -4,7 +4,6 @@ use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::FmtSubscriber;
 struct Dx11HookExample;
 
 impl Dx11HookExample {

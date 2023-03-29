@@ -4,7 +4,6 @@ use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
-use tracing_subscriber::FmtSubscriber;
 struct HookYou;
 
 impl HookYou {

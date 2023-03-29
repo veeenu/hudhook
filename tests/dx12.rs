@@ -18,14 +18,6 @@ fn test_imgui_dx12() {
             println!("Initializing");
             hudhook::utils::alloc_console();
 
-            tracing_subscriber::fmt()
-                .with_max_level(LevelFilter::TRACE)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .with_thread_names(true)
-                .init();
-
             Dx12HookExample
         }
     }
@@ -42,6 +34,14 @@ fn test_imgui_dx12() {
             });
         }
     }
+
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .init();
 
     let dx12_harness = Dx12Harness::new("DX12 hook example");
     thread::sleep(Duration::from_millis(500));

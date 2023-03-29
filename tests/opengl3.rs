@@ -19,14 +19,6 @@ fn test_imgui_opengl3() {
             trace!("Initializing");
             hudhook::utils::alloc_console();
 
-            tracing_subscriber::fmt()
-                .with_max_level(LevelFilter::TRACE)
-                .with_thread_ids(true)
-                .with_file(true)
-                .with_line_number(true)
-                .with_thread_names(true)
-                .init();
-
             Opengl3HookExample
         }
     }
@@ -43,6 +35,14 @@ fn test_imgui_opengl3() {
             });
         }
     }
+
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .init();
 
     let opengl3_harness = Opengl3Harness::new("OpenGL3 hook example");
     thread::sleep(Duration::from_millis(500));
