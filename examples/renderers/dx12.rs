@@ -8,6 +8,7 @@ use std::ptr::{null, null_mut};
 
 use hudhook::renderers::imgui_dx12::RenderEngine;
 use imgui::Condition;
+use tracing::metadata::LevelFilter;
 use tracing::trace;
 use windows::core::{Interface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
@@ -21,6 +22,14 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[no_mangle]
 pub fn main(_argc: i32, _argv: *const *const u8) {
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .init();
+
     let hinstance = unsafe { GetModuleHandleA(PCSTR(null())).unwrap() };
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
