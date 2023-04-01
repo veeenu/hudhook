@@ -1,0 +1,20 @@
+[package]
+name = "dinput8_hook_d3d12"
+version = "0.1.0"
+edition = "2021"
+authors = ["AuroraSilvaX"]
+
+[lib]
+name = "dinput8"
+crate-type = ["cdylib"]
+
+[dependencies]
+windows = { version = "0.39.0", features = [
+    "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+hudhook = { path = "../../", features = ["simplelog"] }
+simplelog = "0.12.1"

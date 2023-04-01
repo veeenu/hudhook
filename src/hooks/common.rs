@@ -162,7 +162,7 @@ where
 
     let wnd_proc = imgui_renderer.wnd_proc();
     let should_block_messages =
-        imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
+        imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io_mut());
     drop(imgui_renderer);
 
     if should_block_messages {
@@ -217,7 +217,7 @@ pub trait ImguiRenderLoop {
 
     /// If this function returns true, the WndProc function will not call the
     /// procedure of the parent window.
-    fn should_block_messages(&self, _io: &Io) -> bool {
+    fn should_block_messages(&self, _io: &mut Io) -> bool {
         false
     }
 

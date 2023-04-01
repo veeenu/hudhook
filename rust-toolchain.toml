@@ -1,2 +1,4 @@
 [toolchain]
-channel = "nightly"
+channel = "nightly-2023-03-03"
+
+# Nightly: 1.70.0 (1 June, 2023, 61 days left) does not support #![feature(once_cell)]
