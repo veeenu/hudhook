@@ -2,7 +2,7 @@
 name = "dinput8_hook"
 version = "0.1.0"
 edition = "2021"
-authors = ["AuroraSilvaX", "Andrea Venuta <venutawebdesign@gmail.com>"]
+authors = ["vSylva"]
 
 [lib]
 name = "dinput8"

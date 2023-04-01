@@ -21,9 +21,7 @@ struct Dx12HookExample;
 
 impl Dx12HookExample {
     fn new() -> Self {
-        println!("Initializing");
         hudhook::utils::alloc_console();
-
         let config = ConfigBuilder::new()
             .set_level_color(Level::Error, Some(Color::Magenta))
             .set_level_color(Level::Trace, Some(Color::Green))
@@ -100,9 +98,10 @@ extern "stdcall" fn DllMain(
         DLL_PROCESS_ATTACH => {
             thread::spawn(move || {
                 thread::sleep(std::time::Duration::from_secs(5));
+                // commandqueue nullptr
                 hudhook::lifecycle::global_state::set_module(hmodule);
                 trace!("DllMain()");
-                std::thread::spawn(move || {
+                thread::spawn(move || {
                     let hooks: Box<dyn hooks::Hooks> =
                         { Dx12HookExample::new().into_hook::<ImguiDx12Hooks>() };
                     unsafe { hooks.hook() };

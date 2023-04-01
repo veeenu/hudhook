@@ -2,7 +2,7 @@
 name = "dinput8_hook_d3d12"
 version = "0.1.0"
 edition = "2021"
-authors = ["AuroraSilvaX"]
+authors = ["vSylva"]
 
 [lib]
 name = "dinput8"
