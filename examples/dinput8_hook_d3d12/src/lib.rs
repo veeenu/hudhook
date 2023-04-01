@@ -101,17 +101,14 @@ extern "stdcall" fn DllMain(
                 // commandqueue nullptr
                 hudhook::lifecycle::global_state::set_module(hmodule);
                 trace!("DllMain()");
-                thread::spawn(move || {
-                    let hooks: Box<dyn hooks::Hooks> =
-                        { Dx12HookExample::new().into_hook::<ImguiDx12Hooks>() };
-                    unsafe { hooks.hook() };
-                    hudhook::lifecycle::global_state::set_hooks(hooks);
-                });
+                let hooks: Box<dyn hooks::Hooks> =
+                    { Dx12HookExample::new().into_hook::<ImguiDx12Hooks>() };
+                unsafe { hooks.hook() };
+                hudhook::lifecycle::global_state::set_hooks(hooks);
             });
         },
         DLL_PROCESS_DETACH => (),
         _ => (),
     }
-
     BOOL::from(true)
 }
