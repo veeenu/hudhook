@@ -1,0 +1,19 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+
+cache:
+  directories:
+  - SDL2-2.0.8
+
+before_install:
+  - wget https://www.libsdl.org/release/SDL2-2.0.8.tar.gz -O SDL2-2.0.8.tar.gz
+  - tar -xzvf SDL2-2.0.8.tar.gz
+install:
+  - (cd SDL2-2.0.8 && ./configure && make && sudo make install)
+
+script:
+  - cargo build --all-targets --verbose
+  - cargo test --verbose
