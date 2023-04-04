@@ -241,6 +241,7 @@ pub mod lifecycle {
 
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
+    pub use tracing;
     pub use windows::Win32::Foundation::HINSTANCE;
     pub use windows::Win32::System::Console::{
         AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
@@ -275,8 +276,8 @@ pub mod reexports {
 macro_rules! hudhook {
     ($hooks:expr) => {
         use hudhook::reexports::*;
+        use hudhook::tracing::*;
         use hudhook::*;
-        use tracing::*;
 
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
