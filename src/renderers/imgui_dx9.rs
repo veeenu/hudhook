@@ -104,8 +104,7 @@ impl Renderer {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("imgui-dx9@", env!("CARGO_PKG_VERSION"))));
 
-        let mut device_creation_parameters =
-            core::mem::zeroed();
+        let mut device_creation_parameters = core::mem::zeroed();
         device.GetCreationParameters(&mut device_creation_parameters).unwrap();
 
         let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
