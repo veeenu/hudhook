@@ -105,7 +105,7 @@ impl Renderer {
         ctx.set_renderer_name(String::from(concat!("imgui-dx9@", env!("CARGO_PKG_VERSION"))));
 
         let mut device_creation_parameters =
-            D3DDEVICE_CREATION_PARAMETERS { ..core::mem::zeroed() };
+            core::mem::zeroed();
         device.GetCreationParameters(&mut device_creation_parameters).unwrap();
 
         let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
@@ -124,7 +124,7 @@ impl Renderer {
     /// Gets the window width & height via the backbuffer
     pub fn get_window_rect(&self) -> Option<RECT> {
         unsafe {
-            let mut rect: RECT = RECT { ..core::mem::zeroed() };
+            let mut rect: RECT = core::mem::zeroed();
             if GetWindowRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
                 Some(rect)
             } else {
@@ -473,10 +473,10 @@ impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
         match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => {
-                let mut mat_world: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut mat_view: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut mat_projection: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut viewport: D3DVIEWPORT9 = D3DVIEWPORT9 { ..core::mem::zeroed() };
+                let mut mat_world: D3DMATRIX = core::mem::zeroed();
+                let mut mat_view: D3DMATRIX = core::mem::zeroed();
+                let mut mat_projection: D3DMATRIX = core::mem::zeroed();
+                let mut viewport: D3DVIEWPORT9 = core::mem::zeroed();
 
                 device.GetTransform(D3DTS_WORLDMATRIX, &mut mat_world)?;
                 device.GetTransform(D3DTS_VIEW, &mut mat_view)?;

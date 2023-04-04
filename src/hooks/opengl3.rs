@@ -138,7 +138,7 @@ struct ImguiRenderer {
 
 fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
     unsafe {
-        let mut rect: RECT = RECT { ..core::mem::zeroed() };
+        let mut rect: RECT = core::mem::zeroed();
         if GetWindowRect(*hwnd, &mut rect) != BOOL(0) {
             Some(rect)
         } else {
