@@ -1,4 +1,4 @@
-#![feature(once_cell)]
+#![feature(lazy_cell)]
 
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
