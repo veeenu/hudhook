@@ -1,4 +1,4 @@
-#![feature(once_cell)]
+#![feature(lazy_cell)]
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
