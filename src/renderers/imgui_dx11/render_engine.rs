@@ -60,8 +60,8 @@ impl RenderEngine {
         self.dasc.swap_chain()
     }
 
-    pub fn get_window_rect(&self) -> Option<RECT> {
-        self.dasc.get_window_rect()
+    pub fn get_client_rect(&self) -> Option<RECT> {
+        self.dasc.get_client_rect()
     }
 
     pub fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<(), String> {

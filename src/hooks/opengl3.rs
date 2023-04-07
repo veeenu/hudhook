@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsChild, GWLP_WNDPROC,
+    DefWindowProcW, GetClientRect, GetCursorPos, GetForegroundWindow, IsChild, GWLP_WNDPROC,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
@@ -136,10 +136,10 @@ struct ImguiRenderer {
     game_hwnd: HWND,
 }
 
-fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
+fn get_client_rect(hwnd: &HWND) -> Option<RECT> {
     unsafe {
         let mut rect: RECT = RECT { ..core::mem::zeroed() };
-        if GetWindowRect(*hwnd, &mut rect) != BOOL(0) {
+        if GetClientRect(*hwnd, &mut rect) != BOOL(0) {
             Some(rect)
         } else {
             None
@@ -151,7 +151,7 @@ static mut LAST_FRAME: Option<Mutex<Instant>> = None;
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
-        if let Some(rect) = get_window_rect(&self.game_hwnd) {
+        if let Some(rect) = get_client_rect(&self.game_hwnd) {
             let mut io = self.ctx.io_mut();
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
             let mut pos = POINT { x: 0, y: 0 };

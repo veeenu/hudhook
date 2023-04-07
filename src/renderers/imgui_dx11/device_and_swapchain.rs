@@ -15,7 +15,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 const DEVICE_FLAGS: D3D11_CREATE_DEVICE_FLAG = D3D11_CREATE_DEVICE_DEBUG;
 
@@ -133,11 +133,11 @@ impl DeviceAndSwapChain {
         }
     }
 
-    pub(crate) fn get_window_rect(&self) -> Option<RECT> {
+    pub(crate) fn get_client_rect(&self) -> Option<RECT> {
         unsafe {
             let sd = self.swap_chain.GetDesc().expect("GetDesc");
             let mut rect: RECT = Default::default();
-            if GetWindowRect(sd.OutputWindow, &mut rect as _) != BOOL(0) {
+            if GetClientRect(sd.OutputWindow, &mut rect as _) != BOOL(0) {
                 Some(rect)
             } else {
                 None
