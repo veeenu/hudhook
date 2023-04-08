@@ -11,7 +11,7 @@ use windows::Win32::Foundation::{
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
-    D3DPRESENT_PARAMETERS, D3DSURFACE_DESC, D3DSWAPEFFECT_DISCARD, D3DVIEWPORT9, D3D_SDK_VERSION,
+    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, RGNDATA};
 #[cfg(target_arch = "x86")]
@@ -99,14 +99,14 @@ unsafe extern "system" fn imgui_dx9_reset_impl(
 unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HRESULT {
     trace!("IDirect3DDevice9::EndScene invoked");
 
-    let mut viewport = D3DVIEWPORT9 { ..core::mem::zeroed() };
+    let mut viewport = core::mem::zeroed();
     this.GetViewport(&mut viewport).unwrap();
     let render_target_surface = this.GetRenderTarget(0).unwrap();
-    let mut render_target_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
+    let mut render_target_desc = core::mem::zeroed();
     render_target_surface.GetDesc(&mut render_target_desc).unwrap();
 
     let backbuffer_surface = this.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
-    let mut backbuffer_desc = D3DSURFACE_DESC { ..core::mem::zeroed() };
+    let mut backbuffer_desc = core::mem::zeroed();
     backbuffer_surface.GetDesc(&mut backbuffer_desc).unwrap();
 
     trace!("Viewport: {:?}", viewport);

@@ -104,8 +104,7 @@ impl Renderer {
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("imgui-dx9@", env!("CARGO_PKG_VERSION"))));
 
-        let mut device_creation_parameters =
-            D3DDEVICE_CREATION_PARAMETERS { ..core::mem::zeroed() };
+        let mut device_creation_parameters = core::mem::zeroed();
         device.GetCreationParameters(&mut device_creation_parameters).unwrap();
 
         let surface = device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap();
@@ -473,10 +472,10 @@ impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
         match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => {
-                let mut mat_world: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut mat_view: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut mat_projection: D3DMATRIX = D3DMATRIX { ..core::mem::zeroed() };
-                let mut viewport: D3DVIEWPORT9 = D3DVIEWPORT9 { ..core::mem::zeroed() };
+                let mut mat_world: D3DMATRIX = core::mem::zeroed();
+                let mut mat_view: D3DMATRIX = core::mem::zeroed();
+                let mut mat_projection: D3DMATRIX = core::mem::zeroed();
+                let mut viewport: D3DVIEWPORT9 = core::mem::zeroed();
 
                 device.GetTransform(D3DTS_WORLDMATRIX, &mut mat_world)?;
                 device.GetTransform(D3DTS_VIEW, &mut mat_view)?;
