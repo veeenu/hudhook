@@ -241,7 +241,6 @@ pub mod lifecycle {
 
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
-    pub use tracing;
     pub use windows::Win32::Foundation::HINSTANCE;
     pub use windows::Win32::System::Console::{
         AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
@@ -249,6 +248,7 @@ pub mod reexports {
     };
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 }
+pub use tracing;
 
 /// Entry point for the library.
 ///
