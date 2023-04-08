@@ -239,6 +239,8 @@ pub mod lifecycle {
     }
 }
 
+pub use tracing;
+
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;
@@ -248,7 +250,6 @@ pub mod reexports {
     };
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 }
-pub use tracing;
 
 /// Entry point for the library.
 ///
