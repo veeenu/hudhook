@@ -1,9 +1,13 @@
 use std::hint;
+use std::mem::transmute;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use imgui::{Context, Io, Key, Ui};
-use parking_lot::MutexGuard;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use log::{debug, info};
+use once_cell::sync::OnceCell;
+use parking_lot::{Mutex, MutexGuard};
+use windows::Win32::Foundation::{BOOL, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
@@ -12,6 +16,11 @@ use super::dx12::ImguiDx12Hooks;
 use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
+use crate::mh::{MH_ApplyQueued, MH_QueueEnableHook, MhHook};
+
+static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
+static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
+static SET_CURSOR_POS_HOOKED: AtomicBool = AtomicBool::new(false);
 
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -69,6 +78,17 @@ where
     T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
 {
     let mut io = imgui_renderer.io_mut();
+
+    let is_mouse_message = umsg >= WM_MOUSEFIRST && umsg <= WM_MOUSELAST;
+    let is_keyboard_message = umsg >= WM_KEYFIRST && umsg <= WM_KEYLAST;
+
+    if umsg != WM_INPUT && !is_mouse_message && !is_keyboard_message {
+        return LRESULT(0);
+    }
+
+    println!("Mouse: {:?}", is_mouse_message);
+    println!("Keyboard: {:?}", is_keyboard_message);
+
     match umsg {
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
             fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
@@ -163,10 +183,121 @@ where
     let wnd_proc = imgui_renderer.wnd_proc();
     let should_block_messages =
         imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
-    drop(imgui_renderer);
 
     if should_block_messages {
+        if !GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) {
+            unsafe {
+                let mouse_pos = imgui_renderer.io_mut().mouse_pos;
+                LAST_CURSOR_POS.take();
+                LAST_CURSOR_POS
+                    .set(Mutex::new(POINT { x: mouse_pos[0] as i32, y: mouse_pos[1] as i32 }))
+                    .unwrap();
+                // SetCursor(LoadCursorW(HINSTANCE(0), IDC_ARROW).unwrap());
+            }
+            imgui_renderer.io_mut().mouse_draw_cursor = true;
+        }
+        GAME_MOUSE_BLOCKED.store(true, Ordering::Relaxed);
+
+        drop(imgui_renderer);
         return LRESULT(1);
+    } else {
+        if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) {
+            unsafe {
+                // SetCursor(HCURSOR(0));
+            }
+            imgui_renderer.io_mut().mouse_draw_cursor = false;
+        }
+
+        GAME_MOUSE_BLOCKED.store(false, Ordering::Relaxed);
+
+        if !SET_CURSOR_POS_HOOKED.load(Ordering::Relaxed) {
+            SET_CURSOR_POS_HOOKED.store(true, Ordering::Relaxed);
+
+            unsafe {
+                let set_cursor_pos_address: SetCursorPosFn =
+                    std::mem::transmute(SetCursorPos as usize);
+                let get_cursor_pos_address: GetCursorPosFn =
+                    std::mem::transmute(GetCursorPos as usize);
+                let clip_cursor_address: ClipCursorFn = std::mem::transmute(ClipCursor as usize);
+
+                let post_message_a_address: PostMessageFn =
+                    std::mem::transmute(PostMessageA::<HWND, WPARAM, LPARAM> as usize);
+                let post_message_w_address: PostMessageFn =
+                    std::mem::transmute(PostMessageW::<HWND, WPARAM, LPARAM> as usize);
+
+                let peek_message_a_address: PeekMessageFn =
+                    std::mem::transmute(PeekMessageA::<HWND> as usize);
+                let peek_message_w_address: PeekMessageFn =
+                    std::mem::transmute(PeekMessageW::<HWND> as usize);
+
+                let set_cursor_pos =
+                    MhHook::new(set_cursor_pos_address as *mut _, set_cursor_pos_impl as *mut _)
+                        .expect("couldn't create SetCursorPos hook");
+                let get_cursor_pos =
+                    MhHook::new(get_cursor_pos_address as *mut _, get_cursor_pos_impl as *mut _)
+                        .expect("couldn't create GetCursorPos hook");
+                let clip_cursor =
+                    MhHook::new(clip_cursor_address as *mut _, clip_cursor_impl as *mut _)
+                        .expect("couldn't create GetCursorPos hook");
+
+                let post_message_a =
+                    MhHook::new(post_message_a_address as *mut _, post_message_a_impl as *mut _)
+                        .expect("couldn't create PostMessageA hook");
+                let post_message_w =
+                    MhHook::new(post_message_w_address as *mut _, post_message_w_impl as *mut _)
+                        .expect("couldn't create PostMessageW hook");
+
+                let peek_message_a =
+                    MhHook::new(peek_message_a_address as *mut _, peek_message_a_impl as *mut _)
+                        .expect("couldn't create PeekMessageA hook");
+                let peek_message_w =
+                    MhHook::new(peek_message_w_address as *mut _, peek_message_w_impl as *mut _)
+                        .expect("couldn't create PeekMessageW hook");
+
+                SET_CURSOR_POS_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(set_cursor_pos.trampoline()));
+                GET_CURSOR_POS_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(get_cursor_pos.trampoline()));
+                CLIP_CURSOR_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(clip_cursor.trampoline()));
+
+                POST_MESSAGE_A_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(post_message_a.trampoline()));
+                POST_MESSAGE_W_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(post_message_w.trampoline()));
+
+                PEEK_MESSAGE_A_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(peek_message_a.trampoline()));
+                PEEK_MESSAGE_W_TRAMPOLINE
+                    .get_or_init(|| std::mem::transmute(peek_message_w.trampoline()));
+
+                let status = MH_QueueEnableHook(set_cursor_pos.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(get_cursor_pos.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(clip_cursor.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(post_message_a.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(post_message_w.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(peek_message_a.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_QueueEnableHook(peek_message_w.addr);
+                debug!("MH_QueueEnable: {:?}", status);
+
+                let status = MH_ApplyQueued();
+                debug!("MH_ApplyQueued: {:?}", status);
+            }
+        }
+
+        drop(imgui_renderer);
     }
 
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
@@ -271,4 +402,134 @@ impl<'a> Drop for FenceGuard<'a> {
     fn drop(&mut self) {
         self.0 .0.store(false, Ordering::SeqCst);
     }
+}
+
+type SetCursorPosFn = unsafe extern "system" fn(x: i32, y: i32) -> BOOL;
+type GetCursorPosFn = unsafe extern "system" fn(lppoint: *mut POINT) -> BOOL;
+type ClipCursorFn = unsafe extern "system" fn(rect: *const RECT) -> BOOL;
+
+type PostMessageFn =
+    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> BOOL;
+type PeekMessageFn = unsafe extern "system" fn(
+    lpmsg: *mut MSG,
+    hwnd: HWND,
+    wmsgfiltermin: u32,
+    wmsgfiltermax: u32,
+    wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
+) -> BOOL;
+
+static SET_CURSOR_POS_TRAMPOLINE: OnceCell<SetCursorPosFn> = OnceCell::new();
+static GET_CURSOR_POS_TRAMPOLINE: OnceCell<GetCursorPosFn> = OnceCell::new();
+static CLIP_CURSOR_TRAMPOLINE: OnceCell<ClipCursorFn> = OnceCell::new();
+
+static POST_MESSAGE_A_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
+static POST_MESSAGE_W_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
+
+static PEEK_MESSAGE_A_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
+static PEEK_MESSAGE_W_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
+
+unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
+    info!("SetCursorPos invoked");
+
+    LAST_CURSOR_POS.get_mut().unwrap().lock().x = x;
+    LAST_CURSOR_POS.get_mut().unwrap().lock().y = y;
+
+    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) {
+        return BOOL::from(true);
+    }
+
+    let trampoline = SET_CURSOR_POS_TRAMPOLINE.get().expect("SetCursorPos unitialized");
+    trampoline(x, y)
+}
+
+unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
+    // info!("GetCursorPos invoked");
+
+    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) {
+        *lppoint = *LAST_CURSOR_POS.get().unwrap().lock();
+
+        return BOOL::from(true);
+    }
+
+    let trampoline = GET_CURSOR_POS_TRAMPOLINE.get().expect("GetCursorPos unitialized");
+    trampoline(lppoint)
+}
+
+unsafe extern "system" fn clip_cursor_impl(mut rect: *const RECT) -> BOOL {
+    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) {
+        rect = std::ptr::null();
+    }
+
+    let trampoline = CLIP_CURSOR_TRAMPOLINE.get().expect("ClipCursor unitialized");
+    trampoline(rect)
+}
+
+unsafe extern "system" fn post_message_a_impl(
+    hwnd: HWND,
+    umsg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> BOOL {
+    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
+        return BOOL::from(true);
+    }
+
+    let trampoline = POST_MESSAGE_A_TRAMPOLINE.get().expect("PostMessageA unitialized");
+    trampoline(hwnd, umsg, wparam, lparam)
+}
+
+unsafe extern "system" fn post_message_w_impl(
+    hwnd: HWND,
+    umsg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> BOOL {
+    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
+        return BOOL::from(true);
+    }
+
+    let trampoline = POST_MESSAGE_W_TRAMPOLINE.get().expect("PostMessageW unitialized");
+    trampoline(hwnd, umsg, wparam, lparam)
+}
+
+unsafe extern "system" fn peek_message_a_impl(
+    lpmsg: *mut MSG,
+    hwnd: HWND,
+    wmsgfiltermin: u32,
+    wmsgfiltermax: u32,
+    wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
+) -> BOOL {
+    let trampoline = PEEK_MESSAGE_A_TRAMPOLINE.get().expect("PeekMessageA unitialized");
+    if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
+        return BOOL::from(false);
+    }
+
+    if !IsWindow((*lpmsg).hwnd).as_bool() && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0) {
+        TranslateMessage(lpmsg);
+
+        (*lpmsg).message = WM_NULL;
+    }
+
+    BOOL::from(true)
+}
+
+unsafe extern "system" fn peek_message_w_impl(
+    lpmsg: *mut MSG,
+    hwnd: HWND,
+    wmsgfiltermin: u32,
+    wmsgfiltermax: u32,
+    wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
+) -> BOOL {
+    let trampoline = PEEK_MESSAGE_W_TRAMPOLINE.get().expect("PeekMessageW unitialized");
+    if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
+        return BOOL::from(false);
+    }
+
+    if !IsWindow((*lpmsg).hwnd).as_bool() && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0) {
+        TranslateMessage(lpmsg);
+
+        (*lpmsg).message = WM_NULL;
+    }
+
+    BOOL::from(true)
 }
