@@ -32,7 +32,7 @@ pub(crate) trait ImguiWindowsEventHandler {
     fn focus(&self) -> bool;
     fn focus_mut(&mut self) -> &mut bool;
 
-    fn wnd_proc(&self) -> WndProcType;
+    // fn wnd_proc(&self) -> WndProcType;
 
     fn setup_io(&mut self) {
         let mut io = ImguiWindowsEventHandler::io_mut(self);
@@ -180,7 +180,7 @@ where
         _ => {},
     };
 
-    let wnd_proc = imgui_renderer.wnd_proc();
+    // let wnd_proc = imgui_renderer.wnd_proc();
     let should_block_messages =
         imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
 
@@ -300,7 +300,9 @@ where
         drop(imgui_renderer);
     }
 
-    unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
+    LRESULT(0)
+    // unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam),
+    // LPARAM(lparam)) }
 }
 
 /// Holds information useful to the render loop which can't be retrieved from

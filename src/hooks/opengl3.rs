@@ -210,9 +210,9 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
         &mut self.flags.focused
     }
 
-    fn wnd_proc(&self) -> WndProcType {
-        self.wnd_proc
-    }
+    // fn wnd_proc(&self) -> WndProcType {
+    //     self.wnd_proc
+    // }
 }
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}

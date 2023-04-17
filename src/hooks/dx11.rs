@@ -148,7 +148,6 @@ unsafe extern "system" fn imgui_wnd_proc(
 struct ImguiRenderer {
     ctx: Context,
     engine: imgui_dx11::RenderEngine,
-    wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     swap_chain: IDXGISwapChain,
 }
@@ -175,22 +174,22 @@ impl ImguiRenderer {
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-            sd.OutputWindow,
-            GWLP_WNDPROC,
-            imgui_wnd_proc as usize as isize,
-        ));
+        // #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        // let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+        //     sd.OutputWindow,
+        //     GWLP_WNDPROC,
+        //     imgui_wnd_proc as usize as isize,
+        // ));
 
-        #[cfg(target_arch = "x86")]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-            sd.OutputWindow,
-            GWLP_WNDPROC,
-            imgui_wnd_proc as usize as i32,
-        ));
+        // #[cfg(target_arch = "x86")]
+        // let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+        //     sd.OutputWindow,
+        //     GWLP_WNDPROC,
+        //     imgui_wnd_proc as usize as i32,
+        // ));
 
         trace!("Renderer initialized");
-        let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
+        let mut renderer = ImguiRenderer { ctx, engine, flags, swap_chain };
 
         ImguiWindowsEventHandler::setup_io(&mut renderer);
 
@@ -250,11 +249,13 @@ impl ImguiRenderer {
         let swap_chain = self.store_swap_chain(swap_chain);
         let desc = swap_chain.GetDesc().unwrap();
 
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
+        // #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        // SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as
+        // usize as isize);
 
-        #[cfg(target_arch = "x86")]
-        SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
+        // #[cfg(target_arch = "x86")]
+        // SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as
+        // usize as i32);
     }
 
     fn ctx(&self) -> &imgui::Context {
@@ -283,9 +284,9 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
         &mut self.flags.focused
     }
 
-    fn wnd_proc(&self) -> WndProcType {
-        self.wnd_proc
-    }
+    // fn wnd_proc(&self) -> WndProcType {
+    //     self.wnd_proc
+    // }
 }
 
 unsafe impl Send for ImguiRenderer {}
