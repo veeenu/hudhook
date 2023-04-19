@@ -3,9 +3,9 @@ use std::mem;
 use std::ptr::null_mut;
 
 use imgui::Context;
-use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::{debug, error, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM,

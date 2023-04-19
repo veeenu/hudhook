@@ -7,7 +7,7 @@ use harness::dx12::Dx12Harness;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::Condition;
-use simplelog::*;
+use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_dx12() {
@@ -35,8 +35,13 @@ fn test_imgui_dx12() {
         }
     }
 
-    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
-        .ok();
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .init();
 
     let dx12_harness = Dx12Harness::new("DX12 hook example");
     thread::sleep(Duration::from_millis(500));

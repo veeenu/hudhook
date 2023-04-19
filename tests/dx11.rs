@@ -7,7 +7,7 @@ use harness::dx11::Dx11Harness;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
 use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
 use imgui::{Condition, StyleColor};
-use simplelog::*;
+use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_dx11() {
@@ -54,8 +54,13 @@ fn test_imgui_dx11() {
         }
     }
 
-    TermLogger::init(LevelFilter::Trace, Config::default(), TerminalMode::Mixed, ColorChoice::Auto)
-        .unwrap();
+    tracing_subscriber::fmt()
+        .with_max_level(LevelFilter::TRACE)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_names(true)
+        .init();
 
     let dx11_harness = Dx11Harness::new("DX11 hook example");
     thread::sleep(Duration::from_millis(500));

@@ -1,6 +1,6 @@
 use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawVert};
-use log::trace;
+use tracing::{error, trace};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
@@ -161,7 +161,7 @@ impl RenderEngine {
 
     pub fn present(&self) {
         if let Err(e) = unsafe { self.dasc.swap_chain().Present(1, 0).ok() } {
-            log::error!("Present: {e}");
+            error!("Present: {e}");
         }
     }
 }
