@@ -28,7 +28,7 @@ use super::dx11::ImguiDx11Hooks;
 use super::dx12::ImguiDx12Hooks;
 use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
-use super::{get_wheel_delta_wparam, Hooks};
+use super::{get_wheel_delta_wparam, hiword, Hooks};
 use crate::mh::{MH_ApplyQueued, MH_QueueEnableHook, MhHook};
 
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
@@ -162,6 +162,14 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
         },
         WM_MBUTTONUP => {
             keys[VK_MBUTTON.0 as usize] = 0x08;
+        },
+        WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+            let button = if hiword(wparam.0 as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            keys[button] = 0x88;
+        },
+        WM_XBUTTONUP => {
+            let button = if hiword(wparam.0 as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            keys[button] = 0x08;
         },
         WM_MOUSEWHEEL => {
             let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
