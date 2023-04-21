@@ -11,6 +11,8 @@ use windows::Win32::Foundation::{
     CloseHandle, BOOL, FILETIME, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT,
     POINT, RECT, WPARAM,
 };
+use windows::Win32::Graphics::Dxgi::DXGI_SWAP_CHAIN_DESC;
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
@@ -197,6 +199,40 @@ pub unsafe fn is_mouse_button_pressed(button: usize) -> bool {
         return is_key_pressed(VK_LBUTTON.0 as usize + button);
     } else {
         is_key_pressed(VK_LBUTTON.0 as usize + button + 1)
+    }
+}
+
+pub unsafe fn update_imgui_io(
+    io: &mut Io,
+    render_loop: &mut Box<dyn ImguiRenderLoop + Send + Sync>,
+) {
+    for i in 0..256 {
+        io.keys_down[i] = is_key_down(i);
+    }
+
+    for i in 0..5 {
+        io.mouse_down[i] = is_mouse_button_down(i);
+    }
+
+    let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
+
+    if char != 0 {
+        io.add_input_character(char as char);
+    }
+
+    io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
+    io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
+
+    if render_loop.should_block_messages(&io) {
+        if !io.mouse_draw_cursor {
+            io.mouse_draw_cursor = true;
+            GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+        }
+    } else {
+        if io.mouse_draw_cursor {
+            io.mouse_draw_cursor = false;
+            GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+        }
     }
 }
 

@@ -32,9 +32,9 @@ use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, is_key_down, is_mouse_button_down, Fence, ImguiRenderLoop, ImguiRenderLoopFlags,
-    ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS, LAST_CURSOR_POS,
-    MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
+    self, is_key_down, is_mouse_button_down, update_imgui_io, Fence, ImguiRenderLoop,
+    ImguiRenderLoopFlags, ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS,
+    LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -408,34 +408,7 @@ impl ImguiRenderer {
 
             let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
 
-            for i in 0..256 {
-                io.keys_down[i] = is_key_down(i);
-            }
-
-            for i in 0..5 {
-                io.mouse_down[i] = is_mouse_button_down(i);
-            }
-
-            let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
-
-            if char != 0 {
-                io.add_input_character(char as char);
-            }
-
-            io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
-            io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
-
-            if render_loop.should_block_messages(&io) {
-                if !io.mouse_draw_cursor {
-                    io.mouse_draw_cursor = true;
-                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
-                }
-            } else {
-                if io.mouse_draw_cursor {
-                    io.mouse_draw_cursor = false;
-                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
-                }
-            }
+            update_imgui_io(io, render_loop);
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()

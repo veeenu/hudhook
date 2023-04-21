@@ -3,7 +3,7 @@ use std::mem;
 use std::ptr::null_mut;
 use std::sync::atomic::Ordering;
 
-use imgui::Context;
+use imgui::{Context, Io};
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -27,8 +27,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
 use crate::hooks::common::{
-    self, is_key_down, is_mouse_button_down, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS,
-    LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
+    self, is_key_down, is_mouse_button_down, update_imgui_io, GAME_MOUSE_BLOCKED, INPUT_CHARACTER,
+    KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
 };
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
@@ -164,38 +164,11 @@ impl ImguiRenderer {
         if let Some(rect) = self.engine.get_client_rect() {
             let mut io = self.ctx_mut().io_mut();
 
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
             let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
 
-            for i in 0..256 {
-                io.keys_down[i] = is_key_down(i);
-            }
+            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            for i in 0..5 {
-                io.mouse_down[i] = is_mouse_button_down(i);
-            }
-
-            let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
-
-            if char != 0 {
-                io.add_input_character(char as char);
-            }
-
-            io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
-            io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
-
-            if render_loop.should_block_messages(&io) {
-                if !io.mouse_draw_cursor {
-                    io.mouse_draw_cursor = true;
-                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
-                }
-            } else {
-                if io.mouse_draw_cursor {
-                    io.mouse_draw_cursor = false;
-                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
-                }
-            }
+            update_imgui_io(io, render_loop);
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
