@@ -1,6 +1,6 @@
 use std::hint;
 use std::mem::size_of;
-use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 
 use imgui::{Context, Io, Key, Ui};
 use log::{debug, info};
@@ -35,6 +35,7 @@ pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
 pub static mut KEYS: OnceCell<Mutex<[usize; 256]>> = OnceCell::new();
 pub static mut MOUSE_WHEEL_DELTA: AtomicI16 = AtomicI16::new(0);
 pub static mut MOUSE_WHEEL_DELTA_H: AtomicI16 = AtomicI16::new(0);
+pub static mut INPUT_CHARACTER: AtomicU8 = AtomicU8::new(0);
 
 pub(crate) trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
@@ -168,7 +169,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
             let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
             MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
         },
-
+        WM_CHAR => INPUT_CHARACTER.store(wparam.0 as u8, Ordering::SeqCst),
         _ => {},
     }
 

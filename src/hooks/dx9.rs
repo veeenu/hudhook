@@ -18,8 +18,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::common::{
-    self, is_key_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA,
-    MOUSE_WHEEL_DELTA_H,
+    self, is_key_down, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS, LAST_CURSOR_POS,
+    MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
 };
 use crate::hooks::common::{is_mouse_button_down, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -152,6 +152,12 @@ impl ImguiRenderer {
 
             for i in 0..5 {
                 io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
+
+            if char != 0 {
+                io.add_input_character(char as char);
             }
 
             io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;

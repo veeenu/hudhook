@@ -33,8 +33,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
     self, is_key_down, is_mouse_button_down, Fence, ImguiRenderLoop, ImguiRenderLoopFlags,
-    ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA,
-    MOUSE_WHEEL_DELTA_H,
+    ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS, LAST_CURSOR_POS,
+    MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -414,6 +414,12 @@ impl ImguiRenderer {
 
             for i in 0..5 {
                 io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
+
+            if char != 0 {
+                io.add_input_character(char as char);
             }
 
             io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
