@@ -1,28 +1,24 @@
 use std::mem;
+use std::sync::atomic::Ordering;
 
 use imgui::Context;
-use log::{debug, trace};
+use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
-};
+use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, RGNDATA};
-#[cfg(target_arch = "x86")]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetDesktopWindow, GetForegroundWindow, IsChild, GWLP_WNDPROC,
+    GetDesktopWindow, GetForegroundWindow, IsChild, SetCursor, HCURSOR,
 };
 
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
+use super::common::{self, is_key_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS};
+use crate::hooks::common::{is_mouse_button_down, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
@@ -35,24 +31,14 @@ unsafe fn draw(this: &IDirect3DDevice9) {
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
             let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
-            #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-                renderer.get_hwnd(),
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as isize,
-            ));
-
-            #[cfg(target_arch = "x86")]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-                renderer.get_hwnd(),
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as i32,
-            ));
+            LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+            common::setup_window_message_handling();
+            unsafe { KEYS.get_or_init(|| Mutex::new([0x08; 256])) };
 
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
                 renderer,
-                wnd_proc,
+
                 flags: ImguiRenderLoopFlags { focused: false },
             }))
         })
@@ -73,9 +59,6 @@ type Dx9PresentFn = unsafe extern "system" fn(
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 unsafe extern "system" fn imgui_dx9_reset_impl(
     this: IDirect3DDevice9,
@@ -119,27 +102,6 @@ unsafe extern "system" fn imgui_dx9_end_scene_impl(this: IDirect3DDevice9) -> HR
     trampoline_end_scene(this)
 }
 
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    umsg: u32,
-    WPARAM(wparam): WPARAM,
-    LPARAM(lparam): LPARAM,
-) -> LRESULT {
-    if let Some(imgui_renderer) = IMGUI_RENDERER.get_mut().and_then(|m| m.try_lock()) {
-        imgui_wnd_proc_impl(
-            hwnd,
-            umsg,
-            WPARAM(wparam),
-            LPARAM(lparam),
-            imgui_renderer,
-            IMGUI_RENDER_LOOP.get().unwrap(),
-        )
-    } else {
-        debug!("WndProc called before hook was set");
-        DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-    }
-}
-
 unsafe extern "system" fn imgui_dx9_present_impl(
     this: IDirect3DDevice9,
     psourcerect: *const RECT,
@@ -166,31 +128,51 @@ static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCel
 struct ImguiRenderer {
     ctx: Context,
     renderer: imgui_dx9::Renderer,
-    wnd_proc: WndProcType,
+
     flags: ImguiRenderLoopFlags,
 }
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
+        let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
+
         if let Some(rect) = self.renderer.get_client_rect() {
             let mut io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            let mut pos = POINT { x: 0, y: 0 };
+            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
+
+            for i in 0..256 {
+                io.keys_down[i] = is_key_down(i);
+            }
+
+            for i in 0..5 {
+                io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            if render_loop.should_block_messages(&io) {
+                if !io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = true;
+                    SetCursor(HCURSOR(0));
+                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+                }
+            } else {
+                if io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = false;
+                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+                }
+            }
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
                 && (active_window == self.renderer.get_hwnd()
                     || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
             {
-                let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool()
-                    && ScreenToClient(self.renderer.get_hwnd(), &mut pos as *mut _).as_bool()
-                {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
-                }
+                ScreenToClient(active_window, &mut pos as *mut _);
+
+                io.mouse_pos[0] = pos.x as f32;
+                io.mouse_pos[1] = pos.y as f32;
             }
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
@@ -198,18 +180,12 @@ impl ImguiRenderer {
 
         let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        render_loop.render(ui, &self.flags);
         let draw_data = self.ctx.render();
         self.renderer.render(draw_data).unwrap();
     }
 
-    unsafe fn cleanup(&mut self) {
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(self.renderer.get_hwnd(), GWLP_WNDPROC, self.wnd_proc as usize as isize);
-
-        #[cfg(target_arch = "x86")]
-        SetWindowLongA(self.renderer.get_hwnd(), GWLP_WNDPROC, self.wnd_proc as usize as i32);
-    }
+    unsafe fn cleanup(&mut self) {}
 }
 
 impl ImguiWindowsEventHandler for ImguiRenderer {
@@ -228,10 +204,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     fn focus_mut(&mut self) -> &mut bool {
         &mut self.flags.focused
     }
-
-    // fn wnd_proc(&self) -> WndProcType {
-    //     self.wnd_proc
-    // }
 }
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}

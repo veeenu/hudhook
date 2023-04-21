@@ -1,15 +1,14 @@
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::null_mut;
+use std::sync::atomic::Ordering;
 
 use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM,
-};
+use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, POINT};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -23,16 +22,13 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-#[cfg(target_arch = "x86")]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{
-    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
-};
+use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
+use crate::hooks::common::{
+    self, is_key_down, is_mouse_button_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS,
+};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -47,9 +43,6 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Data structures and traits
@@ -72,7 +65,7 @@ static TRAMPOLINE: OnceCell<(DXGISwapChainPresentType, DXGISwapChainResizeBuffer
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+pub static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
 
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
@@ -115,37 +108,11 @@ unsafe extern "system" fn imgui_resize_buffers_impl(
     trampoline(swap_chain, buffer_count, width, height, new_format, flags)
 }
 
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    umsg: u32,
-    WPARAM(wparam): WPARAM,
-    LPARAM(lparam): LPARAM,
-) -> LRESULT {
-    match IMGUI_RENDERER.get().map(Mutex::try_lock) {
-        Some(Some(imgui_renderer)) => imgui_wnd_proc_impl(
-            hwnd,
-            umsg,
-            WPARAM(wparam),
-            LPARAM(lparam),
-            imgui_renderer,
-            IMGUI_RENDER_LOOP.get().unwrap(),
-        ),
-        Some(None) => {
-            debug!("Could not lock in WndProc");
-            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        },
-        None => {
-            debug!("WndProc called before hook was set");
-            DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-        },
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Render loops
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct ImguiRenderer {
+pub struct ImguiRenderer {
     ctx: Context,
     engine: imgui_dx11::RenderEngine,
     flags: ImguiRenderLoopFlags,
@@ -169,28 +136,17 @@ impl ImguiRenderer {
         let mut dev_ctx: Option<ID3D11DeviceContext> = None;
         dev.GetImmediateContext(&mut dev_ctx);
         let dev_ctx = dev_ctx.unwrap();
-        let sd = swap_chain.GetDesc().expect("GetDesc");
 
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
-        // #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        // let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-        //     sd.OutputWindow,
-        //     GWLP_WNDPROC,
-        //     imgui_wnd_proc as usize as isize,
-        // ));
+        LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+        unsafe { KEYS.get_or_init(|| Mutex::new([0x08; 256])) };
 
-        // #[cfg(target_arch = "x86")]
-        // let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-        //     sd.OutputWindow,
-        //     GWLP_WNDPROC,
-        //     imgui_wnd_proc as usize as i32,
-        // ));
+        common::setup_window_message_handling();
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, flags, swap_chain };
-
         ImguiWindowsEventHandler::setup_io(&mut renderer);
 
         renderer
@@ -198,6 +154,7 @@ impl ImguiRenderer {
 
     unsafe fn render(&mut self, swap_chain: Option<IDXGISwapChain>) {
         trace!("Present impl: Rendering");
+        let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
 
         let swap_chain = self.store_swap_chain(swap_chain);
         let sd = swap_chain.GetDesc().expect("GetDesc");
@@ -208,18 +165,37 @@ impl ImguiRenderer {
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            let mut pos = POINT { x: 0, y: 0 };
+            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
+
+            for i in 0..256 {
+                io.keys_down[i] = is_key_down(i);
+            }
+
+            for i in 0..5 {
+                io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            if render_loop.should_block_messages(&io) {
+                if !io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = true;
+                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+                }
+            } else {
+                if io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = false;
+                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+                }
+            }
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
                 && (active_window == sd.OutputWindow
                     || IsChild(active_window, sd.OutputWindow).as_bool())
             {
-                let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(sd.OutputWindow, &mut pos as *mut _).as_bool() {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
-                }
+                unsafe { ScreenToClient(active_window, &mut pos as *mut _) };
+
+                io.mouse_pos[0] = pos.x as f32;
+                io.mouse_pos[1] = pos.y as f32;
             }
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
@@ -227,7 +203,8 @@ impl ImguiRenderer {
 
         let ctx = &mut self.ctx;
         let ui = ctx.frame();
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+
+        render_loop.render(ui, &self.flags);
         let draw_data = ctx.render();
 
         if let Err(e) = self.engine.render_draw_data(draw_data) {
@@ -245,18 +222,7 @@ impl ImguiRenderer {
         self.swap_chain.clone()
     }
 
-    unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain>) {
-        let swap_chain = self.store_swap_chain(swap_chain);
-        let desc = swap_chain.GetDesc().unwrap();
-
-        // #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        // SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as
-        // usize as isize);
-
-        // #[cfg(target_arch = "x86")]
-        // SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as
-        // usize as i32);
-    }
+    unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain>) {}
 
     fn ctx(&self) -> &imgui::Context {
         &self.ctx
@@ -283,10 +249,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     fn focus_mut(&mut self) -> &mut bool {
         &mut self.flags.focused
     }
-
-    // fn wnd_proc(&self) -> WndProcType {
-    //     self.wnd_proc
-    // }
 }
 
 unsafe impl Send for ImguiRenderer {}

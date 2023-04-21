@@ -1,4 +1,5 @@
 use std::ffi::CString;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use imgui::Context;
@@ -6,20 +7,17 @@ use log::{debug, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
-};
+use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-#[cfg(target_arch = "x86")]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetClientRect, GetCursorPos, GetForegroundWindow, IsChild, GWLP_WNDPROC,
+    GetClientRect, GetForegroundWindow, IsChild, SetCursor, HCURSOR,
 };
 
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
+use super::common::{
+    self, is_key_down, is_mouse_button_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS,
+};
+use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_opengl3::get_proc_address;
@@ -42,32 +40,21 @@ unsafe fn draw(dc: HDC) {
             // Grab the HWND from the DC
             let hwnd = WindowFromDC(dc);
 
-            // Set the new wnd proc, and assign the old one to a variable for further
-            // storing
-            #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-                hwnd,
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as isize,
-            ));
-            #[cfg(target_arch = "x86")]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-                hwnd,
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as i32,
-            ));
-
             // Create the imgui rendererer
             let mut imgui_renderer = ImguiRenderer {
                 ctx: context,
                 renderer,
-                wnd_proc,
+
                 flags: ImguiRenderLoopFlags { focused: false },
                 game_hwnd: hwnd,
             };
 
+            LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+            unsafe { KEYS.get_or_init(|| Mutex::new([0x08; 256])) };
+
             // Initialize window events on the imgui renderer
             ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
+            common::setup_window_message_handling();
 
             // Return the imgui renderer as a mutex
             Mutex::new(Box::new(imgui_renderer))
@@ -77,37 +64,7 @@ unsafe fn draw(dc: HDC) {
     imgui_renderer.render();
 }
 
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-
 type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
-
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    umsg: u32,
-    WPARAM(wparam): WPARAM,
-    LPARAM(lparam): LPARAM,
-) -> LRESULT {
-    if IMGUI_RENDERER.is_some() {
-        match IMGUI_RENDERER.as_mut().unwrap().try_lock() {
-            Some(imgui_renderer) => imgui_wnd_proc_impl(
-                hwnd,
-                umsg,
-                WPARAM(wparam),
-                LPARAM(lparam),
-                imgui_renderer,
-                IMGUI_RENDER_LOOP.get().unwrap(),
-            ),
-            None => {
-                debug!("Could not lock in WndProc");
-                DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            },
-        }
-    } else {
-        debug!("WndProc called before hook was set");
-        DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-    }
-}
 
 #[allow(non_snake_case)]
 unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
@@ -131,7 +88,7 @@ static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
 struct ImguiRenderer {
     ctx: Context,
     renderer: imgui_opengl::Renderer,
-    wnd_proc: WndProcType,
+
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
 }
@@ -151,21 +108,43 @@ static mut LAST_FRAME: Option<Mutex<Instant>> = None;
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
+        let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
+
         if let Some(rect) = get_client_rect(&self.game_hwnd) {
             let mut io = self.ctx.io_mut();
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-            let mut pos = POINT { x: 0, y: 0 };
+            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
+
+            for i in 0..256 {
+                io.keys_down[i] = is_key_down(i);
+            }
+
+            for i in 0..5 {
+                io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            if render_loop.should_block_messages(&io) {
+                if !io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = true;
+                    SetCursor(HCURSOR(0));
+                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+                }
+            } else {
+                if io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = false;
+                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+                }
+            }
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
                 && (active_window == self.game_hwnd
                     || IsChild(active_window, self.game_hwnd).as_bool())
             {
-                let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
-                }
+                ScreenToClient(active_window, &mut pos as *mut _);
+
+                io.mouse_pos[0] = pos.x as f32;
+                io.mouse_pos[1] = pos.y as f32;
             }
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
@@ -180,17 +159,11 @@ impl ImguiRenderer {
 
         let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        render_loop.render(ui, &self.flags);
         self.renderer.render(&mut self.ctx);
     }
 
-    unsafe fn cleanup(&mut self) {
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(self.game_hwnd, GWLP_WNDPROC, self.wnd_proc as usize as isize);
-
-        #[cfg(target_arch = "x86")]
-        SetWindowLongA(self.game_hwnd, GWLP_WNDPROC, self.wnd_proc as usize as i32);
-    }
+    unsafe fn cleanup(&mut self) {}
 }
 
 impl ImguiWindowsEventHandler for ImguiRenderer {
@@ -209,10 +182,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     fn focus_mut(&mut self) -> &mut bool {
         &mut self.flags.focused
     }
-
-    // fn wnd_proc(&self) -> WndProcType {
-    //     self.wnd_proc
-    // }
 }
 unsafe impl Send for ImguiRenderer {}
 unsafe impl Sync for ImguiRenderer {}

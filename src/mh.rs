@@ -92,9 +92,11 @@ impl MhHook {
         let status = MH_CreateHook(addr, hook_impl, &mut trampoline);
         debug!("MH_CreateHook: {:?}", status);
 
-        status.ok()?;
+        if status == MH_STATUS::MH_OK || status == MH_STATUS::MH_ERROR_ALREADY_CREATED {
+            return Ok(Self { addr, hook_impl, trampoline });
+        }
 
-        Ok(Self { addr, hook_impl, trampoline })
+        Err(status)
     }
 
     pub fn trampoline(&self) -> *mut c_void {
