@@ -1,6 +1,6 @@
 use std::hint;
 use std::mem::size_of;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
 use imgui::{Context, Io, Key, Ui};
 use log::{debug, info};
@@ -26,13 +26,15 @@ use super::dx11::ImguiDx11Hooks;
 use super::dx12::ImguiDx12Hooks;
 use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
-use super::Hooks;
+use super::{get_wheel_delta_wparam, Hooks};
 use crate::mh::{MH_ApplyQueued, MH_QueueEnableHook, MhHook};
 
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
 
 pub static mut KEYS: OnceCell<Mutex<[usize; 256]>> = OnceCell::new();
+pub static mut MOUSE_WHEEL_DELTA: AtomicI16 = AtomicI16::new(0);
+pub static mut MOUSE_WHEEL_DELTA_H: AtomicI16 = AtomicI16::new(0);
 
 pub(crate) trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
@@ -74,7 +76,7 @@ pub(crate) trait ImguiWindowsEventHandler {
 
 #[must_use]
 pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
-    let msg = unsafe { (*lpmsg).message };
+    let msg = (*lpmsg).message;
 
     let is_mouse_message = msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST;
     let is_keyboard_message = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
@@ -82,16 +84,15 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     if msg != WM_INPUT && !is_mouse_message && !is_keyboard_message {
         return false;
     }
-    let mut keys = unsafe { KEYS.get_mut().unwrap().lock() };
+    let mut keys = KEYS.get_mut().unwrap().lock();
 
     let wparam = (*lpmsg).wParam;
     let lparam = (*lpmsg).lParam;
 
     // println!("Mouse: {:?}", is_mouse_message);
     // println!("Keyboard: {:?}", is_keyboard_message);
-    unsafe {
-        *LAST_CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
-    }
+
+    *LAST_CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
 
     match msg {
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam.0 < 256 => {
@@ -158,6 +159,14 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
         },
         WM_MBUTTONUP => {
             keys[VK_MBUTTON.0 as usize] = 0x08;
+        },
+        WM_MOUSEWHEEL => {
+            let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
+            MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
+        },
+        WM_MOUSEHWHEEL => {
+            let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
+            MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
         },
 
         _ => {},

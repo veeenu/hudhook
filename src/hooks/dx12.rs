@@ -32,7 +32,9 @@ use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler, LAST_CURSOR_POS,
+    self, is_key_down, is_mouse_button_down, Fence, ImguiRenderLoop, ImguiRenderLoopFlags,
+    ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA,
+    MOUSE_WHEEL_DELTA_H,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -369,6 +371,7 @@ impl ImguiRenderer {
         };
 
         LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+        KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
         ImguiWindowsEventHandler::setup_io(&mut renderer);
         common::setup_window_message_handling();
@@ -396,14 +399,37 @@ impl ImguiRenderer {
         let sd = swap_chain.GetDesc().unwrap();
         let mut rect: RECT = Default::default();
 
+        let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
+
         if GetClientRect(sd.OutputWindow, &mut rect as _).as_bool() {
             let mut io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            io.mouse_draw_cursor = true;
-
             let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
+
+            for i in 0..256 {
+                io.keys_down[i] = is_key_down(i);
+            }
+
+            for i in 0..5 {
+                io.mouse_down[i] = is_mouse_button_down(i);
+            }
+
+            io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
+            io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
+
+            if render_loop.should_block_messages(&io) {
+                if !io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = true;
+                    GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+                }
+            } else {
+                if io.mouse_draw_cursor {
+                    io.mouse_draw_cursor = false;
+                    GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+                }
+            }
 
             let active_window = GetForegroundWindow();
             if !HANDLE(active_window.0).is_invalid()
@@ -431,7 +457,7 @@ impl ImguiRenderer {
         let ctx = &mut self.ctx;
         let ui = ctx.frame();
 
-        unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui, &self.flags);
+        render_loop.render(ui, &self.flags);
         let draw_data = ctx.render();
 
         let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {

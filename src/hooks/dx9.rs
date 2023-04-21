@@ -17,7 +17,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetDesktopWindow, GetForegroundWindow, IsChild, SetCursor, HCURSOR,
 };
 
-use super::common::{self, is_key_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS};
+use super::common::{
+    self, is_key_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA,
+    MOUSE_WHEEL_DELTA_H,
+};
 use crate::hooks::common::{is_mouse_button_down, ImguiWindowsEventHandler};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
@@ -33,7 +36,7 @@ unsafe fn draw(this: &IDirect3DDevice9) {
 
             LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
             common::setup_window_message_handling();
-            unsafe { KEYS.get_or_init(|| Mutex::new([0x08; 256])) };
+            KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
@@ -151,10 +154,12 @@ impl ImguiRenderer {
                 io.mouse_down[i] = is_mouse_button_down(i);
             }
 
+            io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
+            io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
+
             if render_loop.should_block_messages(&io) {
                 if !io.mouse_draw_cursor {
                     io.mouse_draw_cursor = true;
-                    SetCursor(HCURSOR(0));
                     GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
                 }
             } else {

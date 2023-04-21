@@ -16,6 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::common::{
     self, is_key_down, is_mouse_button_down, GAME_MOUSE_BLOCKED, KEYS, LAST_CURSOR_POS,
+    MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
 };
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
@@ -50,7 +51,7 @@ unsafe fn draw(dc: HDC) {
             };
 
             LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            unsafe { KEYS.get_or_init(|| Mutex::new([0x08; 256])) };
+            KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
             // Initialize window events on the imgui renderer
             ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
@@ -123,10 +124,12 @@ impl ImguiRenderer {
                 io.mouse_down[i] = is_mouse_button_down(i);
             }
 
+            io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
+            io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
+
             if render_loop.should_block_messages(&io) {
                 if !io.mouse_draw_cursor {
                     io.mouse_draw_cursor = true;
-                    SetCursor(HCURSOR(0));
                     GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
                 }
             } else {
