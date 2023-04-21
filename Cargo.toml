@@ -67,8 +67,8 @@ path = "examples/renderers/dx12.rs"
 crate-type = ["bin"]
 
 [dependencies]
-imgui = "0.9.0"
-imgui-opengl = "0.0.0"
+imgui = "0.11.0"
+imgui-opengl = "0.1.0"
 memoffset = "0.6.5"
 once_cell = "1.8.0"
 parking_lot = "0.11.2"
