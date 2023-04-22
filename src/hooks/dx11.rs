@@ -7,7 +7,7 @@ use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, POINT};
+use windows::Win32::Foundation::{GetLastError, BOOL, POINT};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -20,12 +20,11 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
-use crate::hooks::common::{self, update_imgui_io, KEYS, LAST_CURSOR_POS};
+use crate::hooks::common::{self, KEYS, LAST_CURSOR_POS};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -158,24 +157,7 @@ impl ImguiRenderer {
 
         // if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
         if let Some(rect) = self.engine.get_client_rect() {
-            let mut io = self.ctx_mut().io_mut();
-
-            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
-
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
-            update_imgui_io(io, render_loop);
-
-            let active_window = GetForegroundWindow();
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == sd.OutputWindow
-                    || IsChild(active_window, sd.OutputWindow).as_bool())
-            {
-                unsafe { ScreenToClient(active_window, &mut pos as *mut _) };
-
-                io.mouse_pos[0] = pos.x as f32;
-                io.mouse_pos[1] = pos.y as f32;
-            }
+            ImguiWindowsEventHandler::update_io(self, render_loop, sd.OutputWindow, rect);
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }

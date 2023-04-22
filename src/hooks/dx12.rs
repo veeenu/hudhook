@@ -25,15 +25,15 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
+use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, update_imgui_io, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
-    KEYS, LAST_CURSOR_POS,
+    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler, KEYS,
+    LAST_CURSOR_POS,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -391,9 +391,6 @@ impl ImguiRenderer {
 
         let swap_chain = self.store_swap_chain(swap_chain);
 
-        let frame_contexts_idx = swap_chain.GetCurrentBackBufferIndex() as usize;
-        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
-
         trace!("Rendering started");
         let sd = swap_chain.GetDesc().unwrap();
         let mut rect: RECT = Default::default();
@@ -401,24 +398,7 @@ impl ImguiRenderer {
         let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
 
         if GetClientRect(sd.OutputWindow, &mut rect as _).as_bool() {
-            let mut io = self.ctx.io_mut();
-
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
-            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
-
-            update_imgui_io(io, render_loop);
-
-            let active_window = GetForegroundWindow();
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == sd.OutputWindow
-                    || IsChild(active_window, sd.OutputWindow).as_bool())
-            {
-                ScreenToClient(active_window, &mut pos as *mut _);
-
-                io.mouse_pos[0] = pos.x as f32;
-                io.mouse_pos[1] = pos.y as f32;
-            }
+            ImguiWindowsEventHandler::update_io(self, render_loop, sd.OutputWindow, rect);
         } else {
             trace!("GetClientRect error: {:x}", unsafe { GetLastError().0 });
         }
@@ -430,6 +410,9 @@ impl ImguiRenderer {
                 return None;
             },
         };
+
+        let frame_contexts_idx = swap_chain.GetCurrentBackBufferIndex() as usize;
+        let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         self.engine.new_frame(&mut self.ctx);
         let ctx = &mut self.ctx;

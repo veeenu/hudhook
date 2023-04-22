@@ -5,16 +5,16 @@ use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, HWND, POINT, RECT};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, RGNDATA};
-use windows::Win32::UI::WindowsAndMessaging::{GetDesktopWindow, GetForegroundWindow, IsChild};
+use windows::Win32::Graphics::Gdi::RGNDATA;
+use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
 
-use super::common::{self, update_imgui_io, KEYS, LAST_CURSOR_POS};
+use super::common::{self, KEYS, LAST_CURSOR_POS};
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
@@ -134,24 +134,7 @@ impl ImguiRenderer {
         let render_loop = IMGUI_RENDER_LOOP.get_mut().unwrap();
 
         if let Some(rect) = self.renderer.get_client_rect() {
-            let mut io = self.ctx.io_mut();
-
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
-
-            let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
-
-            update_imgui_io(io, render_loop);
-
-            let active_window = GetForegroundWindow();
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == self.renderer.get_hwnd()
-                    || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
-            {
-                ScreenToClient(active_window, &mut pos as *mut _);
-
-                io.mouse_pos[0] = pos.x as f32;
-                io.mouse_pos[1] = pos.y as f32;
-            }
+            ImguiWindowsEventHandler::update_io(self, render_loop, self.renderer.get_hwnd(), rect);
         } else {
             trace!("GetWindowRect error: {:x}", GetLastError().0);
         }
