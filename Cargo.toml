@@ -109,7 +109,7 @@ cc = "1.0.72"
 
 [features]
 default = []
-simplelog = [ "dep:simplelog" ]
+simplelog = ["dep:simplelog"]
 
 [profile.test]
 opt-level = 3

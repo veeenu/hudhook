@@ -31,6 +31,7 @@ use super::{get_wheel_delta_wparam, hiword, Hooks};
 use crate::mh::{MH_ApplyQueued, MH_QueueEnableHook, MhHook};
 
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
+pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
 
 pub static mut KEYS: OnceCell<Mutex<[usize; 256]>> = OnceCell::new();
@@ -116,7 +117,8 @@ pub(crate) trait ImguiWindowsEventHandler {
             (window_rect.right - window_rect.left) as f32,
             (window_rect.bottom - window_rect.top) as f32,
         ];
-        let mut pos = *LAST_CURSOR_POS.get().unwrap().lock();
+
+        let mut pos = *CURSOR_POS.get().unwrap().lock();
 
         let active_window = GetForegroundWindow();
         if !HANDLE(active_window.0).is_invalid()
@@ -148,7 +150,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     // println!("Mouse: {:?}", is_mouse_message);
     // println!("Keyboard: {:?}", is_keyboard_message);
 
-    *LAST_CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
+    *CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
 
     match msg {
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam.0 < 256 => {
@@ -400,8 +402,8 @@ static REGISTER_CLASS_EX_W_TRAMPOLINE: OnceCell<RegisterClassFn> = OnceCell::new
 unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
     info!("SetCursorPos invoked");
 
-    // LAST_CURSOR_POS.get_mut().unwrap().lock().x = x;
-    // LAST_CURSOR_POS.get_mut().unwrap().lock().y = y;
+    LAST_CURSOR_POS.get_mut().unwrap().lock().x = x;
+    LAST_CURSOR_POS.get_mut().unwrap().lock().y = y;
 
     if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
         return BOOL::from(true);
@@ -415,7 +417,7 @@ unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
     // info!("GetCursorPos invoked");
 
     if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
-        *lppoint = POINT { x: 500, y: 500 };
+        *lppoint = *LAST_CURSOR_POS.get().unwrap().lock();
 
         return BOOL::from(true);
     }
@@ -803,14 +805,14 @@ create PeekMessageW hook",
         REGISTER_CLASS_EX_W_TRAMPOLINE
             .get_or_init(|| std::mem::transmute(register_class_ex_w.trampoline()));
 
-        // let status = MH_QueueEnableHook(set_cursor_pos.addr);
-        // debug!("MH_QueueEnable SetCursorPos: {:?}", status);
+        let status = MH_QueueEnableHook(set_cursor_pos.addr);
+        debug!("MH_QueueEnable SetCursorPos: {:?}", status);
 
-        // let status = MH_QueueEnableHook(get_cursor_pos.addr);
-        // debug!("MH_QueueEnable GetCursorPos: {:?}", status);
+        let status = MH_QueueEnableHook(get_cursor_pos.addr);
+        debug!("MH_QueueEnable GetCursorPos: {:?}", status);
 
-        // let status = MH_QueueEnableHook(clip_cursor.addr);
-        // debug!("MH_QueueEnable ClipCursor: {:?}", status);
+        let status = MH_QueueEnableHook(clip_cursor.addr);
+        debug!("MH_QueueEnable ClipCursor: {:?}", status);
 
         let status = MH_QueueEnableHook(post_message_a.addr);
         debug!("MH_QueueEnable PostMessageA: {:?}", status);
