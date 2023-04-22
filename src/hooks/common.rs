@@ -3,7 +3,7 @@ use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 
 use imgui::{Context, Io, Key, Ui};
-use log::{debug, info};
+use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{PCSTR, PCWSTR};
@@ -28,7 +28,7 @@ use super::dx12::ImguiDx12Hooks;
 use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, Hooks};
-use crate::mh::{MH_ApplyQueued, MH_QueueEnableHook, MhHook};
+use crate::mh::{MhHook, MhHooks};
 
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
@@ -377,8 +377,6 @@ pub type GetMessageFn = unsafe extern "system" fn(
 type RegisterRawInputDevicesFn =
     unsafe extern "system" fn(prawinputdevices: &[RAWINPUTDEVICE], cbsize: u32) -> BOOL;
 
-pub type RegisterClassFn = unsafe extern "system" fn(lpwndclass: *const WNDCLASSW) -> u16;
-
 static SET_CURSOR_POS_TRAMPOLINE: OnceCell<SetCursorPosFn> = OnceCell::new();
 static GET_CURSOR_POS_TRAMPOLINE: OnceCell<GetCursorPosFn> = OnceCell::new();
 static CLIP_CURSOR_TRAMPOLINE: OnceCell<ClipCursorFn> = OnceCell::new();
@@ -393,11 +391,6 @@ static GET_MESSAGE_A_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
 static GET_MESSAGE_W_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
 
 static REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE: OnceCell<RegisterRawInputDevicesFn> = OnceCell::new();
-
-static REGISTER_CLASS_A_TRAMPOLINE: OnceCell<RegisterClassFn> = OnceCell::new();
-static REGISTER_CLASS_W_TRAMPOLINE: OnceCell<RegisterClassFn> = OnceCell::new();
-static REGISTER_CLASS_EX_A_TRAMPOLINE: OnceCell<RegisterClassFn> = OnceCell::new();
-static REGISTER_CLASS_EX_W_TRAMPOLINE: OnceCell<RegisterClassFn> = OnceCell::new();
 
 unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
     info!("SetCursorPos invoked");
@@ -574,54 +567,6 @@ unsafe extern "system" fn register_raw_input_devices_impl(
     return BOOL::from(true);
 }
 
-unsafe extern "system" fn register_class_a_impl(lpwndclass: *const WNDCLASSW) -> u16 {
-    info!("RegisterClassA invoked");
-
-    let mut wndclass = *lpwndclass;
-
-    if wndclass.hInstance == GetModuleHandleA(PCSTR::null()).unwrap() {
-        wndclass.style |= CS_OWNDC;
-    }
-
-    return (*REGISTER_CLASS_W_TRAMPOLINE.get().expect("RegisterClassA unitialized")) as u16;
-}
-
-pub unsafe extern "system" fn register_class_w_impl(lpwndclass: *const WNDCLASSW) -> u16 {
-    info!("RegisterClassW invoked");
-
-    let mut wndclass = *lpwndclass;
-
-    if wndclass.hInstance == GetModuleHandleW(PCWSTR::null()).unwrap() {
-        wndclass.style |= CS_OWNDC;
-    }
-
-    return (*REGISTER_CLASS_W_TRAMPOLINE.get().expect("RegisterClassW unitialized")) as u16;
-}
-
-unsafe extern "system" fn register_class_ex_a_impl(lpwndclass: *const WNDCLASSW) -> u16 {
-    info!("RegisterClassExA invoked");
-
-    let mut wndclass = *lpwndclass;
-
-    if wndclass.hInstance == GetModuleHandleA(PCSTR::null()).unwrap() {
-        wndclass.style |= CS_OWNDC;
-    }
-
-    return (*REGISTER_CLASS_W_TRAMPOLINE.get().expect("RegisterClassExA unitialized")) as u16;
-}
-
-unsafe extern "system" fn register_class_ex_w_impl(lpwndclass: *const WNDCLASSW) -> u16 {
-    info!("RegisterClassExW invoked");
-
-    let mut wndclass = *lpwndclass;
-
-    if wndclass.hInstance == GetModuleHandleW(PCWSTR::null()).unwrap() {
-        wndclass.style |= CS_OWNDC;
-    }
-
-    return (*REGISTER_CLASS_W_TRAMPOLINE.get().expect("RegisterClassExW unitialized")) as u16;
-}
-
 pub unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let msg: *mut MSG = std::mem::transmute(lparam);
     if handle_window_message(msg) {
@@ -635,38 +580,10 @@ pub unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: 
     LRESULT(1)
 }
 
-pub fn setup_window_message_handling() {
-    unsafe {
-        let pid = GetCurrentProcessId();
+struct CommonHooks(MhHooks);
 
-        let thread_snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
-
-        if thread_snap != INVALID_HANDLE_VALUE {
-            let mut th32: THREADENTRY32 = std::mem::zeroed();
-            th32.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-            let mut thread_found = Thread32First(thread_snap, &mut th32).as_bool();
-
-            while thread_found {
-                if th32.th32OwnerProcessID == pid {
-                    if let Ok(handle_thread) =
-                        OpenThread(THREAD_QUERY_INFORMATION, true, th32.th32ThreadID)
-                    {
-                        if handle_thread != INVALID_HANDLE_VALUE {
-                            let _ = SetWindowsHookExW(
-                                WH_GETMESSAGE,
-                                Some(get_msg_proc),
-                                HINSTANCE::default(),
-                                th32.th32ThreadID,
-                            );
-
-                            CloseHandle(handle_thread);
-                        }
-                    }
-                }
-                thread_found = Thread32Next(thread_snap, &mut th32).as_bool();
-            }
-        }
-
+impl CommonHooks {
+    unsafe fn new() -> Self {
         let set_cursor_pos_address: SetCursorPosFn = std::mem::transmute(SetCursorPos as usize);
         let get_cursor_pos_address: GetCursorPosFn = std::mem::transmute(GetCursorPos as usize);
         let clip_cursor_address: ClipCursorFn = std::mem::transmute(ClipCursor as usize);
@@ -686,15 +603,6 @@ pub fn setup_window_message_handling() {
 
         let register_raw_input_devices_address: RegisterRawInputDevicesFn =
             std::mem::transmute(RegisterRawInputDevices as usize);
-
-        let register_class_a_address: RegisterClassFn =
-            std::mem::transmute(RegisterClassA as usize);
-        let register_class_w_address: RegisterClassFn =
-            std::mem::transmute(RegisterClassW as usize);
-        let register_class_ex_a_address: RegisterClassFn =
-            std::mem::transmute(RegisterClassExA as usize);
-        let register_class_ex_w_address: RegisterClassFn =
-            std::mem::transmute(RegisterClassExW as usize);
 
         let set_cursor_pos =
             MhHook::new(set_cursor_pos_address as *mut _, set_cursor_pos_impl as *mut _).expect(
@@ -752,34 +660,6 @@ create PeekMessageW hook",
     create RegisterRawInputDevices hook",
         );
 
-        let register_class_a =
-            MhHook::new(register_class_a_address as *mut _, register_class_a_impl as *mut _)
-                .expect(
-                    "couldn't
-    create RegisterClassA hook",
-                );
-
-        let register_class_w =
-            MhHook::new(register_class_w_address as *mut _, register_class_w_impl as *mut _)
-                .expect(
-                    "couldn't
-    create RegisterClassW hook",
-                );
-
-        let register_class_ex_a =
-            MhHook::new(register_class_ex_a_address as *mut _, register_class_ex_a_impl as *mut _)
-                .expect(
-                    "couldn't
-    create RegisterClassExA hook",
-                );
-
-        let register_class_ex_w =
-            MhHook::new(register_class_ex_w_address as *mut _, register_class_ex_w_impl as *mut _)
-                .expect(
-                    "couldn't
-    create RegisterClassExW hook",
-                );
-
         SET_CURSOR_POS_TRAMPOLINE.get_or_init(|| std::mem::transmute(set_cursor_pos.trampoline()));
         GET_CURSOR_POS_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_cursor_pos.trampoline()));
         CLIP_CURSOR_TRAMPOLINE.get_or_init(|| std::mem::transmute(clip_cursor.trampoline()));
@@ -796,58 +676,73 @@ create PeekMessageW hook",
         REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE
             .get_or_init(|| std::mem::transmute(register_raw_input_devices.trampoline()));
 
-        REGISTER_CLASS_A_TRAMPOLINE
-            .get_or_init(|| std::mem::transmute(register_class_a.trampoline()));
-        REGISTER_CLASS_W_TRAMPOLINE
-            .get_or_init(|| std::mem::transmute(register_class_w.trampoline()));
-        REGISTER_CLASS_EX_A_TRAMPOLINE
-            .get_or_init(|| std::mem::transmute(register_class_ex_a.trampoline()));
-        REGISTER_CLASS_EX_W_TRAMPOLINE
-            .get_or_init(|| std::mem::transmute(register_class_ex_w.trampoline()));
+        Self(
+            MhHooks::new([
+                set_cursor_pos,
+                get_cursor_pos,
+                clip_cursor,
+                post_message_a,
+                post_message_w,
+                peek_message_a,
+                peek_message_w,
+                get_message_a,
+                get_message_w,
+                register_raw_input_devices,
+            ])
+            .expect("couldn't create hooks"),
+        )
+    }
+}
 
-        let status = MH_QueueEnableHook(set_cursor_pos.addr);
-        debug!("MH_QueueEnable SetCursorPos: {:?}", status);
+impl Hooks for CommonHooks {
+    unsafe fn hook(&self) {
+        self.0.apply();
+    }
 
-        let status = MH_QueueEnableHook(get_cursor_pos.addr);
-        debug!("MH_QueueEnable GetCursorPos: {:?}", status);
+    unsafe fn unhook(&mut self) {
+        trace!("Disabling hooks...");
+        self.0.unapply();
 
-        let status = MH_QueueEnableHook(clip_cursor.addr);
-        debug!("MH_QueueEnable ClipCursor: {:?}", status);
+        // uninitialize & drop static variables
+    }
+}
 
-        let status = MH_QueueEnableHook(post_message_a.addr);
-        debug!("MH_QueueEnable PostMessageA: {:?}", status);
+pub fn setup_window_message_handling() {
+    unsafe {
+        let pid = GetCurrentProcessId();
 
-        let status = MH_QueueEnableHook(post_message_w.addr);
-        debug!("MH_QueueEnable PostMessageW: {:?}", status);
+        let thread_snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
 
-        let status = MH_QueueEnableHook(peek_message_a.addr);
-        debug!("MH_QueueEnable PeekMessageA: {:?}", status);
+        if thread_snap != INVALID_HANDLE_VALUE {
+            let mut th32: THREADENTRY32 = std::mem::zeroed();
+            th32.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+            let mut thread_found = Thread32First(thread_snap, &mut th32).as_bool();
 
-        let status = MH_QueueEnableHook(peek_message_w.addr);
-        debug!("MH_QueueEnable PeekMessageW: {:?}", status);
+            while thread_found {
+                if th32.th32OwnerProcessID == pid {
+                    if let Ok(handle_thread) =
+                        OpenThread(THREAD_QUERY_INFORMATION, true, th32.th32ThreadID)
+                    {
+                        if handle_thread != INVALID_HANDLE_VALUE {
+                            let _ = SetWindowsHookExW(
+                                WH_GETMESSAGE,
+                                Some(get_msg_proc),
+                                HINSTANCE::default(),
+                                th32.th32ThreadID,
+                            );
 
-        let status = MH_QueueEnableHook(get_message_a.addr);
-        debug!("MH_QueueEnable GetMessageA: {:?}", status);
+                            CloseHandle(handle_thread);
+                        }
+                    }
+                }
+                thread_found = Thread32Next(thread_snap, &mut th32).as_bool();
+            }
+        }
 
-        let status = MH_QueueEnableHook(get_message_w.addr);
-        debug!("MH_QueueEnable GetMessageW: {:?}", status);
+        CloseHandle(thread_snap);
 
-        let status = MH_QueueEnableHook(register_raw_input_devices.addr);
-        debug!("MH_QueueEnable RegisterRawInputDevices: {:?}", status);
+        let common_hooks = CommonHooks::new();
 
-        let status = MH_QueueEnableHook(register_class_a.addr);
-        debug!("MH_QueueEnable RegisterClassA: {:?}", status);
-
-        let status = MH_QueueEnableHook(register_class_w.addr);
-        debug!("MH_QueueEnable RegisterClassW: {:?}", status);
-
-        let status = MH_QueueEnableHook(register_class_ex_a.addr);
-        debug!("MH_QueueEnable RegisterClassExA: {:?}", status);
-
-        let status = MH_QueueEnableHook(register_class_ex_w.addr);
-        debug!("MH_QueueEnable RegisterClassExW: {:?}", status);
-
-        let status = MH_ApplyQueued();
-        debug!("MH_ApplyQueued: {:?}", status);
+        common_hooks.hook();
     }
 }
