@@ -6,7 +6,6 @@ use imgui::{Context, Io, Key, Ui};
 use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
     CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
@@ -15,7 +14,6 @@ use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
-use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetModuleHandleW};
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
 };
@@ -393,7 +391,7 @@ static GET_MESSAGE_W_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
 static REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE: OnceCell<RegisterRawInputDevicesFn> = OnceCell::new();
 
 unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
-    info!("SetCursorPos invoked");
+    trace!("SetCursorPos invoked");
 
     LAST_CURSOR_POS.get_mut().unwrap().lock().x = x;
     LAST_CURSOR_POS.get_mut().unwrap().lock().y = y;
@@ -407,7 +405,7 @@ unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
 }
 
 unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
-    // info!("GetCursorPos invoked");
+    trace!("GetCursorPos invoked");
 
     if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
         *lppoint = *LAST_CURSOR_POS.get().unwrap().lock();
@@ -420,7 +418,7 @@ unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
 }
 
 unsafe extern "system" fn clip_cursor_impl(mut rect: *const RECT) -> BOOL {
-    info!("ClipCursor invoked");
+    trace!("ClipCursor invoked");
 
     if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
         rect = std::ptr::null();
@@ -436,7 +434,7 @@ unsafe extern "system" fn post_message_a_impl(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> BOOL {
-    info!("PostMessageA invoked");
+    trace!("PostMessageA invoked");
 
     if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
         return BOOL::from(true);
@@ -452,7 +450,7 @@ unsafe extern "system" fn post_message_w_impl(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> BOOL {
-    info!("PostMessageW invoked");
+    trace!("PostMessageW invoked");
 
     if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
         return BOOL::from(true);
@@ -469,7 +467,7 @@ unsafe extern "system" fn peek_message_a_impl(
     wmsgfiltermax: u32,
     wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
 ) -> BOOL {
-    info!("PeekMessageA invoked");
+    trace!("PeekMessageA invoked");
 
     let trampoline = PEEK_MESSAGE_A_TRAMPOLINE.get().expect("PeekMessageA unitialized");
     if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
@@ -495,7 +493,7 @@ pub unsafe extern "system" fn peek_message_w_impl(
     wmsgfiltermax: u32,
     wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
 ) -> BOOL {
-    // info!("PeekMessageW invoked");
+    trace!("PeekMessageW invoked");
 
     let trampoline = PEEK_MESSAGE_W_TRAMPOLINE.get().expect("PeekMessageW unitialized");
     if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
@@ -520,7 +518,7 @@ unsafe extern "system" fn get_message_a_impl(
     wmsgfiltermin: u32,
     wmsgfiltermax: u32,
 ) -> BOOL {
-    info!("GetMessageA invoked");
+    trace!("GetMessageA invoked");
 
     while !PeekMessageA(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, PM_REMOVE).as_bool() {
         MsgWaitForMultipleObjects(&[HANDLE(0)], BOOL::from(false), 500, QS_ALLINPUT);
@@ -539,7 +537,7 @@ pub unsafe extern "system" fn get_message_w_impl(
     wmsgfiltermin: u32,
     wmsgfiltermax: u32,
 ) -> BOOL {
-    info!("GetMessageW invoked");
+    trace!("GetMessageW invoked");
 
     while !PeekMessageW(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, PM_REMOVE).as_bool() {
         MsgWaitForMultipleObjects(&[HANDLE(0)], BOOL::from(false), 500, QS_ALLINPUT);
@@ -556,7 +554,7 @@ unsafe extern "system" fn register_raw_input_devices_impl(
     prawinputdevices: &[RAWINPUTDEVICE],
     cbsize: u32,
 ) -> BOOL {
-    info!("RegisterRawInputDevices invoked");
+    trace!("RegisterRawInputDevices invoked");
 
     let trampoline =
         REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE.get().expect("RegisterRawInputDevices unitialized");
@@ -616,7 +614,7 @@ impl CommonHooks {
             );
         let clip_cursor = MhHook::new(clip_cursor_address as *mut _, clip_cursor_impl as *mut _)
             .expect(
-                "couldn't create GetCursorPos
+                "couldn't create ClipCursor
         hook",
             );
 
