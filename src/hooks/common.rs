@@ -8,17 +8,15 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, BOOL, FILETIME, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT,
-    POINT, RECT, WPARAM,
+    CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
+    WPARAM,
 };
-use windows::Win32::Graphics::Dxgi::DXGI_SWAP_CHAIN_DESC;
-use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetModuleHandleW};
 use windows::Win32::System::Threading::{
-    GetCurrentProcessId, GetThreadTimes, OpenThread, THREAD_QUERY_INFORMATION,
+    GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{RegisterRawInputDevices, RAWINPUTDEVICE};
@@ -190,23 +188,11 @@ pub unsafe fn is_key_down(keycode: usize) -> bool {
     return (KEYS.get().unwrap().lock()[keycode] & 0x80) == 0x80;
 }
 
-pub unsafe fn is_key_pressed(keycode: usize) -> bool {
-    return (KEYS.get().unwrap().lock()[keycode] & 0x88) == 0x88;
-}
-
 pub unsafe fn is_mouse_button_down(button: usize) -> bool {
     if button < 2 {
         return is_key_down(VK_LBUTTON.0 as usize + button);
     } else {
         is_key_down(VK_LBUTTON.0 as usize + button + 1)
-    }
-}
-
-pub unsafe fn is_mouse_button_pressed(button: usize) -> bool {
-    if button < 2 {
-        return is_key_pressed(VK_LBUTTON.0 as usize + button);
-    } else {
-        is_key_pressed(VK_LBUTTON.0 as usize + button + 1)
     }
 }
 
@@ -630,9 +616,6 @@ pub fn setup_window_message_handling() {
     unsafe {
         let pid = GetCurrentProcessId();
 
-        let mut ull_min_create_time = std::u64::MAX;
-        let mut dw_main_thread_id = 0;
-
         let thread_snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
 
         if thread_snap != INVALID_HANDLE_VALUE {
@@ -646,30 +629,13 @@ pub fn setup_window_message_handling() {
                         OpenThread(THREAD_QUERY_INFORMATION, true, th32.th32ThreadID)
                     {
                         if handle_thread != INVALID_HANDLE_VALUE {
-                            let mut af_times: [FILETIME; 4] = [std::mem::zeroed(); 4];
+                            let _ = SetWindowsHookExW(
+                                WH_GETMESSAGE,
+                                Some(get_msg_proc),
+                                HINSTANCE::default(),
+                                th32.th32ThreadID,
+                            );
 
-                            if GetThreadTimes(
-                                handle_thread,
-                                &mut af_times[0],
-                                &mut af_times[1],
-                                &mut af_times[2],
-                                &mut af_times[3],
-                            )
-                            .as_bool()
-                            {
-                                SetWindowsHookExW(
-                                    WH_GETMESSAGE,
-                                    Some(get_msg_proc),
-                                    HINSTANCE::default(),
-                                    th32.th32ThreadID,
-                                );
-                                let ull_test = af_times[0].dwLowDateTime as u64
-                                    + ((af_times[0].dwHighDateTime as u64) << 32);
-                                if ull_test != 0 && ull_test < ull_min_create_time {
-                                    ull_min_create_time = ull_test;
-                                    dw_main_thread_id = th32.th32ThreadID;
-                                }
-                            }
                             CloseHandle(handle_thread);
                         }
                     }

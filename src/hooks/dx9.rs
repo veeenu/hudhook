@@ -1,5 +1,4 @@
 use std::mem;
-use std::sync::atomic::Ordering;
 
 use imgui::Context;
 use log::{debug, info, trace};
@@ -13,15 +12,10 @@ use windows::Win32::Graphics::Direct3D9::{
     D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, RGNDATA};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetDesktopWindow, GetForegroundWindow, IsChild, SetCursor, HCURSOR,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetDesktopWindow, GetForegroundWindow, IsChild};
 
-use super::common::{
-    self, is_key_down, update_imgui_io, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS, LAST_CURSOR_POS,
-    MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
-};
-use crate::hooks::common::{is_mouse_button_down, ImguiWindowsEventHandler};
+use super::common::{self, update_imgui_io, KEYS, LAST_CURSOR_POS};
+use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;

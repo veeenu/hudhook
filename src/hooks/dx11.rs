@@ -1,9 +1,8 @@
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::null_mut;
-use std::sync::atomic::Ordering;
 
-use imgui::{Context, Io};
+use imgui::Context;
 use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -26,10 +25,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
-use crate::hooks::common::{
-    self, is_key_down, is_mouse_button_down, update_imgui_io, GAME_MOUSE_BLOCKED, INPUT_CHARACTER,
-    KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
-};
+use crate::hooks::common::{self, update_imgui_io, KEYS, LAST_CURSOR_POS};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 

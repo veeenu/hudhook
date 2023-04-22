@@ -32,9 +32,8 @@ use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, is_key_down, is_mouse_button_down, update_imgui_io, Fence, ImguiRenderLoop,
-    ImguiRenderLoopFlags, ImguiWindowsEventHandler, GAME_MOUSE_BLOCKED, INPUT_CHARACTER, KEYS,
-    LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
+    self, update_imgui_io, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+    KEYS, LAST_CURSOR_POS,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};

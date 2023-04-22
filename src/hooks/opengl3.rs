@@ -1,5 +1,4 @@
 use std::ffi::CString;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use imgui::Context;
@@ -10,14 +9,9 @@ use windows::core::PCSTR;
 use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetForegroundWindow, IsChild, SetCursor, HCURSOR,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetForegroundWindow, IsChild};
 
-use super::common::{
-    self, is_key_down, is_mouse_button_down, update_imgui_io, GAME_MOUSE_BLOCKED, INPUT_CHARACTER,
-    KEYS, LAST_CURSOR_POS, MOUSE_WHEEL_DELTA, MOUSE_WHEEL_DELTA_H,
-};
+use super::common::{self, update_imgui_io, KEYS, LAST_CURSOR_POS};
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
