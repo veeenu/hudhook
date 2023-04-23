@@ -30,10 +30,9 @@ use crate::mh::{MhHook, MhHooks};
 
 pub static mut HHOOKS: OnceCell<Mutex<Vec<HHOOK>>> = OnceCell::new();
 
+pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
-pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
-
 pub static mut KEYS: OnceCell<Mutex<[usize; 256]>> = OnceCell::new();
 pub static mut MOUSE_WHEEL_DELTA: AtomicI16 = AtomicI16::new(0);
 pub static mut MOUSE_WHEEL_DELTA_H: AtomicI16 = AtomicI16::new(0);
@@ -191,14 +190,6 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
             } else {
                 keys[keycode.0 as usize] = 0x08;
             }
-
-            // match key_pressed {
-            //     VK_CONTROL | VK_LCONTROL | VK_RCONTROL => io.key_ctrl =
-            // pressed,     VK_SHIFT | VK_LSHIFT | VK_RSHIFT =>
-            // io.key_shift = pressed,     VK_MENU | VK_LMENU |
-            // VK_RMENU => io.key_alt = pressed,     VK_LWIN |
-            // VK_RWIN => io.key_super = pressed,     _ => (),
-            // };
         },
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
             keys[VK_LBUTTON.0 as usize] = 0x88;
@@ -358,14 +349,14 @@ type ClipCursorFn = unsafe extern "system" fn(rect: *const RECT) -> BOOL;
 
 type PostMessageFn =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> BOOL;
-pub type PeekMessageFn = unsafe extern "system" fn(
+type PeekMessageFn = unsafe extern "system" fn(
     lpmsg: *mut MSG,
     hwnd: HWND,
     wmsgfiltermin: u32,
     wmsgfiltermax: u32,
     wremovemsg: PEEK_MESSAGE_REMOVE_TYPE,
 ) -> BOOL;
-pub type GetMessageFn = unsafe extern "system" fn(
+type GetMessageFn = unsafe extern "system" fn(
     lpmsg: *mut MSG,
     hwnd: HWND,
     wmsgfiltermin: u32,
@@ -383,7 +374,7 @@ static POST_MESSAGE_A_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
 static POST_MESSAGE_W_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
 
 static PEEK_MESSAGE_A_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
-pub static PEEK_MESSAGE_W_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
+static PEEK_MESSAGE_W_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
 
 static GET_MESSAGE_A_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
 static GET_MESSAGE_W_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
@@ -486,7 +477,7 @@ unsafe extern "system" fn peek_message_a_impl(
     BOOL::from(true)
 }
 
-pub unsafe extern "system" fn peek_message_w_impl(
+unsafe extern "system" fn peek_message_w_impl(
     lpmsg: *mut MSG,
     hwnd: HWND,
     wmsgfiltermin: u32,
@@ -531,7 +522,7 @@ unsafe extern "system" fn get_message_a_impl(
     return BOOL::from((*lpmsg).message != WM_QUIT);
 }
 
-pub unsafe extern "system" fn get_message_w_impl(
+unsafe extern "system" fn get_message_w_impl(
     lpmsg: *mut MSG,
     hwnd: HWND,
     wmsgfiltermin: u32,
@@ -565,7 +556,7 @@ unsafe extern "system" fn register_raw_input_devices_impl(
     return BOOL::from(true);
 }
 
-pub unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let msg: *mut MSG = std::mem::transmute(lparam);
     if handle_window_message(msg) {
         TranslateMessage(msg);
