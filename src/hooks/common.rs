@@ -28,6 +28,8 @@ use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, Hooks};
 use crate::mh::{MhHook, MhHooks};
 
+pub static mut HHOOKS: OnceCell<Mutex<Vec<HHOOK>>> = OnceCell::new();
+
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
@@ -576,10 +578,10 @@ pub unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: 
     LRESULT(1)
 }
 
-struct CommonHooks(MhHooks);
+pub struct CommonHooks(MhHooks);
 
 impl CommonHooks {
-    unsafe fn new() -> Self {
+    pub unsafe fn new() -> Self {
         let set_cursor_pos_address: SetCursorPosFn = std::mem::transmute(SetCursorPos as usize);
         let get_cursor_pos_address: GetCursorPosFn = std::mem::transmute(GetCursorPos as usize);
         let clip_cursor_address: ClipCursorFn = std::mem::transmute(ClipCursor as usize);
@@ -699,13 +701,19 @@ impl Hooks for CommonHooks {
         trace!("Disabling hooks...");
         self.0.unapply();
 
-        // uninitialize & drop static variables
+        let hhooks = HHOOKS.get().unwrap().lock();
+
+        for i in 0..hhooks.len() {
+            UnhookWindowsHookEx(hhooks[i]);
+        }
     }
 }
 
 pub fn setup_window_message_handling() {
     unsafe {
         let pid = GetCurrentProcessId();
+        HHOOKS.get_or_init(|| Mutex::new(vec![]));
+        let mut hhooks = HHOOKS.get_mut().unwrap().lock();
 
         let thread_snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
 
@@ -720,12 +728,14 @@ pub fn setup_window_message_handling() {
                         OpenThread(THREAD_QUERY_INFORMATION, true, th32.th32ThreadID)
                     {
                         if handle_thread != INVALID_HANDLE_VALUE {
-                            let _ = SetWindowsHookExW(
+                            if let Ok(hhook) = SetWindowsHookExW(
                                 WH_GETMESSAGE,
                                 Some(get_msg_proc),
                                 HINSTANCE::default(),
                                 th32.th32ThreadID,
-                            );
+                            ) {
+                                hhooks.push(hhook);
+                            }
 
                             CloseHandle(handle_thread);
                         }
@@ -736,9 +746,5 @@ pub fn setup_window_message_handling() {
         }
 
         CloseHandle(thread_snap);
-
-        let common_hooks = CommonHooks::new();
-
-        common_hooks.hook();
     }
 }
