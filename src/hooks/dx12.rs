@@ -32,7 +32,7 @@ use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler, KEYS,
+    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler, CURSOR_POS, KEYS,
     LAST_CURSOR_POS,
 };
 use crate::hooks::Hooks;
@@ -370,6 +370,7 @@ impl ImguiRenderer {
         };
 
         LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+        CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
         KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
         ImguiWindowsEventHandler::setup_io(&mut renderer);

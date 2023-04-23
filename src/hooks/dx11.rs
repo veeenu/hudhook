@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
-use crate::hooks::common::{self, KEYS, LAST_CURSOR_POS};
+use crate::hooks::common::{self, CURSOR_POS, KEYS, LAST_CURSOR_POS};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -137,6 +137,7 @@ impl ImguiRenderer {
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
         LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+        CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
         KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
         common::setup_window_message_handling();

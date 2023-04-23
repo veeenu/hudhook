@@ -11,7 +11,7 @@ use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
-use super::common::{self, KEYS, LAST_CURSOR_POS};
+use super::common::{self, CURSOR_POS, KEYS, LAST_CURSOR_POS};
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
@@ -45,6 +45,7 @@ unsafe fn draw(dc: HDC) {
             };
 
             LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
+            CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
             KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
             // Initialize window events on the imgui renderer
