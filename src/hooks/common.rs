@@ -18,7 +18,10 @@ use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
-use windows::Win32::UI::Input::{RegisterRawInputDevices, RAWINPUTDEVICE};
+use windows::Win32::UI::Input::{
+    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
+    RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+};
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
 use super::dx11::ImguiDx11Hooks;
@@ -152,6 +155,104 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     *CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
 
     match msg {
+        WM_INPUT => {
+            let mut raw_data = RAWINPUT { ..Default::default() };
+            let mut raw_data_size = size_of::<RAWINPUT>() as u32;
+            let raw_data_header_size = size_of::<RAWINPUTHEADER>() as u32;
+
+            if GetRawInputData(
+                HRAWINPUT(lparam.0),
+                RID_INPUT,
+                &mut raw_data as *mut _ as _,
+                &mut raw_data_size,
+                raw_data_header_size,
+            ) != std::u32::MAX
+            {
+                match RID_DEVICE_INFO_TYPE(raw_data.header.dwType) {
+                    RIM_TYPEMOUSE => {
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_LEFT_BUTTON_DOWN
+                            != 0
+                        {
+                            keys[VK_LBUTTON.0 as usize] = 0x88;
+                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_LEFT_BUTTON_UP
+                            != 0
+                        {
+                            keys[VK_LBUTTON.0 as usize] = 0x08;
+                        }
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_RIGHT_BUTTON_DOWN
+                            != 0
+                        {
+                            keys[VK_RBUTTON.0 as usize] = 0x88;
+                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_RIGHT_BUTTON_UP
+                            != 0
+                        {
+                            keys[VK_RBUTTON.0 as usize] = 0x08;
+                        }
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_MIDDLE_BUTTON_DOWN
+                            != 0
+                        {
+                            keys[VK_MBUTTON.0 as usize] = 0x88;
+                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_MIDDLE_BUTTON_UP
+                            != 0
+                        {
+                            keys[VK_MBUTTON.0 as usize] = 0x08;
+                        }
+
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_BUTTON_4_DOWN
+                            != 0
+                        {
+                            keys[VK_XBUTTON1.0 as usize] = 0x88;
+                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_BUTTON_4_UP
+                            != 0
+                        {
+                            keys[VK_XBUTTON1.0 as usize] = 0x08;
+                        }
+
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_BUTTON_5_DOWN
+                            != 0
+                        {
+                            keys[VK_XBUTTON2.0 as usize] = 0x88;
+                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_BUTTON_5_UP
+                            != 0
+                        {
+                            keys[VK_XBUTTON2.0 as usize] = 0x08;
+                        }
+
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_WHEEL
+                            != 0
+                        {
+                            let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
+                                as i16
+                                / WHEEL_DELTA as i16;
+                            MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
+                        }
+
+                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
+                            & RI_MOUSE_HWHEEL
+                            != 0
+                        {
+                            let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
+                                as i16
+                                / WHEEL_DELTA as i16;
+                            MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
+                        }
+                    },
+                    RIM_TYPEKEYBOARD => {},
+                    _ => {},
+                }
+            }
+        },
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam.0 < 256 => {
             fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
                 match VIRTUAL_KEY(wparam) {
