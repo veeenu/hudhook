@@ -36,7 +36,7 @@ pub static mut HHOOKS: OnceCell<Mutex<Vec<HHOOK>>> = OnceCell::new();
 pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
 pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
 pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
-pub static mut KEYS: OnceCell<Mutex<[usize; 256]>> = OnceCell::new();
+pub static mut KEYS: OnceCell<Mutex<[u8; 256]>> = OnceCell::new();
 pub static mut MOUSE_WHEEL_DELTA: AtomicI16 = AtomicI16::new(0);
 pub static mut MOUSE_WHEEL_DELTA_H: AtomicI16 = AtomicI16::new(0);
 pub static mut INPUT_CHARACTER: AtomicU8 = AtomicU8::new(0);
@@ -155,7 +155,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     *CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
 
     match msg {
-        WM_INPUT => {
+        WM_INPUT => 'wm_input: {
             let mut raw_data = RAWINPUT { ..Default::default() };
             let mut raw_data_size = size_of::<RAWINPUT>() as u32;
             let raw_data_header_size = size_of::<RAWINPUTHEADER>() as u32;
@@ -166,91 +166,93 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                 &mut raw_data as *mut _ as _,
                 &mut raw_data_size,
                 raw_data_header_size,
-            ) != std::u32::MAX
+            ) == std::u32::MAX
             {
-                match RID_DEVICE_INFO_TYPE(raw_data.header.dwType) {
-                    RIM_TYPEMOUSE => {
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_LEFT_BUTTON_DOWN
-                            != 0
-                        {
-                            keys[VK_LBUTTON.0 as usize] = 0x88;
-                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_LEFT_BUTTON_UP
-                            != 0
-                        {
-                            keys[VK_LBUTTON.0 as usize] = 0x08;
-                        }
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_RIGHT_BUTTON_DOWN
-                            != 0
-                        {
-                            keys[VK_RBUTTON.0 as usize] = 0x88;
-                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_RIGHT_BUTTON_UP
-                            != 0
-                        {
-                            keys[VK_RBUTTON.0 as usize] = 0x08;
-                        }
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_MIDDLE_BUTTON_DOWN
-                            != 0
-                        {
-                            keys[VK_MBUTTON.0 as usize] = 0x88;
-                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_MIDDLE_BUTTON_UP
-                            != 0
-                        {
-                            keys[VK_MBUTTON.0 as usize] = 0x08;
-                        }
+                break 'wm_input;
+            }
 
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_BUTTON_4_DOWN
-                            != 0
-                        {
-                            keys[VK_XBUTTON1.0 as usize] = 0x88;
-                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_BUTTON_4_UP
-                            != 0
-                        {
-                            keys[VK_XBUTTON1.0 as usize] = 0x08;
-                        }
+            match RID_DEVICE_INFO_TYPE(raw_data.header.dwType) {
+                RIM_TYPEMOUSE => {
+                    let button_flags = raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32;
 
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_BUTTON_5_DOWN
-                            != 0
-                        {
-                            keys[VK_XBUTTON2.0 as usize] = 0x88;
-                        } else if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_BUTTON_5_UP
-                            != 0
-                        {
-                            keys[VK_XBUTTON2.0 as usize] = 0x08;
-                        }
+                    if button_flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
+                        keys[VK_LBUTTON.0 as usize] = 0x88;
+                    } else if button_flags & RI_MOUSE_LEFT_BUTTON_UP != 0 {
+                        keys[VK_LBUTTON.0 as usize] = 0x08;
+                    }
+                    if button_flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0 {
+                        keys[VK_RBUTTON.0 as usize] = 0x88;
+                    } else if button_flags & RI_MOUSE_RIGHT_BUTTON_UP != 0 {
+                        keys[VK_RBUTTON.0 as usize] = 0x08;
+                    }
+                    if button_flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0 {
+                        keys[VK_MBUTTON.0 as usize] = 0x88;
+                    } else if button_flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0 {
+                        keys[VK_MBUTTON.0 as usize] = 0x08;
+                    }
 
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_WHEEL
-                            != 0
-                        {
-                            let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
-                                as i16
-                                / WHEEL_DELTA as i16;
-                            MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
-                        }
+                    if button_flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
+                        keys[VK_XBUTTON1.0 as usize] = 0x88;
+                    } else if button_flags & RI_MOUSE_BUTTON_4_UP != 0 {
+                        keys[VK_XBUTTON1.0 as usize] = 0x08;
+                    }
 
-                        if raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32
-                            & RI_MOUSE_HWHEEL
-                            != 0
-                        {
-                            let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
-                                as i16
-                                / WHEEL_DELTA as i16;
-                            MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
-                        }
-                    },
-                    RIM_TYPEKEYBOARD => {},
-                    _ => {},
-                }
+                    if button_flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
+                        keys[VK_XBUTTON2.0 as usize] = 0x88;
+                    } else if button_flags & RI_MOUSE_BUTTON_5_UP != 0 {
+                        keys[VK_XBUTTON2.0 as usize] = 0x08;
+                    }
+
+                    if button_flags & RI_MOUSE_WHEEL != 0 {
+                        let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
+                            as i16
+                            / WHEEL_DELTA as i16;
+                        MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
+                    }
+
+                    if button_flags & RI_MOUSE_HWHEEL != 0 {
+                        let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
+                            as i16
+                            / WHEEL_DELTA as i16;
+                        MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
+                    }
+                },
+                RIM_TYPEKEYBOARD => 'rim_keyboard: {
+                    if raw_data.data.keyboard.VKey == 0 {
+                        break 'rim_keyboard;
+                    }
+
+                    let virtual_key = raw_data.data.keyboard.VKey;
+                    let mut scan_code = raw_data.data.keyboard.MakeCode as u32;
+                    let flags = raw_data.data.keyboard.Flags as u32;
+
+                    scan_code |= if flags & RI_KEY_E0 != 0 { 0xe000 } else { 0 };
+                    scan_code |= if flags & RI_KEY_E1 != 0 { 0xe100 } else { 0 };
+
+                    let virtual_key = match VIRTUAL_KEY(virtual_key) {
+                        VK_SHIFT | VK_CONTROL | VK_MENU => unsafe {
+                            match MapVirtualKeyA(scan_code, MAPVK_VSC_TO_VK_EX) {
+                                0 => virtual_key,
+                                i => VIRTUAL_KEY(i as _).0,
+                            }
+                        },
+                        _ => virtual_key,
+                    };
+
+                    if raw_data.data.keyboard.VKey < 0xFF {
+                        keys[virtual_key as usize] =
+                            if (flags & RI_KEY_BREAK) == 0 { 0x88 } else { 0x08 };
+                    }
+
+                    let mut ch: [u16; 1] = [0];
+
+                    if (flags & RI_KEY_BREAK) == 0
+                        && ToUnicode(virtual_key as u32, scan_code, &*keys, &mut ch, 0x2) != 0
+                    {
+                        INPUT_CHARACTER.store(ch[0] as u8, Ordering::SeqCst);
+                    }
+                },
+                _ => {},
             }
         },
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam.0 < 256 => {
