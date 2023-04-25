@@ -138,8 +138,10 @@ pub(crate) trait ImguiWindowsEventHandler {
 pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     let msg = (*lpmsg).message;
 
-    let is_mouse_message = msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST;
-    let is_keyboard_message = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
+    let mut is_mouse_message = msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST;
+    let mut is_keyboard_message = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
+
+    let game_blocked = GAME_MOUSE_BLOCKED.load(Ordering::SeqCst);
 
     if msg != WM_INPUT && !is_mouse_message && !is_keyboard_message {
         return false;
@@ -173,6 +175,8 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
 
             match RID_DEVICE_INFO_TYPE(raw_data.header.dwType) {
                 RIM_TYPEMOUSE => {
+                    is_mouse_message = true;
+
                     let button_flags = raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32;
 
                     if button_flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
@@ -222,6 +226,8 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                         break 'rim_keyboard;
                     }
 
+                    is_keyboard_message = true;
+
                     let virtual_key = raw_data.data.keyboard.VKey;
                     let mut scan_code = raw_data.data.keyboard.MakeCode as u32;
                     let flags = raw_data.data.keyboard.Flags as u32;
@@ -238,6 +244,15 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                         },
                         _ => virtual_key,
                     };
+
+                    // Stops key up from getting blocked if we didn't block key down previously
+                    if game_blocked
+                        && (flags & RI_KEY_BREAK) != 0
+                        && virtual_key < 0xFF
+                        && (keys[virtual_key as usize] & 0x04) == 0
+                    {
+                        is_keyboard_message = false;
+                    }
 
                     if raw_data.data.keyboard.VKey < 0xFF {
                         keys[virtual_key as usize] =
@@ -291,6 +306,10 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
             if key_down {
                 keys[keycode.0 as usize] = 0x88;
             } else {
+                // Stops key up from getting blocked if we didn't block key down previously
+                if game_blocked && (keys[keycode.0 as usize] & 0x04) == 0 {
+                    is_keyboard_message = false;
+                }
                 keys[keycode.0 as usize] = 0x08;
             }
         },
@@ -330,7 +349,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
         _ => {},
     }
 
-    return GAME_MOUSE_BLOCKED.load(Ordering::SeqCst);
+    return (game_blocked && is_mouse_message) || (game_blocked && is_keyboard_message);
 }
 
 pub unsafe fn is_key_down(keycode: usize) -> bool {
