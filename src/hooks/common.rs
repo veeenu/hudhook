@@ -86,6 +86,27 @@ pub(crate) trait ImguiWindowsEventHandler {
     ) {
         let mut io = ImguiWindowsEventHandler::io_mut(self);
 
+        // Update misc states //
+
+        io.display_size = [
+            (window_rect.right - window_rect.left) as f32,
+            (window_rect.bottom - window_rect.top) as f32,
+        ];
+
+        if render_loop.should_block_messages(&io) {
+            if !io.mouse_draw_cursor {
+                io.mouse_draw_cursor = true;
+                GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+            }
+        } else {
+            if io.mouse_draw_cursor {
+                io.mouse_draw_cursor = false;
+                GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+            }
+        }
+
+        // Update keyboard states //
+
         for i in 0..256 {
             io.keys_down[i] = is_key_down(i);
         }
@@ -100,25 +121,7 @@ pub(crate) trait ImguiWindowsEventHandler {
             io.add_input_character(char as char);
         }
 
-        io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
-        io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
-
-        if render_loop.should_block_messages(&io) {
-            if !io.mouse_draw_cursor {
-                io.mouse_draw_cursor = true;
-                GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
-            }
-        } else {
-            if io.mouse_draw_cursor {
-                io.mouse_draw_cursor = false;
-                GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
-            }
-        }
-
-        io.display_size = [
-            (window_rect.right - window_rect.left) as f32,
-            (window_rect.bottom - window_rect.top) as f32,
-        ];
+        // Update mouse states //
 
         let mut pos = *CURSOR_POS.get().unwrap().lock();
 
@@ -131,6 +134,9 @@ pub(crate) trait ImguiWindowsEventHandler {
             io.mouse_pos[0] = pos.x as f32;
             io.mouse_pos[1] = pos.y as f32;
         }
+
+        io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
+        io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
     }
 }
 
@@ -150,9 +156,6 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
 
     let wparam = (*lpmsg).wParam;
     let lparam = (*lpmsg).lParam;
-
-    // println!("Mouse: {:?}", is_mouse_message);
-    // println!("Keyboard: {:?}", is_keyboard_message);
 
     *CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
 
@@ -222,6 +225,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                     }
                 },
                 RIM_TYPEKEYBOARD => 'rim_keyboard: {
+                    // Ignore messages without a valid key code
                     if raw_data.data.keyboard.VKey == 0 {
                         break 'rim_keyboard;
                     }
@@ -232,6 +236,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                     let mut scan_code = raw_data.data.keyboard.MakeCode as u32;
                     let flags = raw_data.data.keyboard.Flags as u32;
 
+                    // Necessary to check LEFT/RIGHT keys on CTRL & ALT & others (not shift)
                     scan_code |= if flags & RI_KEY_E0 != 0 { 0xe000 } else { 0 };
                     scan_code |= if flags & RI_KEY_E1 != 0 { 0xe100 } else { 0 };
 
@@ -254,6 +259,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                         is_keyboard_message = false;
                     }
 
+                    // Filter out prefix messages without a key code
                     if raw_data.data.keyboard.VKey < 0xFF {
                         keys[virtual_key as usize] =
                             if (flags & RI_KEY_BREAK) == 0 { 0x88 } else { 0x08 };
@@ -261,6 +267,8 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
 
                     let mut ch: [u16; 1] = [0];
 
+                    // Only necessary if legacy keyboard messages are disabled I believe - will need
+                    // this later when we hook into rawinputdevices properly
                     if (flags & RI_KEY_BREAK) == 0
                         && ToUnicode(virtual_key as u32, scan_code, &*keys, &mut ch, 0x2) != 0
                     {
@@ -791,7 +799,8 @@ create PeekMessageW hook",
             MhHooks::new([
                 set_cursor_pos,
                 get_cursor_pos,
-                clip_cursor,
+                // clip_cursor, Hooking clip_cursor is crashing us right now because it doesn't
+                // like getting passed a NULL ptr. Windows-rs bump may fix this
                 post_message_a,
                 post_message_w,
                 peek_message_a,
@@ -828,6 +837,7 @@ pub fn setup_window_message_handling() {
         HHOOKS.get_or_init(|| Mutex::new(vec![]));
         let mut hhooks = HHOOKS.get_mut().unwrap().lock();
 
+        // Find all threads in our process
         let thread_snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).unwrap();
 
         if thread_snap != INVALID_HANDLE_VALUE {
@@ -840,6 +850,7 @@ pub fn setup_window_message_handling() {
                     if let Ok(handle_thread) =
                         OpenThread(THREAD_QUERY_INFORMATION, true, th32.th32ThreadID)
                     {
+                        // Hook a message handler into every valid thread
                         if handle_thread != INVALID_HANDLE_VALUE {
                             if let Ok(hhook) = SetWindowsHookExW(
                                 WH_GETMESSAGE,
