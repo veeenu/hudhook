@@ -256,7 +256,8 @@ mod tests {
     #[test]
     #[ignore]
     fn test_get_process_by_title() {
-        // Notepad doesn't expose its title anymore, so we ignore this test for the time being.
+        // Notepad doesn't expose its title anymore, so we ignore this test for the time
+        // being.
         let mut child = Command::new("Notepad.exe").spawn().expect("Couldn't start notepad");
         std::thread::sleep(Duration::from_millis(500));
 
