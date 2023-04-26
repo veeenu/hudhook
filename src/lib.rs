@@ -239,6 +239,7 @@ pub mod lifecycle {
     }
 }
 
+pub use imgui;
 pub use tracing;
 
 /// Convenience reexports for the [macro](crate::hudhook).
