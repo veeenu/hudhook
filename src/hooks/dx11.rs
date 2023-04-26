@@ -11,7 +11,7 @@ use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM,
 };
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
+    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0, D3D_DRIVER_TYPE_NULL,
 };
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
@@ -309,7 +309,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
-            D3D_DRIVER_TYPE_HARDWARE,
+            D3D_DRIVER_TYPE_NULL,
             None,
             D3D11_CREATE_DEVICE_FLAG(0),
             &[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0],
