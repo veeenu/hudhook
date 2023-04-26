@@ -695,6 +695,9 @@ unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPAR
 
         SetCursor(HCURSOR(0));
 
+        // Unlock cursor if game locked it previously with ClipCursor
+        ClipCursor(std::ptr::null());
+
         (*msg).message = WM_NULL;
     }
 
