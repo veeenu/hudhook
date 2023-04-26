@@ -94,15 +94,11 @@ pub(crate) trait ImguiWindowsEventHandler {
         ];
 
         if render_loop.should_block_messages(&io) {
-            if !io.mouse_draw_cursor {
-                io.mouse_draw_cursor = true;
-                GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
-            }
+            io.mouse_draw_cursor = true;
+            GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
         } else {
-            if io.mouse_draw_cursor {
-                io.mouse_draw_cursor = false;
-                GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
-            }
+            io.mouse_draw_cursor = false;
+            GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
         }
 
         // Update keyboard states //
