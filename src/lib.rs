@@ -290,7 +290,6 @@ pub mod reexports {
 macro_rules! hudhook {
     ($hooks:expr) => {
         use hudhook::hooks::Hooks;
-        use hudhook::log::*;
         use hudhook::reexports::*;
         use hudhook::tracing::*;
         use hudhook::*;

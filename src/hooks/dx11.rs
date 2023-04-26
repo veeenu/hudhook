@@ -7,12 +7,9 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{
-    GetLastError, GetLastError, BOOL, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, POINT, WPARAM,
-};
+use windows::Win32::Foundation::{GetLastError, BOOL, POINT};
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
-    D3D_FEATURE_LEVEL_11_0,
+    D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,

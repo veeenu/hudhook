@@ -3,9 +3,9 @@ use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 
 use imgui::{Context, Io, Key, Ui};
-use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::trace;
 use windows::Win32::Foundation::{
     CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
