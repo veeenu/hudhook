@@ -374,7 +374,8 @@ impl ImguiRenderer {
         KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
         ImguiWindowsEventHandler::setup_io(&mut renderer);
-        common::setup_window_message_handling();
+
+        common::hook_msg_proc();
 
         renderer
     }
@@ -485,7 +486,9 @@ impl ImguiRenderer {
         None
     }
 
-    unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain3>) {}
+    unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain3>) {
+        common::unhook_msg_proc();
+    }
 }
 
 impl ImguiWindowsEventHandler for ImguiRenderer {

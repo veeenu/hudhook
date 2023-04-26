@@ -140,7 +140,7 @@ impl ImguiRenderer {
         CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
         KEYS.get_or_init(|| Mutex::new([0x08; 256]));
 
-        common::setup_window_message_handling();
+        common::hook_msg_proc();
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, flags, swap_chain };
@@ -184,7 +184,9 @@ impl ImguiRenderer {
         self.swap_chain.clone()
     }
 
-    unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain>) {}
+    unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain>) {
+        common::unhook_msg_proc();
+    }
 
     fn ctx(&self) -> &imgui::Context {
         &self.ctx

@@ -30,8 +30,9 @@ unsafe fn draw(this: &IDirect3DDevice9) {
 
             LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
             CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            common::setup_window_message_handling();
             KEYS.get_or_init(|| Mutex::new([0x08; 256]));
+
+            common::hook_msg_proc();
 
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
@@ -147,7 +148,9 @@ impl ImguiRenderer {
         self.renderer.render(draw_data).unwrap();
     }
 
-    unsafe fn cleanup(&mut self) {}
+    unsafe fn cleanup(&mut self) {
+        common::unhook_msg_proc();
+    }
 }
 
 impl ImguiWindowsEventHandler for ImguiRenderer {

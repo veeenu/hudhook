@@ -688,22 +688,6 @@ unsafe extern "system" fn register_raw_input_devices_impl(
     return BOOL::from(true);
 }
 
-unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let msg: *mut MSG = std::mem::transmute(lparam);
-    if handle_window_message(msg) {
-        TranslateMessage(msg);
-
-        SetCursor(HCURSOR(0));
-
-        // Unlock cursor if game locked it previously with ClipCursor
-        ClipCursor(std::ptr::null());
-
-        (*msg).message = WM_NULL;
-    }
-
-    LRESULT(1)
-}
-
 pub struct CommonHooks(MhHooks);
 
 impl CommonHooks {
@@ -827,16 +811,26 @@ impl Hooks for CommonHooks {
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
         self.0.unapply();
-
-        let hhooks = HHOOKS.get().unwrap().lock();
-
-        for i in 0..hhooks.len() {
-            UnhookWindowsHookEx(hhooks[i]);
-        }
     }
 }
 
-pub fn setup_window_message_handling() {
+unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let msg: *mut MSG = std::mem::transmute(lparam);
+    if handle_window_message(msg) {
+        TranslateMessage(msg);
+
+        SetCursor(HCURSOR(0));
+
+        // Unlock cursor if game locked it previously with ClipCursor
+        ClipCursor(std::ptr::null());
+
+        (*msg).message = WM_NULL;
+    }
+
+    LRESULT(1)
+}
+
+pub fn hook_msg_proc() {
     unsafe {
         let pid = GetCurrentProcessId();
         HHOOKS.get_or_init(|| Mutex::new(vec![]));
@@ -875,5 +869,13 @@ pub fn setup_window_message_handling() {
         }
 
         CloseHandle(thread_snap);
+    }
+}
+
+pub unsafe fn unhook_msg_proc() {
+    let hhooks = HHOOKS.get().unwrap().lock();
+
+    for i in 0..hhooks.len() {
+        UnhookWindowsHookEx(hhooks[i]);
     }
 }
