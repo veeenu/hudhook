@@ -165,13 +165,15 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
             let mut raw_data_size = size_of::<RAWINPUT>() as u32;
             let raw_data_header_size = size_of::<RAWINPUTHEADER>() as u32;
 
-            if GetRawInputData(
-                HRAWINPUT(lparam.0),
-                RID_INPUT,
-                &mut raw_data as *mut _ as _,
-                &mut raw_data_size,
-                raw_data_header_size,
-            ) == std::u32::MAX
+            // Ignore messages when window is not focused
+            if wparam.0 as u32 & 0xFF != RIM_INPUT
+                || GetRawInputData(
+                    HRAWINPUT(lparam.0),
+                    RID_INPUT,
+                    &mut raw_data as *mut _ as _,
+                    &mut raw_data_size,
+                    raw_data_header_size,
+                ) == std::u32::MAX
             {
                 break 'wm_input;
             }
