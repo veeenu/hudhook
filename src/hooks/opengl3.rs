@@ -2,9 +2,9 @@ use std::ffi::CString;
 use std::time::Instant;
 
 use imgui::Context;
-use log::{debug, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::{debug, trace};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};

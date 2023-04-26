@@ -5,7 +5,7 @@ use std::mem::{self, size_of};
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 
-use log::*;
+use tracing::debug;
 use widestring::{U16CStr, U16CString};
 use windows::core::{Error, Result, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};
@@ -254,7 +254,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_get_process_by_title() {
+        // Notepad doesn't expose its title anymore, so we ignore this test for the time
+        // being.
         let mut child = Command::new("Notepad.exe").spawn().expect("Couldn't start notepad");
         std::thread::sleep(Duration::from_millis(500));
 

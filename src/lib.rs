@@ -130,24 +130,31 @@ pub mod utils {
     pub fn alloc_console() {
         if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
             unsafe {
+                // Allocate a console
                 crate::reexports::AllocConsole();
             }
         }
     }
 
-    /// Initialize `simplelog` with sane defaults.
-    #[cfg(feature = "simplelog")]
-    pub fn simplelog() {
-        use log::*;
-        use simplelog::*;
+    pub fn enable_console_colors() {
+        if CONSOLE_ALLOCATED.load(Ordering::SeqCst) {
+            unsafe {
+                // Get the stdout handle
+                let stdout_handle =
+                    crate::reexports::GetStdHandle(crate::reexports::STD_OUTPUT_HANDLE).unwrap();
 
-        TermLogger::init(
-            LevelFilter::Trace,
-            Config::default(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        )
-        .ok();
+                // call GetConsoleMode to get the current mode of the console
+                let mut current_console_mode = crate::reexports::CONSOLE_MODE(0);
+                crate::reexports::GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
+
+                // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING for ANSI
+                // escape sequences
+                current_console_mode.0 |= crate::reexports::ENABLE_VIRTUAL_TERMINAL_PROCESSING.0;
+
+                // Call SetConsoleMode to set the new mode
+                crate::reexports::SetConsoleMode(stdout_handle, current_console_mode).unwrap();
+            }
+        }
     }
 
     /// Free the previously allocated Windows console.
@@ -245,12 +252,15 @@ pub mod lifecycle {
     }
 }
 
-pub use log;
+pub use {imgui, tracing};
 
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
     pub use windows::Win32::Foundation::HINSTANCE;
-    pub use windows::Win32::System::Console::{AllocConsole, FreeConsole};
+    pub use windows::Win32::System::Console::{
+        AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+    };
     pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 }
 
@@ -282,6 +292,7 @@ macro_rules! hudhook {
         use hudhook::hooks::Hooks;
         use hudhook::log::*;
         use hudhook::reexports::*;
+        use hudhook::tracing::*;
         use hudhook::*;
 
         /// Entry point created by the `hudhook` library.

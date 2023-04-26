@@ -7,9 +7,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use imgui::Context;
-use log::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::{debug, error, info, trace};
 use widestring::{u16cstr, U16CStr};
 use windows::core::{Interface, HRESULT, PCWSTR};
 use windows::w;

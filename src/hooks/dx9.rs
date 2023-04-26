@@ -1,14 +1,14 @@
 use std::mem;
 
 use imgui::Context;
-use log::{debug, info, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::{debug, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{GetLastError, BOOL, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
-    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DDISPLAYMODE, D3DFORMAT,
+    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
     D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::RGNDATA;
@@ -252,7 +252,7 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     let mut device: Option<IDirect3DDevice9> = None;
     d9.CreateDevice(
         D3DADAPTER_DEFAULT,
-        D3DDEVTYPE_HAL,
+        D3DDEVTYPE_NULLREF,
         GetDesktopWindow(),
         D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
         &mut present_params,
