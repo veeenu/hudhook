@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 use imgui::{Context, Io, Key, Ui};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 use windows::Win32::Foundation::{
     CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
@@ -212,10 +212,17 @@ pub(crate) trait ImguiWindowsEventHandler {
 
         // Update mouse states //
 
-        let pos = input.get_mouse_position();
+        let mut pos = input.get_mouse_position();
 
-        io.mouse_pos[0] = pos.x as f32;
-        io.mouse_pos[1] = pos.y as f32;
+        let active_window = GetForegroundWindow();
+        if !HANDLE(active_window.0).is_invalid()
+            && (active_window == game_hwnd || IsChild(active_window, game_hwnd).as_bool())
+        {
+            ScreenToClient(active_window, &mut pos);
+
+            io.mouse_pos[0] = pos.x as f32;
+            io.mouse_pos[1] = pos.y as f32;
+        }
 
         io.mouse_wheel += input.get_mouse_wheel_delta();
         io.mouse_wheel_h += input.get_mouse_wheel_delta_h();
@@ -223,8 +230,8 @@ pub(crate) trait ImguiWindowsEventHandler {
 }
 
 #[must_use]
-pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
-    let msg = (*lpmsg).message;
+pub(crate) unsafe fn handle_window_message(lpmsg: &mut MSG) -> bool {
+    let msg = lpmsg.message;
 
     let mut is_mouse_message = msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST;
     let mut is_keyboard_message = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
@@ -235,12 +242,10 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
 
     let mut input = INPUT.get_mut().unwrap().lock();
 
-    let wparam = (*lpmsg).wParam;
-    let lparam = (*lpmsg).lParam;
+    let wparam = lpmsg.wParam;
+    let lparam = lpmsg.lParam;
 
-    ScreenToClient((*lpmsg).hwnd, &mut (*lpmsg).pt as *mut _);
-
-    input.set_mouse_position(POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y });
+    input.set_mouse_position(POINT { x: lpmsg.pt.x, y: lpmsg.pt.y });
 
     match msg {
         WM_INPUT => 'wm_input: {
@@ -682,14 +687,14 @@ unsafe extern "system" fn peek_message_a_impl(
         return BOOL::from(false);
     }
 
-    if !IsWindow((*lpmsg).hwnd).as_bool()
-        && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
-        && handle_window_message(lpmsg)
-    {
-        TranslateMessage(lpmsg);
+    // if !IsWindow((*lpmsg).hwnd).as_bool()
+    //     && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
+    //     && handle_window_message(lpmsg)
+    // {
+    //     TranslateMessage(lpmsg);
 
-        (*lpmsg).message = WM_NULL;
-    }
+    //     (*lpmsg).message = WM_NULL;
+    // }
 
     BOOL::from(true)
 }
@@ -708,14 +713,14 @@ unsafe extern "system" fn peek_message_w_impl(
         return BOOL::from(false);
     }
 
-    if !IsWindow((*lpmsg).hwnd).as_bool()
-        && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
-        && handle_window_message(lpmsg)
-    {
-        TranslateMessage(lpmsg);
+    // if !IsWindow((*lpmsg).hwnd).as_bool()
+    //     && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
+    //     && handle_window_message(lpmsg)
+    // {
+    //     TranslateMessage(lpmsg);
 
-        (*lpmsg).message = WM_NULL;
-    }
+    //     (*lpmsg).message = WM_NULL;
+    // }
 
     BOOL::from(true)
 }
@@ -899,21 +904,29 @@ impl Hooks for CommonHooks {
     }
 }
 
-unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let msg: *mut MSG = std::mem::transmute(lparam);
+unsafe extern "system" fn get_msg_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let msg = (lparam.0 as *mut MSG).as_mut();
 
-    if handle_window_message(msg) {
-        TranslateMessage(msg);
+    if let Some(msg) = msg {
+        if msg.hwnd.0 != 0
+            && (PEEK_MESSAGE_REMOVE_TYPE(wparam.0 as u32) & PM_REMOVE)
+                != PEEK_MESSAGE_REMOVE_TYPE(0)
+            && handle_window_message(msg)
+        {
+            TranslateMessage(msg);
 
-        SetCursor(HCURSOR(0));
+            SetCursor(HCURSOR(0));
 
-        // Unlock cursor if game locked it previously with ClipCursor
-        ClipCursor(std::ptr::null());
+            // Unlock cursor if game locked it previously with ClipCursor
+            ClipCursor(std::ptr::null());
 
-        (*msg).message = WM_NULL;
+            msg.message = WM_NULL;
+        }
+
+        return LRESULT(1);
     }
 
-    LRESULT(1)
+    CallNextHookEx(HHOOK(0), code, wparam, lparam)
 }
 
 pub fn hook_msg_proc() {
