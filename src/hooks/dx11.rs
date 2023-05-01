@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{GetLastError, BOOL, POINT};
+use windows::Win32::Foundation::{GetLastError, BOOL};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
@@ -26,7 +26,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
-use crate::hooks::common::{self, CURSOR_POS, KEYS, LAST_CURSOR_POS};
+use crate::hooks::common::{self};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -138,10 +138,7 @@ impl ImguiRenderer {
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
-        LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-        CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-        KEYS.get_or_init(|| Mutex::new([0x08; 256]));
-
+        common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
         common::hook_msg_proc();
 
         trace!("Renderer initialized");
@@ -187,6 +184,7 @@ impl ImguiRenderer {
     }
 
     unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain>) {
+        common::INPUT.take();
         common::unhook_msg_proc();
     }
 

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
 use imgui::{Context, Io, Key, Ui};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::trace;
+use tracing::{debug, trace};
 use windows::Win32::Foundation::{
     CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
@@ -33,13 +33,102 @@ use crate::mh::{MhHook, MhHooks};
 
 pub static mut HHOOKS: OnceCell<Mutex<Vec<HHOOK>>> = OnceCell::new();
 
-pub static GAME_MOUSE_BLOCKED: AtomicBool = AtomicBool::new(false);
-pub static mut LAST_CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
-pub static mut CURSOR_POS: OnceCell<Mutex<POINT>> = OnceCell::new();
-pub static mut KEYS: OnceCell<Mutex<[u8; 256]>> = OnceCell::new();
-pub static mut MOUSE_WHEEL_DELTA: AtomicI16 = AtomicI16::new(0);
-pub static mut MOUSE_WHEEL_DELTA_H: AtomicI16 = AtomicI16::new(0);
-pub static mut INPUT_CHARACTER: AtomicU8 = AtomicU8::new(0);
+pub static mut INPUT: OnceCell<Mutex<Input>> = OnceCell::new();
+
+#[derive(Debug)]
+pub struct Input {
+    block_mouse: bool,
+    block_keyboard: bool,
+    keys: [u8; 256],
+    input_character: AtomicU8,
+    mouse_wheel_delta: AtomicI16,
+    mouse_wheel_delta_h: AtomicI16,
+    mouse_position: POINT,
+    last_mouse_position: POINT,
+}
+
+impl Input {
+    pub fn new() -> Self {
+        Input {
+            block_mouse: false,
+            block_keyboard: false,
+            keys: [0x08; 256],
+            input_character: AtomicU8::new(0),
+            mouse_wheel_delta: AtomicI16::new(0),
+            mouse_wheel_delta_h: AtomicI16::new(0),
+            mouse_position: POINT::default(),
+            last_mouse_position: POINT::default(),
+        }
+    }
+
+    pub fn is_blocking_mouse_input(&self) -> bool {
+        self.block_mouse
+    }
+
+    pub fn block_mouse_input(&mut self, enabled: bool) {
+        self.block_mouse = enabled
+    }
+
+    pub fn is_blocking_keyboard_input(&self) -> bool {
+        self.block_keyboard
+    }
+
+    pub fn block_keyboard_input(&mut self, enabled: bool) {
+        self.block_keyboard = enabled
+    }
+
+    pub fn is_key_down(&self, keycode: usize) -> bool {
+        (self.keys[keycode] & 0x80) == 0x80
+    }
+
+    pub fn is_mouse_button_down(&self, button: usize) -> bool {
+        if button < 2 {
+            return self.is_key_down(VK_LBUTTON.0 as usize + button);
+        } else {
+            self.is_key_down(VK_LBUTTON.0 as usize + button + 1)
+        }
+    }
+
+    pub fn get_input_character(&self) -> u8 {
+        self.input_character.swap(0, Ordering::SeqCst)
+    }
+
+    pub fn set_input_character(&mut self, new_input_character: u8) {
+        self.input_character.store(new_input_character, Ordering::SeqCst)
+    }
+
+    pub fn get_mouse_wheel_delta(&self) -> f32 {
+        self.mouse_wheel_delta.swap(0, Ordering::SeqCst) as f32
+    }
+
+    pub fn set_mouse_wheel_delta(&mut self, new_mouse_wheel_delta: i16) {
+        self.mouse_wheel_delta.store(new_mouse_wheel_delta, Ordering::SeqCst)
+    }
+
+    pub fn get_mouse_wheel_delta_h(&self) -> f32 {
+        self.mouse_wheel_delta_h.swap(0, Ordering::SeqCst) as f32
+    }
+
+    pub fn set_mouse_wheel_delta_h(&mut self, new_mouse_wheel_delta: i16) {
+        self.mouse_wheel_delta.store(new_mouse_wheel_delta, Ordering::SeqCst)
+    }
+
+    pub fn get_mouse_position(&self) -> POINT {
+        self.mouse_position
+    }
+
+    pub fn set_mouse_position(&mut self, new_position: POINT) {
+        self.mouse_position = new_position;
+    }
+
+    pub fn get_last_mouse_position(&self) -> POINT {
+        self.last_mouse_position
+    }
+
+    pub fn set_last_mouse_position(&mut self, new_position: POINT) {
+        self.last_mouse_position = new_position;
+    }
+}
 
 pub(crate) trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
@@ -86,6 +175,8 @@ pub(crate) trait ImguiWindowsEventHandler {
     ) {
         let mut io = ImguiWindowsEventHandler::io_mut(self);
 
+        let mut input = INPUT.get_mut().unwrap().lock();
+
         // Update misc states //
 
         io.display_size = [
@@ -95,44 +186,39 @@ pub(crate) trait ImguiWindowsEventHandler {
 
         if render_loop.should_block_messages(&io) {
             io.mouse_draw_cursor = true;
-            GAME_MOUSE_BLOCKED.store(true, Ordering::SeqCst);
+            input.block_mouse = true;
+            input.block_keyboard = true;
         } else {
             io.mouse_draw_cursor = false;
-            GAME_MOUSE_BLOCKED.store(false, Ordering::SeqCst);
+            input.block_mouse = false;
+            input.block_keyboard = false;
         }
 
         // Update keyboard states //
 
         for i in 0..256 {
-            io.keys_down[i] = is_key_down(i);
+            io.keys_down[i] = input.is_key_down(i);
         }
 
         for i in 0..5 {
-            io.mouse_down[i] = is_mouse_button_down(i);
+            io.mouse_down[i] = input.is_mouse_button_down(i);
         }
 
-        let char = INPUT_CHARACTER.swap(0, Ordering::SeqCst);
+        let character = input.get_input_character();
 
-        if char != 0 {
-            io.add_input_character(char as char);
+        if character != 0 {
+            io.add_input_character(character as char);
         }
 
         // Update mouse states //
 
-        let mut pos = *CURSOR_POS.get().unwrap().lock();
+        let pos = input.get_mouse_position();
 
-        let active_window = GetForegroundWindow();
-        if !HANDLE(active_window.0).is_invalid()
-            && (active_window == game_hwnd || IsChild(active_window, game_hwnd).as_bool())
-        {
-            ScreenToClient(active_window, &mut pos as *mut _);
+        io.mouse_pos[0] = pos.x as f32;
+        io.mouse_pos[1] = pos.y as f32;
 
-            io.mouse_pos[0] = pos.x as f32;
-            io.mouse_pos[1] = pos.y as f32;
-        }
-
-        io.mouse_wheel += MOUSE_WHEEL_DELTA.swap(0, Ordering::SeqCst) as f32;
-        io.mouse_wheel_h += MOUSE_WHEEL_DELTA_H.swap(0, Ordering::SeqCst) as f32;
+        io.mouse_wheel += input.get_mouse_wheel_delta();
+        io.mouse_wheel_h += input.get_mouse_wheel_delta_h();
     }
 }
 
@@ -143,17 +229,18 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
     let mut is_mouse_message = msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST;
     let mut is_keyboard_message = msg >= WM_KEYFIRST && msg <= WM_KEYLAST;
 
-    let game_blocked = GAME_MOUSE_BLOCKED.load(Ordering::SeqCst);
-
     if msg != WM_INPUT && !is_mouse_message && !is_keyboard_message {
         return false;
     }
-    let mut keys = KEYS.get_mut().unwrap().lock();
+
+    let mut input = INPUT.get_mut().unwrap().lock();
 
     let wparam = (*lpmsg).wParam;
     let lparam = (*lpmsg).lParam;
 
-    *CURSOR_POS.get_mut().unwrap().lock() = POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y };
+    ScreenToClient((*lpmsg).hwnd, &mut (*lpmsg).pt as *mut _);
+
+    input.set_mouse_position(POINT { x: (*lpmsg).pt.x, y: (*lpmsg).pt.y });
 
     match msg {
         WM_INPUT => 'wm_input: {
@@ -181,45 +268,45 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                     let button_flags = raw_data.data.mouse.Anonymous.Anonymous.usButtonFlags as u32;
 
                     if button_flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
-                        keys[VK_LBUTTON.0 as usize] = 0x88;
+                        input.keys[VK_LBUTTON.0 as usize] = 0x88;
                     } else if button_flags & RI_MOUSE_LEFT_BUTTON_UP != 0 {
-                        keys[VK_LBUTTON.0 as usize] = 0x08;
+                        input.keys[VK_LBUTTON.0 as usize] = 0x08;
                     }
                     if button_flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0 {
-                        keys[VK_RBUTTON.0 as usize] = 0x88;
+                        input.keys[VK_RBUTTON.0 as usize] = 0x88;
                     } else if button_flags & RI_MOUSE_RIGHT_BUTTON_UP != 0 {
-                        keys[VK_RBUTTON.0 as usize] = 0x08;
+                        input.keys[VK_RBUTTON.0 as usize] = 0x08;
                     }
                     if button_flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0 {
-                        keys[VK_MBUTTON.0 as usize] = 0x88;
+                        input.keys[VK_MBUTTON.0 as usize] = 0x88;
                     } else if button_flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0 {
-                        keys[VK_MBUTTON.0 as usize] = 0x08;
+                        input.keys[VK_MBUTTON.0 as usize] = 0x08;
                     }
 
                     if button_flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
-                        keys[VK_XBUTTON1.0 as usize] = 0x88;
+                        input.keys[VK_XBUTTON1.0 as usize] = 0x88;
                     } else if button_flags & RI_MOUSE_BUTTON_4_UP != 0 {
-                        keys[VK_XBUTTON1.0 as usize] = 0x08;
+                        input.keys[VK_XBUTTON1.0 as usize] = 0x08;
                     }
 
                     if button_flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
-                        keys[VK_XBUTTON2.0 as usize] = 0x88;
+                        input.keys[VK_XBUTTON2.0 as usize] = 0x88;
                     } else if button_flags & RI_MOUSE_BUTTON_5_UP != 0 {
-                        keys[VK_XBUTTON2.0 as usize] = 0x08;
+                        input.keys[VK_XBUTTON2.0 as usize] = 0x08;
                     }
 
                     if button_flags & RI_MOUSE_WHEEL != 0 {
                         let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
                             as i16
                             / WHEEL_DELTA as i16;
-                        MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
+                        input.set_mouse_wheel_delta(wheel_delta);
                     }
 
                     if button_flags & RI_MOUSE_HWHEEL != 0 {
                         let wheel_delta = raw_data.data.mouse.Anonymous.Anonymous.usButtonData
                             as i16
                             / WHEEL_DELTA as i16;
-                        MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
+                        input.set_mouse_wheel_delta_h(wheel_delta);
                     }
                 },
                 RIM_TYPEKEYBOARD => 'rim_keyboard: {
@@ -249,17 +336,17 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                     };
 
                     // Stops key up from getting blocked if we didn't block key down previously
-                    if game_blocked
+                    if input.is_blocking_keyboard_input()
                         && (flags & RI_KEY_BREAK) != 0
                         && virtual_key < 0xFF
-                        && (keys[virtual_key as usize] & 0x04) == 0
+                        && (input.keys[virtual_key as usize] & 0x04) == 0
                     {
                         is_keyboard_message = false;
                     }
 
                     // Filter out prefix messages without a key code
                     if raw_data.data.keyboard.VKey < 0xFF {
-                        keys[virtual_key as usize] =
+                        input.keys[virtual_key as usize] =
                             if (flags & RI_KEY_BREAK) == 0 { 0x88 } else { 0x08 };
                     }
 
@@ -268,9 +355,9 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
                     // Only necessary if legacy keyboard messages are disabled I believe - will need
                     // this later when we hook into rawinputdevices properly
                     if (flags & RI_KEY_BREAK) == 0
-                        && ToUnicode(virtual_key as u32, scan_code, &*keys, &mut ch, 0x2) != 0
+                        && ToUnicode(virtual_key as u32, scan_code, &input.keys, &mut ch, 0x2) != 0
                     {
-                        INPUT_CHARACTER.store(ch[0] as u8, Ordering::SeqCst);
+                        input.set_input_character(ch[0] as u8);
                     }
                 },
                 _ => {},
@@ -310,64 +397,57 @@ pub(crate) unsafe fn handle_window_message(lpmsg: *mut MSG) -> bool {
             let keycode = map_vkey(wparam.0 as _, lparam.0 as _);
 
             if key_down {
-                keys[keycode.0 as usize] = 0x88;
+                input.keys[keycode.0 as usize] = 0x88;
             } else {
                 // Stops key up from getting blocked if we didn't block key down previously
-                if game_blocked && (keys[keycode.0 as usize] & 0x04) == 0 {
+                if input.is_blocking_keyboard_input()
+                    && (input.keys[keycode.0 as usize] & 0x04) == 0
+                {
                     is_keyboard_message = false;
                 }
-                keys[keycode.0 as usize] = 0x08;
+                input.keys[keycode.0 as usize] = 0x08;
             }
         },
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-            keys[VK_LBUTTON.0 as usize] = 0x88;
+            input.keys[VK_LBUTTON.0 as usize] = 0x88;
         },
         WM_LBUTTONUP => {
-            keys[VK_LBUTTON.0 as usize] = 0x08;
+            input.keys[VK_LBUTTON.0 as usize] = 0x08;
         },
         WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-            keys[VK_RBUTTON.0 as usize] = 0x88;
+            input.keys[VK_RBUTTON.0 as usize] = 0x88;
         },
         WM_RBUTTONUP => {
-            keys[VK_RBUTTON.0 as usize] = 0x08;
+            input.keys[VK_RBUTTON.0 as usize] = 0x08;
         },
         WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-            keys[VK_MBUTTON.0 as usize] = 0x88;
+            input.keys[VK_MBUTTON.0 as usize] = 0x88;
         },
         WM_MBUTTONUP => {
-            keys[VK_MBUTTON.0 as usize] = 0x08;
+            input.keys[VK_MBUTTON.0 as usize] = 0x08;
         },
         WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            keys[(VK_XBUTTON1.0 + (hiword(wparam.0 as _) - XBUTTON1.0 as u16)) as usize] = 0x88;
+            input.keys[(VK_XBUTTON1.0 + (hiword(wparam.0 as _) - XBUTTON1.0 as u16)) as usize] =
+                0x88;
         },
         WM_XBUTTONUP => {
-            keys[(VK_XBUTTON1.0 + (hiword(wparam.0 as _) - XBUTTON1.0 as u16)) as usize] = 0x08;
+            input.keys[(VK_XBUTTON1.0 + (hiword(wparam.0 as _) - XBUTTON1.0 as u16)) as usize] =
+                0x08;
         },
         WM_MOUSEWHEEL => {
             let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
-            MOUSE_WHEEL_DELTA.store(wheel_delta, Ordering::SeqCst);
+            input.set_mouse_wheel_delta(wheel_delta);
         },
         WM_MOUSEHWHEEL => {
             let wheel_delta = get_wheel_delta_wparam(wparam.0 as _) as i16 / WHEEL_DELTA as i16;
-            MOUSE_WHEEL_DELTA_H.store(wheel_delta, Ordering::SeqCst);
+            input.set_mouse_wheel_delta_h(wheel_delta);
         },
-        WM_CHAR => INPUT_CHARACTER.store(wparam.0 as u8, Ordering::SeqCst),
+        WM_CHAR => input.set_input_character(wparam.0 as u8),
         _ => {},
     }
 
-    return (game_blocked && is_mouse_message) || (game_blocked && is_keyboard_message);
-}
-
-pub unsafe fn is_key_down(keycode: usize) -> bool {
-    return (KEYS.get().unwrap().lock()[keycode] & 0x80) == 0x80;
-}
-
-pub unsafe fn is_mouse_button_down(button: usize) -> bool {
-    if button < 2 {
-        return is_key_down(VK_LBUTTON.0 as usize + button);
-    } else {
-        is_key_down(VK_LBUTTON.0 as usize + button + 1)
-    }
+    return (input.is_blocking_mouse_input() && is_mouse_message)
+        || (input.is_blocking_keyboard_input() && is_keyboard_message);
 }
 
 /// Holds information useful to the render loop which can't be retrieved from
@@ -512,10 +592,11 @@ static REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE: OnceCell<RegisterRawInputDevicesFn
 unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
     trace!("SetCursorPos invoked");
 
-    LAST_CURSOR_POS.get_mut().unwrap().lock().x = x;
-    LAST_CURSOR_POS.get_mut().unwrap().lock().y = y;
+    let mut input = INPUT.get_mut().unwrap().lock();
 
-    if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
+    input.set_last_mouse_position(POINT { x, y });
+
+    if input.is_blocking_mouse_input() {
         return BOOL::from(true);
     }
 
@@ -526,8 +607,10 @@ unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
 unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
     trace!("GetCursorPos invoked");
 
-    if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
-        *lppoint = *LAST_CURSOR_POS.get().unwrap().lock();
+    let input = INPUT.get().unwrap().lock();
+
+    if input.is_blocking_mouse_input() {
+        *lppoint = input.get_last_mouse_position();
 
         return BOOL::from(true);
     }
@@ -539,7 +622,9 @@ unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
 unsafe extern "system" fn clip_cursor_impl(mut rect: *const RECT) -> BOOL {
     trace!("ClipCursor invoked");
 
-    if GAME_MOUSE_BLOCKED.load(Ordering::SeqCst) {
+    let input = INPUT.get().unwrap().lock();
+
+    if input.is_blocking_mouse_input() {
         rect = std::ptr::null();
     }
 
@@ -555,7 +640,9 @@ unsafe extern "system" fn post_message_a_impl(
 ) -> BOOL {
     trace!("PostMessageA invoked");
 
-    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
+    let input = INPUT.get().unwrap().lock();
+
+    if input.is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
         return BOOL::from(true);
     }
 
@@ -571,7 +658,9 @@ unsafe extern "system" fn post_message_w_impl(
 ) -> BOOL {
     trace!("PostMessageW invoked");
 
-    if GAME_MOUSE_BLOCKED.load(Ordering::Relaxed) && umsg == WM_MOUSEMOVE {
+    let input = INPUT.get().unwrap().lock();
+
+    if input.is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
         return BOOL::from(true);
     }
 
@@ -786,13 +875,13 @@ create PeekMessageW hook",
                 get_cursor_pos,
                 // clip_cursor, Hooking clip_cursor is crashing us right now because it doesn't
                 // like getting passed a NULL ptr. Windows-rs bump may fix this
-                post_message_a,
-                post_message_w,
-                peek_message_a,
-                peek_message_w,
-                get_message_a,
-                get_message_w,
-                register_raw_input_devices,
+                // post_message_a,
+                // post_message_w,
+                // peek_message_a,
+                // peek_message_w,
+                // get_message_a,
+                // get_message_w,
+                // register_raw_input_devices,
             ])
             .expect("couldn't create hooks"),
         )
@@ -812,6 +901,7 @@ impl Hooks for CommonHooks {
 
 unsafe extern "system" fn get_msg_proc(_code: i32, _wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let msg: *mut MSG = std::mem::transmute(lparam);
+
     if handle_window_message(msg) {
         TranslateMessage(msg);
 

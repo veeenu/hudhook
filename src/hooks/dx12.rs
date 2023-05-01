@@ -14,7 +14,7 @@ use widestring::{u16cstr, U16CStr};
 use windows::core::{Interface, HRESULT, PCWSTR};
 use windows::w;
 use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT,  RECT, WPARAM,
 };
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
@@ -32,8 +32,7 @@ use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler, CURSOR_POS, KEYS,
-    LAST_CURSOR_POS,
+    self, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -369,12 +368,9 @@ impl ImguiRenderer {
             swap_chain,
         };
 
-        LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-        CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-        KEYS.get_or_init(|| Mutex::new([0x08; 256]));
-
         ImguiWindowsEventHandler::setup_io(&mut renderer);
 
+        common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
         common::hook_msg_proc();
 
         renderer
@@ -487,6 +483,7 @@ impl ImguiRenderer {
     }
 
     unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain3>) {
+        common::INPUT.take();
         common::unhook_msg_proc();
     }
 }

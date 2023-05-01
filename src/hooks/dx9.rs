@@ -14,8 +14,8 @@ use windows::Win32::Graphics::Direct3D9::{
 use windows::Win32::Graphics::Gdi::RGNDATA;
 use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
 
-use super::common::{self, KEYS, LAST_CURSOR_POS};
-use crate::hooks::common::{ImguiWindowsEventHandler, CURSOR_POS};
+use super::common::{self};
+use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
@@ -28,10 +28,7 @@ unsafe fn draw(this: &IDirect3DDevice9) {
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
             let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
-            LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            KEYS.get_or_init(|| Mutex::new([0x08; 256]));
-
+            common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
             common::hook_msg_proc();
 
             Mutex::new(Box::new(ImguiRenderer {
@@ -149,6 +146,7 @@ impl ImguiRenderer {
     }
 
     unsafe fn cleanup(&mut self) {
+        common::INPUT.take();
         common::unhook_msg_proc();
     }
 }

@@ -6,12 +6,12 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, trace};
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{GetLastError, BOOL, HWND, POINT, RECT};
+use windows::Win32::Foundation::{GetLastError, BOOL, HWND, RECT};
 use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
-use super::common::{self, CURSOR_POS, KEYS, LAST_CURSOR_POS};
+use super::common::{self};
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
@@ -44,13 +44,9 @@ unsafe fn draw(dc: HDC) {
                 game_hwnd: hwnd,
             };
 
-            LAST_CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            CURSOR_POS.get_or_init(|| Mutex::new(POINT { x: 0, y: 0 }));
-            KEYS.get_or_init(|| Mutex::new([0x08; 256]));
-
             // Initialize window events on the imgui renderer
             ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
-
+            common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
             common::hook_msg_proc();
 
             // Return the imgui renderer as a mutex
@@ -127,6 +123,7 @@ impl ImguiRenderer {
     }
 
     unsafe fn cleanup(&mut self) {
+        common::INPUT.take();
         common::unhook_msg_proc();
     }
 }
