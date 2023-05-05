@@ -10,7 +10,7 @@ use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
-use windows::Win32::Graphics::OpenGL::{glGetIntegerv, GL_VIEWPORT};
+use windows::Win32::Graphics::OpenGL::{glClearColor, glGetIntegerv, GL_VIEWPORT};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
@@ -150,6 +150,7 @@ unsafe fn reset(hdc: HDC) {
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();
             RESOLUTION_AND_RECT.take();
+            glClearColor(0.0, 0.0, 0.0, 1.0);
         }
     }
 }
