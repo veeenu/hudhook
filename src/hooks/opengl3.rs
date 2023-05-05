@@ -10,6 +10,7 @@ use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
+use windows::Win32::Graphics::OpenGL::{glGetIntegerv, GL_VIEWPORT};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
@@ -116,12 +117,41 @@ unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
     // Draw ImGui
     draw(dc);
 
+    // If resolution or window rect changes - reset ImGui
+    reset(dc);
+
     // Get the trampoline
     let trampoline_wglswapbuffers =
         TRAMPOLINE.get().expect("opengl32.wglSwapBuffers trampoline uninitialized");
 
     // Call the original function
     trampoline_wglswapbuffers(dc)
+}
+
+static mut RESOLUTION_AND_RECT: Option<Mutex<([i32; 2], RECT)>> = None;
+
+unsafe fn reset(hdc: HDC) {
+    // Get resolution
+    let viewport = &mut [0; 4];
+    glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
+
+    let hwnd = WindowFromDC(hdc);
+    let rect = get_window_rect(&hwnd).unwrap();
+
+    let (resolution, window_rect) =
+        *RESOLUTION_AND_RECT.get_or_insert(Mutex::new(([viewport[2], viewport[3]], rect))).lock();
+
+    // Compare previously saved to current
+    if viewport[2] != resolution[0]
+        || viewport[3] != resolution[1]
+        || rect.right != window_rect.right
+        || rect.bottom != window_rect.bottom
+    {
+        if let Some(renderer) = IMGUI_RENDERER.take() {
+            renderer.lock().cleanup();
+            RESOLUTION_AND_RECT.take();
+        }
+    }
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
