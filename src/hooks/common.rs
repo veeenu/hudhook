@@ -7,22 +7,13 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, info, trace};
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{
-    CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
-    WPARAM,
-};
+use windows::Win32::Foundation::{BOOL, HANDLE, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
-use windows::Win32::System::Threading::{
-    GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
-    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
-    RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RID_DEVICE_INFO_TYPE, RID_INPUT,
+    RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
@@ -32,8 +23,6 @@ use super::dx9::ImguiDx9Hooks;
 use super::opengl3::ImguiOpenGl3Hooks;
 use super::{get_wheel_delta_wparam, hiword, Hooks};
 use crate::mh::{MhHook, MhHooks};
-
-pub static mut HHOOKS: OnceCell<Mutex<Vec<HHOOK>>> = OnceCell::new();
 
 pub static mut INPUT: OnceCell<Mutex<Input>> = OnceCell::new();
 
