@@ -3,7 +3,7 @@
 use std::ffi::{CStr, CString};
 use std::mem::{self, size_of};
 use std::path::PathBuf;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 use tracing::debug;
 use widestring::{U16CStr, U16CString};
@@ -19,9 +19,9 @@ use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, PROCESS_ALL_ACCESS,
+    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, INFINITE,
+    PROCESS_ALL_ACCESS,
 };
-use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, FindWindowW, GetWindowThreadProcessId};
 
 /// A process, open with the permissions appropriate for injection.
@@ -58,7 +58,7 @@ impl Process {
         let dll_path_buf = unsafe {
             VirtualAllocEx(
                 self.0,
-                null_mut(),
+                None,
                 (MAX_PATH as usize) * size_of::<u16>(),
                 MEM_RESERVE | MEM_COMMIT,
                 PAGE_READWRITE,
@@ -72,7 +72,7 @@ impl Process {
                 dll_path_buf,
                 dll_path.as_ptr() as *const std::ffi::c_void,
                 (MAX_PATH as usize) * size_of::<u16>(),
-                (&mut bytes_written) as *mut _,
+                Some((&mut bytes_written) as *mut _),
             )
         };
 
@@ -81,12 +81,12 @@ impl Process {
         let thread = unsafe {
             CreateRemoteThread(
                 self.0,
-                null(),
+                None,
                 0,
                 Some(std::mem::transmute(proc_addr)),
-                dll_path_buf,
+                Some(dll_path_buf),
                 0,
-                null_mut(),
+                None,
             )
         }?;
 
@@ -134,7 +134,7 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     }
 
     let mut pid: u32 = 0;
-    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
+    GetWindowThreadProcessId(hwnd, Some(&mut pid as *mut _));
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
@@ -153,7 +153,7 @@ unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     }
 
     let mut pid: u32 = 0;
-    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
+    GetWindowThreadProcessId(hwnd, Some(&mut pid as *mut _));
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }

@@ -2,13 +2,13 @@ use std::ffi::{c_void, CString};
 
 use once_cell::sync::OnceCell;
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{FARPROC, HINSTANCE};
+use windows::Win32::Foundation::{FARPROC, HMODULE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
-static OPENGL3_LIB: OnceCell<HINSTANCE> = OnceCell::new();
+static OPENGL3_LIB: OnceCell<HMODULE> = OnceCell::new();
 
-unsafe fn get_opengl3_lib() -> HINSTANCE {
+unsafe fn get_opengl3_lib() -> HMODULE {
     let opengl3_cstring = CString::new("opengl32.dll").unwrap();
 
     LoadLibraryA(PCSTR(opengl3_cstring.as_ptr() as _)).unwrap()

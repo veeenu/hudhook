@@ -213,22 +213,22 @@ pub mod lifecycle {
 
         use std::cell::OnceCell;
 
-        use windows::Win32::Foundation::HINSTANCE;
+        use windows::Win32::Foundation::HMODULE;
 
         use crate::hooks;
 
-        pub(super) static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
+        pub(super) static mut MODULE: OnceCell<HMODULE> = OnceCell::new();
         pub(super) static mut HOOKS: OnceCell<Box<dyn hooks::Hooks>> = OnceCell::new();
 
         /// Please don't use me.
-        pub fn set_module(module: HINSTANCE) {
+        pub fn set_module(module: HMODULE) {
             unsafe {
                 MODULE.set(module).unwrap();
             }
         }
 
         /// Please don't use me.
-        pub fn get_module() -> HINSTANCE {
+        pub fn get_module() -> HMODULE {
             unsafe { *MODULE.get().unwrap() }
         }
 
@@ -243,7 +243,7 @@ pub use {imgui, tracing};
 
 /// Convenience reexports for the [macro](crate::hudhook).
 pub mod reexports {
-    pub use windows::Win32::Foundation::HINSTANCE;
+    pub use windows::Win32::Foundation::HMODULE;
     pub use windows::Win32::System::Console::{
         AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
         ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
@@ -283,7 +283,7 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: HINSTANCE,
+            hmodule: HMODULE,
             reason: u32,
             _: *mut std::ffi::c_void,
         ) {
