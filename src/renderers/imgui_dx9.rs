@@ -30,8 +30,9 @@ use imgui::internal::RawWrapper;
 use imgui::{
     BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx, TextureId, Textures,
 };
+use windows::core::ComInterface;
+use windows::Foundation::Numerics::Matrix4x4;
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
-use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
 use windows::Win32::Graphics::Direct3D9::{
     IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9,
     IDirect3DSurface9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBACKBUFFER_TYPE_MONO,
@@ -65,10 +66,23 @@ const D3DTS_WORLDMATRIX: D3DTRANSFORMSTATETYPE = D3DTRANSFORMSTATETYPE(256);
 /// Reexport of [`windows::core::Result<T>`]
 pub type Result<T> = windows::core::Result<T>;
 
-static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
-    Anonymous: D3DMATRIX_0 {
-        m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-    },
+static MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
+    M11: 1.0,
+    M12: 0.0,
+    M13: 0.0,
+    M14: 0.0,
+    M21: 0.0,
+    M22: 1.0,
+    M23: 0.0,
+    M24: 0.0,
+    M31: 0.0,
+    M32: 0.0,
+    M33: 1.0,
+    M34: 0.0,
+    M41: 0.0,
+    M42: 0.0,
+    M43: 0.0,
+    M44: 1.0,
 };
 
 #[repr(C)]
@@ -98,8 +112,9 @@ impl Renderer {
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
     pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self> {
-        let font_tex =
-            IDirect3DBaseTexture9::from(Self::create_font_texture(ctx.fonts(), &device)?);
+        let font_tex = IDirect3DTexture9::cast::<IDirect3DBaseTexture9>(
+            &Self::create_font_texture(ctx.fonts(), &device)?,
+        )?;
 
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("imgui-dx9@", env!("CARGO_PKG_VERSION"))));
@@ -288,27 +303,23 @@ impl Renderer {
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
 
-        let mat_projection = D3DMATRIX {
-            Anonymous: D3DMATRIX_0 {
-                m: [
-                    2.0 / (r - l),
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    2.0 / (t - b),
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.5,
-                    0.0,
-                    (l + r) / (l - r),
-                    (t + b) / (b - t),
-                    0.5,
-                    1.0,
-                ],
-            },
+        let mat_projection = Matrix4x4 {
+            M11: 2.0 / (r - l),
+            M12: 0.0,
+            M13: 0.0,
+            M14: 0.0,
+            M21: 0.0,
+            M22: 2.0 / (t - b),
+            M23: 0.0,
+            M24: 0.0,
+            M31: 0.0,
+            M32: 0.0,
+            M33: 0.5,
+            M34: 0.0,
+            M41: (l + r) / (l - r),
+            M42: (t + b) / (b - t),
+            M43: 0.5,
+            M44: 1.0,
         };
 
         device.SetTransform(D3DTS_WORLDMATRIX, &MAT_IDENTITY).unwrap();
@@ -461,9 +472,9 @@ impl Renderer {
 
 struct StateBackup {
     state_block: IDirect3DStateBlock9,
-    mat_world: D3DMATRIX,
-    mat_view: D3DMATRIX,
-    mat_projection: D3DMATRIX,
+    mat_world: Matrix4x4,
+    mat_view: Matrix4x4,
+    mat_projection: Matrix4x4,
     viewport: D3DVIEWPORT9,
     surface: IDirect3DSurface9,
 }
@@ -472,9 +483,9 @@ impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
         match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => {
-                let mut mat_world: D3DMATRIX = core::mem::zeroed();
-                let mut mat_view: D3DMATRIX = core::mem::zeroed();
-                let mut mat_projection: D3DMATRIX = core::mem::zeroed();
+                let mut mat_world: Matrix4x4 = core::mem::zeroed();
+                let mut mat_view: Matrix4x4 = core::mem::zeroed();
+                let mut mat_projection: Matrix4x4 = core::mem::zeroed();
                 let mut viewport: D3DVIEWPORT9 = core::mem::zeroed();
 
                 device.GetTransform(D3DTS_WORLDMATRIX, &mut mat_world)?;
