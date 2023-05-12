@@ -1,7 +1,7 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,7 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
 use widestring::{u16cstr, U16CStr};
-use windows::core::{Interface, HRESULT, PCWSTR};
+use windows::core::{ComInterface, Interface, HRESULT, PCWSTR};
 use windows::w;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -27,8 +27,9 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
-use windows::Win32::System::WindowsProgramming::INFINITE;
+use windows::Win32::System::Threading::{
+    CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
+};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -100,10 +101,10 @@ unsafe fn print_dxgi_debug_messages() {
 
     for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
         let mut msg_len: usize = 0;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
         let diqm = vec![0u8; msg_len];
         let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
         let diqm = pdiqm.as_ref().unwrap();
         debug!(
             "[DIQ] {}",
@@ -296,7 +297,8 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
         trace!("Initializing renderer");
-        let desc = swap_chain.GetDesc().unwrap();
+        let desc = DXGI_SWAP_CHAIN_DESC::default();
+        swap_chain.GetDesc(&mut desc).unwrap();
         let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
 
         let renderer_heap: ID3D12DescriptorHeap = dev
@@ -343,7 +345,7 @@ impl ImguiRenderer {
                 trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
 
                 let back_buffer = swap_chain.GetBuffer(i).unwrap();
-                dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
+                dev.CreateRenderTargetView(&back_buffer, None, desc_handle);
 
                 let command_allocator: ID3D12CommandAllocator =
                     dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).unwrap();
@@ -360,7 +362,7 @@ impl ImguiRenderer {
                     command_allocator,
                     fence: dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                     fence_val: 0,
-                    fence_event: CreateEventExW(null(), PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
+                    fence_event: CreateEventExW(None, PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
                         .unwrap(),
                 }
             })
@@ -437,7 +439,8 @@ impl ImguiRenderer {
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
-        let sd = unsafe { swap_chain.GetDesc() }.unwrap();
+        let sd = DXGI_SWAP_CHAIN_DESC::default();
+        unsafe { swap_chain.GetDesc(&mut sd) }.unwrap();
         let mut rect: RECT = Default::default();
 
         if unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() } {
@@ -479,7 +482,7 @@ impl ImguiRenderer {
         let draw_data = ctx.render();
 
         let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: Some(frame_context.back_buffer.clone()),
+            pResource: ManuallyDrop::new(Some(frame_context.back_buffer.clone())),
             Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             StateBefore: D3D12_RESOURCE_STATE_PRESENT,
             StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -502,9 +505,9 @@ impl ImguiRenderer {
             self.command_list.ResourceBarrier(&[barrier.clone()]);
             self.command_list.OMSetRenderTargets(
                 1,
-                &frame_context.desc_handle,
+                Some(&frame_context.desc_handle),
                 BOOL::from(false),
-                null(),
+                None,
             );
             self.command_list.SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
         };
@@ -530,7 +533,10 @@ impl ImguiRenderer {
         unsafe {
             self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
-            command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
+            command_queue.ExecuteCommandLists(&[Some(
+                ID3D12GraphicsCommandList::cast::<ID3D12CommandList>(&self.command_list.clone())
+                    .unwrap(),
+            )]);
             command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
         }
 
@@ -543,7 +549,8 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain3>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let desc = swap_chain.GetDesc().unwrap();
+        let mut desc = DXGI_SWAP_CHAIN_DESC::default();
+        swap_chain.GetDesc(&mut desc).unwrap();
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
@@ -624,7 +631,7 @@ impl DummyHwnd {
                 HWND_MESSAGE,
                 None,
                 wndclass.hInstance,
-                null(),
+                None,
             )
         };
         debug!("{:?}", hwnd);

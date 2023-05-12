@@ -1,5 +1,5 @@
 use std::ffi::c_void;
-use std::mem::{size_of, transmute, ManuallyDrop};
+use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 
 pub use imgui;
@@ -8,7 +8,7 @@ use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use tracing::{error, trace};
 use widestring::u16cstr;
-use windows::core::{Result, PCSTR, PCWSTR};
+use windows::core::{ComInterface, Result, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -802,7 +802,9 @@ impl RenderEngine {
             cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
             cmd_list.ResourceBarrier(&[barrier]);
             cmd_list.Close().unwrap();
-            cmd_queue.ExecuteCommandLists(&[Some(transmute(cmd_list))]);
+            cmd_queue.ExecuteCommandLists(&[Some(
+                ID3D12GraphicsCommandList::cast::<ID3D12CommandList>(&cmd_list).unwrap(),
+            )]);
             cmd_queue.Signal(&fence, 1).unwrap();
             fence.SetEventOnCompletion(1, event).unwrap();
             WaitForSingleObject(event, u32::MAX);
