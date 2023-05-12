@@ -65,6 +65,7 @@ unsafe fn draw(dc: HDC) {
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
                 game_hwnd: hwnd,
+                resolution_and_rect: None,
             };
 
             // Initialize window events on the imgui renderer
@@ -128,29 +129,31 @@ unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
     trampoline_wglswapbuffers(dc)
 }
 
-static mut RESOLUTION_AND_RECT: Option<Mutex<([i32; 2], RECT)>> = None;
-
 unsafe fn reset(hdc: HDC) {
-    // Get resolution
-    let viewport = &mut [0; 4];
-    glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
+    if IMGUI_RENDERER.is_none() {
+        return;
+    }
 
-    let hwnd = WindowFromDC(hdc);
-    let rect = get_window_rect(&hwnd).unwrap();
+    if let Some(mut renderer) = IMGUI_RENDERER.as_mut().unwrap().try_lock() {
+        // Get resolution
+        let viewport = &mut [0; 4];
+        glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
 
-    let (resolution, window_rect) =
-        *RESOLUTION_AND_RECT.get_or_insert(Mutex::new(([viewport[2], viewport[3]], rect))).lock();
+        let hwnd = WindowFromDC(hdc);
+        let rect = get_window_rect(&hwnd).unwrap();
 
-    // Compare previously saved to current
-    if viewport[2] != resolution[0]
-        || viewport[3] != resolution[1]
-        || rect.right != window_rect.right
-        || rect.bottom != window_rect.bottom
-    {
-        if let Some(renderer) = IMGUI_RENDERER.take() {
-            renderer.lock().cleanup();
-            RESOLUTION_AND_RECT.take();
+        let (resolution, window_rect) =
+            renderer.resolution_and_rect.get_or_insert(([viewport[2], viewport[3]], rect));
+
+        // Compare previously saved to current
+        if viewport[2] != resolution[0]
+            || viewport[3] != resolution[1]
+            || rect.right != window_rect.right
+            || rect.bottom != window_rect.bottom
+        {
+            renderer.cleanup();
             glClearColor(0.0, 0.0, 0.0, 1.0);
+            IMGUI_RENDERER.take();
         }
     }
 }
@@ -165,6 +168,7 @@ struct ImguiRenderer {
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
+    resolution_and_rect: Option<([i32; 2], RECT)>,
 }
 
 fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
