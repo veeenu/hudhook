@@ -6,6 +6,7 @@ use imgui::{Context, Io, Key, Ui};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, info, trace};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{
     CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, RECT,
     WPARAM,
@@ -14,6 +15,7 @@ use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
+use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenThread, THREAD_QUERY_INFORMATION,
 };
@@ -240,7 +242,7 @@ pub(crate) unsafe fn handle_window_message(lpmsg: &mut MSG) -> bool {
         return false;
     }
 
-    let mut input = INPUT.get_mut().unwrap().lock();
+    let mut input = INPUT.get_or_init(|| Mutex::new(Input::new())).lock();
 
     let wparam = lpmsg.wParam;
     let lparam = lpmsg.lParam;
@@ -645,10 +647,10 @@ unsafe extern "system" fn post_message_a_impl(
 ) -> BOOL {
     trace!("PostMessageA invoked");
 
-    let input = INPUT.get().unwrap().lock();
-
-    if input.is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
-        return BOOL::from(true);
+    if let Some(input) = INPUT.get() {
+        if input.lock().is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
+            return BOOL::from(true);
+        }
     }
 
     let trampoline = POST_MESSAGE_A_TRAMPOLINE.get().expect("PostMessageA unitialized");
@@ -663,10 +665,10 @@ unsafe extern "system" fn post_message_w_impl(
 ) -> BOOL {
     trace!("PostMessageW invoked");
 
-    let input = INPUT.get().unwrap().lock();
-
-    if input.is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
-        return BOOL::from(true);
+    if let Some(input) = INPUT.get() {
+        if input.lock().is_blocking_mouse_input() && umsg == WM_MOUSEMOVE {
+            return BOOL::from(true);
+        }
     }
 
     let trampoline = POST_MESSAGE_W_TRAMPOLINE.get().expect("PostMessageW unitialized");
@@ -687,14 +689,16 @@ unsafe extern "system" fn peek_message_a_impl(
         return BOOL::from(false);
     }
 
-    // if !IsWindow((*lpmsg).hwnd).as_bool()
-    //     && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
-    //     && handle_window_message(lpmsg)
-    // {
-    //     TranslateMessage(lpmsg);
+    if let Some(lpmsg) = lpmsg.as_mut() {
+        if IsWindow(lpmsg.hwnd).as_bool()
+            && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
+            && handle_window_message(lpmsg)
+        {
+            TranslateMessage(lpmsg);
 
-    //     (*lpmsg).message = WM_NULL;
-    // }
+            lpmsg.message = WM_NULL;
+        }
+    }
 
     BOOL::from(true)
 }
@@ -713,14 +717,16 @@ unsafe extern "system" fn peek_message_w_impl(
         return BOOL::from(false);
     }
 
-    // if !IsWindow((*lpmsg).hwnd).as_bool()
-    //     && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
-    //     && handle_window_message(lpmsg)
-    // {
-    //     TranslateMessage(lpmsg);
+    if let Some(lpmsg) = lpmsg.as_mut() {
+        if IsWindow(lpmsg.hwnd).as_bool()
+            && wremovemsg & PM_REMOVE != PEEK_MESSAGE_REMOVE_TYPE(0)
+            && handle_window_message(lpmsg)
+        {
+            TranslateMessage(lpmsg);
 
-    //     (*lpmsg).message = WM_NULL;
-    // }
+            lpmsg.message = WM_NULL;
+        }
+    }
 
     BOOL::from(true)
 }
@@ -737,10 +743,6 @@ unsafe extern "system" fn get_message_a_impl(
         MsgWaitForMultipleObjects(&[HANDLE(0)], BOOL::from(false), 500, QS_ALLINPUT);
     }
 
-    if (*lpmsg).message != WM_QUIT {
-        std::ptr::write_bytes(lpmsg, 0, size_of::<MSG>());
-    }
-
     return BOOL::from((*lpmsg).message != WM_QUIT);
 }
 
@@ -754,10 +756,6 @@ unsafe extern "system" fn get_message_w_impl(
 
     while !PeekMessageW(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, PM_REMOVE).as_bool() {
         MsgWaitForMultipleObjects(&[HANDLE(0)], BOOL::from(false), 500, QS_ALLINPUT);
-    }
-
-    if (*lpmsg).message != WM_QUIT {
-        std::ptr::write_bytes(lpmsg, 0, size_of::<MSG>());
     }
 
     return BOOL::from((*lpmsg).message != WM_QUIT);
@@ -782,22 +780,26 @@ pub struct CommonHooks(MhHooks);
 
 impl CommonHooks {
     pub unsafe fn new() -> Self {
+        let user32_dll = LoadLibraryA(PCSTR("user32.dll\0".as_ptr())).unwrap();
+
         let set_cursor_pos_address: SetCursorPosFn = std::mem::transmute(SetCursorPos as usize);
         let get_cursor_pos_address: GetCursorPosFn = std::mem::transmute(GetCursorPos as usize);
         let clip_cursor_address: ClipCursorFn = std::mem::transmute(ClipCursor as usize);
 
-        let post_message_a_address: PostMessageFn =
-            std::mem::transmute(PostMessageA::<HWND, WPARAM, LPARAM> as usize);
-        let post_message_w_address: PostMessageFn =
-            std::mem::transmute(PostMessageW::<HWND, WPARAM, LPARAM> as usize);
+        let post_message_a_address =
+            GetProcAddress(user32_dll, PCSTR("PostMessageA\0".as_ptr())).unwrap();
+        let post_message_w_address =
+            GetProcAddress(user32_dll, PCSTR("PostMessageW\0".as_ptr())).unwrap();
 
-        let peek_message_a_address: PeekMessageFn =
-            std::mem::transmute(PeekMessageA::<HWND> as usize);
-        let peek_message_w_address: PeekMessageFn =
-            std::mem::transmute(PeekMessageW::<HWND> as usize);
+        let peek_message_a_address =
+            GetProcAddress(user32_dll, PCSTR("PeekMessageA\0".as_ptr())).unwrap();
+        let peek_message_w_address =
+            GetProcAddress(user32_dll, PCSTR("PeekMessageW\0".as_ptr())).unwrap();
 
-        let get_message_a_address: GetMessageFn = std::mem::transmute(GetMessageA::<HWND> as usize);
-        let get_message_w_address: GetMessageFn = std::mem::transmute(GetMessageW::<HWND> as usize);
+        let get_message_a_address =
+            GetProcAddress(user32_dll, PCSTR("GetMessageA\0".as_ptr())).unwrap();
+        let get_message_w_address =
+            GetProcAddress(user32_dll, PCSTR("GetMessageW\0".as_ptr())).unwrap();
 
         let register_raw_input_devices_address: RegisterRawInputDevicesFn =
             std::mem::transmute(RegisterRawInputDevices as usize);
@@ -876,16 +878,15 @@ create PeekMessageW hook",
 
         Self(
             MhHooks::new([
-                set_cursor_pos,
-                get_cursor_pos,
-                // clip_cursor, Hooking clip_cursor is crashing us right now because it doesn't
-                // like getting passed a NULL ptr. Windows-rs bump may fix this
-                // post_message_a,
-                // post_message_w,
-                // peek_message_a,
-                // peek_message_w,
-                // get_message_a,
-                // get_message_w,
+                // set_cursor_pos,
+                // get_cursor_pos,
+                // clip_cursor
+                post_message_a,
+                post_message_w,
+                peek_message_a,
+                peek_message_w,
+                get_message_a,
+                get_message_w,
                 // register_raw_input_devices,
             ])
             .expect("couldn't create hooks"),

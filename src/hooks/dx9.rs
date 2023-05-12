@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
 use super::common::{self};
 use crate::hooks::common::ImguiWindowsEventHandler;
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::lifecycle::global_state::set_common_hooks;
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
 
@@ -28,7 +29,11 @@ unsafe fn draw(this: &IDirect3DDevice9) {
             IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut context);
             let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
-            common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
+            common::INPUT.get_or_init(|| Mutex::new(common::Input::new()));
+
+            let common_hooks = common::CommonHooks::new();
+            common_hooks.hook();
+            set_common_hooks(common_hooks);
 
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,

@@ -27,6 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use super::common::{ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler};
 use super::Hooks;
 use crate::hooks::common::{self};
+use crate::lifecycle::global_state::set_common_hooks;
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -138,7 +139,11 @@ impl ImguiRenderer {
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
-        common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
+        common::INPUT.get_or_init(|| Mutex::new(common::Input::new()));
+
+        let common_hooks = common::CommonHooks::new();
+        common_hooks.hook();
+        set_common_hooks(common_hooks);
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, flags, swap_chain };
