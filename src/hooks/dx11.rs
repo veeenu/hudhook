@@ -139,7 +139,6 @@ impl ImguiRenderer {
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
         common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
-        common::hook_msg_proc();
 
         trace!("Renderer initialized");
         let mut renderer = ImguiRenderer { ctx, engine, flags, swap_chain };
@@ -185,7 +184,6 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain>) {
         common::INPUT.take();
-        common::unhook_msg_proc();
     }
 
     fn ctx(&self) -> &imgui::Context {

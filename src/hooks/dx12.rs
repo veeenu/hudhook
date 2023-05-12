@@ -13,9 +13,7 @@ use tracing::{debug, error, info, trace};
 use widestring::{u16cstr, U16CStr};
 use windows::core::{Interface, HRESULT, PCWSTR};
 use windows::w;
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT,  RECT, WPARAM,
-};
+use windows::Win32::Foundation::{GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -371,7 +369,6 @@ impl ImguiRenderer {
         ImguiWindowsEventHandler::setup_io(&mut renderer);
 
         common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
-        common::hook_msg_proc();
 
         renderer
     }
@@ -484,7 +481,6 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, _swap_chain: Option<IDXGISwapChain3>) {
         common::INPUT.take();
-        common::unhook_msg_proc();
     }
 }
 

@@ -47,7 +47,6 @@ unsafe fn draw(dc: HDC) {
             // Initialize window events on the imgui renderer
             ImguiWindowsEventHandler::setup_io(&mut imgui_renderer);
             common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
-            common::hook_msg_proc();
 
             // Return the imgui renderer as a mutex
             Mutex::new(Box::new(imgui_renderer))
@@ -124,7 +123,6 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self) {
         common::INPUT.take();
-        common::unhook_msg_proc();
     }
 }
 

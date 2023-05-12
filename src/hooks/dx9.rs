@@ -29,7 +29,6 @@ unsafe fn draw(this: &IDirect3DDevice9) {
             let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
             common::INPUT.set(Mutex::new(common::Input::new())).unwrap();
-            common::hook_msg_proc();
 
             Mutex::new(Box::new(ImguiRenderer {
                 ctx: context,
@@ -147,7 +146,6 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self) {
         common::INPUT.take();
-        common::unhook_msg_proc();
     }
 }
 
