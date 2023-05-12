@@ -76,7 +76,7 @@ impl Dx11Harness {
                         HWND(0),
                         HMENU(0),
                         hinstance,
-                        null(),
+                        None,
                     )
                 };
 
@@ -91,9 +91,9 @@ impl Dx11Harness {
                         D3D_DRIVER_TYPE_HARDWARE,
                         None,
                         D3D11_CREATE_DEVICE_FLAG(0),
-                        &[D3D_FEATURE_LEVEL_11_0],
+                        Some(&[D3D_FEATURE_LEVEL_11_0]),
                         D3D11_SDK_VERSION,
-                        &DXGI_SWAP_CHAIN_DESC {
+                        Some(&DXGI_SWAP_CHAIN_DESC {
                             BufferDesc: DXGI_MODE_DESC {
                                 Width: 800,
                                 Height: 600,
@@ -108,11 +108,11 @@ impl Dx11Harness {
                             SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
                             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                             ..Default::default()
-                        },
-                        &mut p_swap_chain,
-                        &mut p_device,
-                        null_mut(),
-                        &mut p_context,
+                        }),
+                        Some(&mut p_swap_chain),
+                        Some(&mut p_device),
+                        None,
+                        Some(&mut p_context),
                     )
                     .unwrap()
                 };
@@ -123,11 +123,11 @@ impl Dx11Harness {
                         for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                             eprintln!("Debug Message {i}");
                             let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _)
-                                .unwrap();
+                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                             let diqm = vec![0u8; msg_len];
                             let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
+                                .unwrap();
                             let diqm = pdiqm.as_ref().unwrap();
                             eprintln!(
                                 "{}",

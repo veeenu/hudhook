@@ -69,7 +69,7 @@ impl Opengl3Harness {
                         HWND::default(),  // hWndParent
                         HMENU::default(), // hMenu
                         hinstance,        // hInstance
-                        null(),
+                        None,
                     )
                 }; // lpParam
 
