@@ -10,7 +10,7 @@ use hudhook::renderers::imgui_dx12::RenderEngine;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 use tracing::trace;
-use windows::core::{Interface, PCSTR};
+use windows::core::{ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
@@ -58,7 +58,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             HWND::default(),  // hWndParent
             HMENU::default(), // hMenu
             hinstance,        // hInstance
-            null(),
+            None,
         )
     }; // lpParam
 
@@ -109,8 +109,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     let mut swap_chain: Option<IDXGISwapChain> = None;
     unsafe { factory.CreateSwapChain(&command_queue, &swap_chain_desc, &mut swap_chain as *mut _) }
         .unwrap();
-    let swap_chain: IDXGISwapChain3 = swap_chain.unwrap().cast().unwrap();
-    let desc = unsafe { swap_chain.GetDesc().unwrap() };
+    let swap_chain: IDXGISwapChain3 =
+        IDXGISwapChain::cast::<IDXGISwapChain3>(&swap_chain.unwrap()).unwrap();
+    let mut desc = DXGI_SWAP_CHAIN_DESC::default();
+    unsafe { swap_chain.GetDesc(&mut desc).unwrap() };
 
     let renderer_heap: ID3D12DescriptorHeap = unsafe {
         dev.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
@@ -142,7 +144,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                 ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
             };
-            dev.CreateRenderTargetView(&buf, null(), rtv_handle);
+            dev.CreateRenderTargetView(&buf, None, rtv_handle);
             (buf, rtv_handle)
         })
         .collect::<Vec<_>>();
@@ -170,10 +172,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         unsafe {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 println!(
                     "{}",
@@ -262,7 +264,7 @@ pub unsafe extern "system" fn window_proc(
             GetClientRect(hwnd, rect.as_mut_ptr());
             DrawTextA(
                 hdc,
-                "Test\0".as_bytes(),
+                &mut "Test\0".as_bytes().to_owned(),
                 rect.as_mut_ptr(),
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER,
             );

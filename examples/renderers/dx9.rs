@@ -128,7 +128,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             HWND(0),
             HMENU(0),
             hinstance,
-            null(),
+            None,
         )
     };
 
@@ -148,10 +148,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 eprintln!("Debug Message {i}");
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 eprintln!(
                     "{}",

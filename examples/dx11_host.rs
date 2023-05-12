@@ -51,7 +51,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             HWND(0),   // hWndParent
             HMENU(0),  // hMenu
             hinstance, // hInstance
-            null(),
+            None,
         )
     }; // lpParam
 
@@ -80,10 +80,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         unsafe {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 println!(
                     "{}",
@@ -132,7 +132,7 @@ pub unsafe extern "system" fn window_proc(
             GetClientRect(hwnd, rect.as_mut_ptr());
             DrawTextA(
                 hdc,
-                "Test\0".as_bytes(),
+                &mut "Test\0".as_bytes().to_owned(),
                 rect.as_mut_ptr(),
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER,
             );
