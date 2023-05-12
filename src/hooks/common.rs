@@ -558,10 +558,6 @@ impl<'a> Drop for FenceGuard<'a> {
     }
 }
 
-type SetCursorPosFn = unsafe extern "system" fn(x: i32, y: i32) -> BOOL;
-type GetCursorPosFn = unsafe extern "system" fn(lppoint: *mut POINT) -> BOOL;
-type ClipCursorFn = unsafe extern "system" fn(rect: *const RECT) -> BOOL;
-
 type PostMessageFn =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> BOOL;
 type PeekMessageFn = unsafe extern "system" fn(
@@ -578,13 +574,6 @@ type GetMessageFn = unsafe extern "system" fn(
     wmsgfiltermax: u32,
 ) -> BOOL;
 
-type RegisterRawInputDevicesFn =
-    unsafe extern "system" fn(prawinputdevices: &[RAWINPUTDEVICE], cbsize: u32) -> BOOL;
-
-static SET_CURSOR_POS_TRAMPOLINE: OnceCell<SetCursorPosFn> = OnceCell::new();
-static GET_CURSOR_POS_TRAMPOLINE: OnceCell<GetCursorPosFn> = OnceCell::new();
-static CLIP_CURSOR_TRAMPOLINE: OnceCell<ClipCursorFn> = OnceCell::new();
-
 static POST_MESSAGE_A_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
 static POST_MESSAGE_W_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
 
@@ -593,51 +582,6 @@ static PEEK_MESSAGE_W_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
 
 static GET_MESSAGE_A_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
 static GET_MESSAGE_W_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
-
-static REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE: OnceCell<RegisterRawInputDevicesFn> = OnceCell::new();
-
-unsafe extern "system" fn set_cursor_pos_impl(x: i32, y: i32) -> BOOL {
-    trace!("SetCursorPos invoked");
-
-    let mut input = INPUT.get_mut().unwrap().lock();
-
-    input.set_last_mouse_position(POINT { x, y });
-
-    if input.is_blocking_mouse_input() {
-        return BOOL::from(true);
-    }
-
-    let trampoline = SET_CURSOR_POS_TRAMPOLINE.get().expect("SetCursorPos unitialized");
-    trampoline(x, y)
-}
-
-unsafe extern "system" fn get_cursor_pos_impl(lppoint: *mut POINT) -> BOOL {
-    trace!("GetCursorPos invoked");
-
-    let input = INPUT.get().unwrap().lock();
-
-    if input.is_blocking_mouse_input() {
-        *lppoint = input.get_last_mouse_position();
-
-        return BOOL::from(true);
-    }
-
-    let trampoline = GET_CURSOR_POS_TRAMPOLINE.get().expect("GetCursorPos unitialized");
-    trampoline(lppoint)
-}
-
-unsafe extern "system" fn clip_cursor_impl(mut rect: *const RECT) -> BOOL {
-    trace!("ClipCursor invoked");
-
-    let input = INPUT.get().unwrap().lock();
-
-    if input.is_blocking_mouse_input() {
-        rect = std::ptr::null();
-    }
-
-    let trampoline = CLIP_CURSOR_TRAMPOLINE.get().expect("ClipCursor unitialized");
-    trampoline(rect)
-}
 
 unsafe extern "system" fn post_message_a_impl(
     hwnd: HWND,
@@ -761,30 +705,11 @@ unsafe extern "system" fn get_message_w_impl(
     return BOOL::from((*lpmsg).message != WM_QUIT);
 }
 
-unsafe extern "system" fn register_raw_input_devices_impl(
-    prawinputdevices: &[RAWINPUTDEVICE],
-    cbsize: u32,
-) -> BOOL {
-    trace!("RegisterRawInputDevices invoked");
-
-    let trampoline =
-        REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE.get().expect("RegisterRawInputDevices unitialized");
-    if !trampoline(prawinputdevices, cbsize).as_bool() {
-        return BOOL::from(false);
-    }
-
-    return BOOL::from(true);
-}
-
 pub struct CommonHooks(MhHooks);
 
 impl CommonHooks {
     pub unsafe fn new() -> Self {
         let user32_dll = LoadLibraryA(PCSTR("user32.dll\0".as_ptr())).unwrap();
-
-        let set_cursor_pos_address: SetCursorPosFn = std::mem::transmute(SetCursorPos as usize);
-        let get_cursor_pos_address: GetCursorPosFn = std::mem::transmute(GetCursorPos as usize);
-        let clip_cursor_address: ClipCursorFn = std::mem::transmute(ClipCursor as usize);
 
         let post_message_a_address =
             GetProcAddress(user32_dll, PCSTR("PostMessageA\0".as_ptr())).unwrap();
@@ -800,25 +725,6 @@ impl CommonHooks {
             GetProcAddress(user32_dll, PCSTR("GetMessageA\0".as_ptr())).unwrap();
         let get_message_w_address =
             GetProcAddress(user32_dll, PCSTR("GetMessageW\0".as_ptr())).unwrap();
-
-        let register_raw_input_devices_address: RegisterRawInputDevicesFn =
-            std::mem::transmute(RegisterRawInputDevices as usize);
-
-        let set_cursor_pos =
-            MhHook::new(set_cursor_pos_address as *mut _, set_cursor_pos_impl as *mut _).expect(
-                "couldn't
-        create SetCursorPos hook",
-            );
-        let get_cursor_pos =
-            MhHook::new(get_cursor_pos_address as *mut _, get_cursor_pos_impl as *mut _).expect(
-                "couldn't
-        create GetCursorPos hook",
-            );
-        let clip_cursor = MhHook::new(clip_cursor_address as *mut _, clip_cursor_impl as *mut _)
-            .expect(
-                "couldn't create ClipCursor
-        hook",
-            );
 
         let post_message_a =
             MhHook::new(post_message_a_address as *mut _, post_message_a_impl as *mut _).expect(
@@ -851,18 +757,6 @@ create PeekMessageW hook",
                 "couldn't
     create GetMessageW hook",
             );
-        let register_raw_input_devices = MhHook::new(
-            register_raw_input_devices_address as *mut _,
-            register_raw_input_devices_impl as *mut _,
-        )
-        .expect(
-            "couldn't
-    create RegisterRawInputDevices hook",
-        );
-
-        SET_CURSOR_POS_TRAMPOLINE.get_or_init(|| std::mem::transmute(set_cursor_pos.trampoline()));
-        GET_CURSOR_POS_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_cursor_pos.trampoline()));
-        CLIP_CURSOR_TRAMPOLINE.get_or_init(|| std::mem::transmute(clip_cursor.trampoline()));
 
         POST_MESSAGE_A_TRAMPOLINE.get_or_init(|| std::mem::transmute(post_message_a.trampoline()));
         POST_MESSAGE_W_TRAMPOLINE.get_or_init(|| std::mem::transmute(post_message_w.trampoline()));
@@ -873,21 +767,14 @@ create PeekMessageW hook",
         GET_MESSAGE_A_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_message_a.trampoline()));
         GET_MESSAGE_W_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_message_w.trampoline()));
 
-        REGISTER_RAW_INPUT_DEVICES_TRAMPOLINE
-            .get_or_init(|| std::mem::transmute(register_raw_input_devices.trampoline()));
-
         Self(
             MhHooks::new([
-                // set_cursor_pos,
-                // get_cursor_pos,
-                // clip_cursor
                 post_message_a,
                 post_message_w,
                 peek_message_a,
                 peek_message_w,
                 get_message_a,
                 get_message_w,
-                // register_raw_input_devices,
             ])
             .expect("couldn't create hooks"),
         )
