@@ -1,9 +1,7 @@
-use std::ptr::null_mut;
-
 use imgui::{DrawListIterator, DrawVert};
 use windows::Win32::Graphics::Direct3D11::{
     ID3D11Buffer, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
-    D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_USAGE_DYNAMIC,
+    D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_RESOURCE_MISC_FLAG, D3D11_USAGE_DYNAMIC,
 };
 
 use super::device_and_swapchain::DeviceAndSwapChain;
@@ -22,18 +20,21 @@ struct VertexConstantBuffer([[f32; 4]; 4]);
 
 impl Buffers {
     pub(crate) fn new(dasc: &DeviceAndSwapChain) -> Self {
-        let mtx_buffer = unsafe {
+        let mut mtx_buffer = None;
+
+        unsafe {
             dasc.dev()
                 .CreateBuffer(
                     &D3D11_BUFFER_DESC {
                         ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
                         Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
-                        MiscFlags: 0,
+                        BindFlags: D3D11_BIND_CONSTANT_BUFFER,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
+                        MiscFlags: D3D11_RESOURCE_MISC_FLAG(0),
                         StructureByteStride: 0,
                     } as *const _,
-                    null_mut(),
+                    None,
+                    Some(&mut mtx_buffer),
                 )
                 .expect("CreateBuffer")
         };
@@ -41,7 +42,13 @@ impl Buffers {
         let vtx_buffer = Buffers::create_vertex_buffer(dasc, 1);
         let idx_buffer = Buffers::create_index_buffer(dasc, 1);
 
-        Buffers { vtx_buffer, idx_buffer, mtx_buffer, vtx_count: 1, idx_count: 1 }
+        Buffers {
+            vtx_buffer,
+            idx_buffer,
+            mtx_buffer: mtx_buffer.unwrap(),
+            vtx_count: 1,
+            idx_count: 1,
+        }
     }
 
     pub(crate) fn set_constant_buffer(&mut self, dasc: &DeviceAndSwapChain, rect: [f32; 4]) {
@@ -96,43 +103,53 @@ impl Buffers {
     }
 
     pub(crate) fn create_vertex_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
+        let mut vtx_buffer = None;
+
         unsafe {
             dasc.dev()
                 .CreateBuffer(
                     &D3D11_BUFFER_DESC {
                         Usage: D3D11_USAGE_DYNAMIC,
                         ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
-                        BindFlags: D3D11_BIND_VERTEX_BUFFER.0,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
-                        MiscFlags: 0,
+                        BindFlags: D3D11_BIND_VERTEX_BUFFER,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
+                        MiscFlags: D3D11_RESOURCE_MISC_FLAG(0),
                         StructureByteStride: 0,
                     },
-                    null_mut(),
+                    None,
+                    Some(&mut vtx_buffer),
                 )
                 .expect("CreateBuffer")
         }
+
+        vtx_buffer.unwrap()
     }
 
     pub(crate) fn create_index_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
+        let mut idx_buffer = None;
+
         unsafe {
             dasc.dev()
                 .CreateBuffer(
                     &D3D11_BUFFER_DESC {
                         Usage: D3D11_USAGE_DYNAMIC,
                         ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
-                        BindFlags: D3D11_BIND_INDEX_BUFFER.0,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0,
-                        MiscFlags: 0,
+                        BindFlags: D3D11_BIND_INDEX_BUFFER,
+                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE,
+                        MiscFlags: D3D11_RESOURCE_MISC_FLAG(0),
                         StructureByteStride: 0,
                     },
-                    null_mut(),
+                    None,
+                    Some(&mut idx_buffer),
                 )
                 .expect("CreateBuffer")
         }
+
+        idx_buffer.unwrap()
     }
 
-    pub(crate) fn vtx_buffer(&self) -> ID3D11Buffer {
-        self.vtx_buffer.clone()
+    pub(crate) fn vtx_buffer(&self) -> Option<ID3D11Buffer> {
+        Some(self.vtx_buffer.clone())
     }
 
     pub(crate) fn idx_buffer(&self) -> ID3D11Buffer {

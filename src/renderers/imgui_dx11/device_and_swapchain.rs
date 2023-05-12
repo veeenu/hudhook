@@ -1,5 +1,3 @@
-use std::ptr::null_mut;
-
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
@@ -38,9 +36,9 @@ impl DeviceAndSwapChain {
                 D3D_DRIVER_TYPE_HARDWARE,
                 None,
                 DEVICE_FLAGS,
-                &[],
+                None,
                 D3D11_SDK_VERSION,
-                &DXGI_SWAP_CHAIN_DESC {
+                Some(&DXGI_SWAP_CHAIN_DESC {
                     BufferCount: 1,
                     BufferDesc: DXGI_MODE_DESC {
                         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -56,11 +54,11 @@ impl DeviceAndSwapChain {
                     Windowed: BOOL(1),
                     SwapEffect: DXGI_SWAP_EFFECT(0),
                     Flags: 0,
-                } as *const _,
-                &mut swap_chain as *mut _,
-                &mut dev as *mut _,
-                null_mut(),
-                &mut dev_ctx as *mut _,
+                } as *const _),
+                Some(&mut swap_chain as *mut _),
+                Some(&mut dev as *mut _),
+                None,
+                Some(&mut dev_ctx as *mut _),
             )
             .unwrap()
         };
@@ -79,28 +77,28 @@ impl DeviceAndSwapChain {
     ) -> Self {
         let back_buffer = unsafe {
             let p_back_buffer: ID3D11Resource = swap_chain.GetBuffer(0).expect("GetBuffer");
+            let mut back_buffer = None;
 
-            let back_buffer = dev
-                .CreateRenderTargetView(&p_back_buffer, null_mut())
+            dev.CreateRenderTargetView(&p_back_buffer, None, Some(&mut back_buffer))
                 .expect("CreateRenderTargetView");
 
-            dev_ctx.OMSetRenderTargets(&[Some(back_buffer.clone())], None);
+            dev_ctx.OMSetRenderTargets(Some(&[Some(back_buffer.unwrap().clone())]), None);
 
             back_buffer
         };
 
         unsafe {
-            dev_ctx.RSSetViewports(&[D3D11_VIEWPORT {
+            dev_ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
                 TopLeftX: 0.,
                 TopLeftY: 0.,
                 Width: 640.,
                 Height: 480.,
                 MinDepth: 0.,
                 MaxDepth: 1.,
-            }])
+            }]))
         };
 
-        DeviceAndSwapChain { dev, dev_ctx, swap_chain, back_buffer }
+        DeviceAndSwapChain { dev, dev_ctx, swap_chain, back_buffer: back_buffer.unwrap() }
     }
 
     pub(crate) fn setup_state(&self, draw_data: &imgui::DrawData) {
@@ -111,31 +109,32 @@ impl DeviceAndSwapChain {
     }
 
     pub(crate) fn set_shader_resources(&self, srv: ID3D11ShaderResourceView) {
-        unsafe { self.dev_ctx.PSSetShaderResources(0, &[Some(srv)]) }
+        unsafe { self.dev_ctx.PSSetShaderResources(0, Some(&[Some(srv)])) }
     }
 
     pub(crate) fn set_viewport(&self, rect: RECT) {
         unsafe {
-            self.dev_ctx().RSSetViewports(&[D3D11_VIEWPORT {
+            self.dev_ctx().RSSetViewports(Some(&[D3D11_VIEWPORT {
                 TopLeftX: 0.,
                 TopLeftY: 0.,
                 Width: (rect.right - rect.left) as f32,
                 Height: (rect.bottom - rect.top) as f32,
                 MinDepth: 0.,
                 MaxDepth: 1.,
-            }])
+            }]))
         };
     }
 
     pub(crate) fn set_render_target(&self) {
         unsafe {
-            self.dev_ctx.OMSetRenderTargets(&[Some(self.back_buffer.clone())], None);
+            self.dev_ctx.OMSetRenderTargets(Some(&[Some(self.back_buffer.clone())]), None);
         }
     }
 
     pub(crate) fn get_window_rect(&self) -> Option<RECT> {
+        let mut sd = DXGI_SWAP_CHAIN_DESC::default();
         unsafe {
-            let sd = self.swap_chain.GetDesc().expect("GetDesc");
+            self.swap_chain.GetDesc(&mut sd).expect("GetDesc");
             let mut rect: RECT = Default::default();
             if GetWindowRect(sd.OutputWindow, &mut rect as _) != BOOL(0) {
                 Some(rect)
@@ -149,8 +148,10 @@ impl DeviceAndSwapChain {
     where
         F: FnOnce(&D3D11_MAPPED_SUBRESOURCE),
     {
+        let mut ms = D3D11_MAPPED_SUBRESOURCE::default();
+
         unsafe {
-            let ms = self.dev_ctx.Map(ptr, 0, D3D11_MAP_WRITE_DISCARD, 0).expect("Map");
+            self.dev_ctx.Map(ptr, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut ms)).expect("Map");
 
             f(&ms);
 

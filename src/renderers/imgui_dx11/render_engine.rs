@@ -90,9 +90,9 @@ impl RenderEngine {
             dev_ctx.IASetVertexBuffers(
                 0,
                 1,
-                &Some(self.buffers.vtx_buffer()),
-                &(std::mem::size_of::<DrawVert>() as u32),
-                &0,
+                Some(&self.buffers.vtx_buffer()),
+                Some(std::mem::size_of::<DrawVert>() as *const u32),
+                Some(&0),
             );
             dev_ctx.IASetIndexBuffer(
                 &self.buffers.idx_buffer(),
@@ -104,8 +104,8 @@ impl RenderEngine {
                 0,
             );
             dev_ctx.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            dev_ctx.VSSetConstantBuffers(0, &[Some(self.buffers.mtx_buffer())]);
-            dev_ctx.PSSetShaderResources(0, &[Some(self.texture.tex_view())]);
+            dev_ctx.VSSetConstantBuffers(0, Some(&[Some(self.buffers.mtx_buffer())]));
+            dev_ctx.PSSetShaderResources(0, Some(&[Some(self.texture.tex_view())]));
 
             let mut vtx_offset = 0usize;
             let mut idx_offset = 0usize;
@@ -117,12 +117,12 @@ impl RenderEngine {
                         DrawCmd::Elements { count, cmd_params } => {
                             trace!("Rendering {count} elements");
                             let [cx, cy, cw, ch] = cmd_params.clip_rect;
-                            dev_ctx.RSSetScissorRects(&[RECT {
+                            dev_ctx.RSSetScissorRects(Some(&[RECT {
                                 left: (cx - x) as i32,
                                 top: (cy - y) as i32,
                                 right: (cw - x) as i32,
                                 bottom: (ch - y) as i32,
-                            }]);
+                            }]));
 
                             // let srv = cmd_params.texture_id.id();
                             // We only load the font texture. This may not be correct.

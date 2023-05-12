@@ -1,5 +1,3 @@
-use std::ptr::null_mut;
-
 use windows::core::{Error, PCSTR};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -77,14 +75,14 @@ impl ShaderProgram {
                 VERTEX_SHADER_SRC.as_ptr() as _,
                 VERTEX_SHADER_SRC.len(),
                 None,
-                null_mut(),
+                None,
                 None,
                 PCSTR("main\0".as_ptr() as _),
                 PCSTR("vs_4_0\0".as_ptr() as _),
                 0,
                 0,
                 &mut vs_blob,
-                &mut None,
+                None,
             )?
         };
 
@@ -93,32 +91,43 @@ impl ShaderProgram {
                 PIXEL_SHADER_SRC.as_ptr() as _,
                 PIXEL_SHADER_SRC.len(),
                 None,
-                null_mut(),
+                None,
                 None,
                 PCSTR("main\0".as_ptr() as _),
                 PCSTR("ps_4_0\0".as_ptr() as _),
                 0,
                 0,
                 &mut ps_blob as *mut _ as _,
-                &mut None,
+                None,
             )?
         };
 
-        let vtx_shader = unsafe {
+        let mut vtx_shader = None;
+        unsafe {
             let vs_blob = vs_blob.as_ref().unwrap();
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
-            dasc.dev().CreateVertexShader(std::slice::from_raw_parts(ptr as _, size), None)?
+            dasc.dev().CreateVertexShader(
+                std::slice::from_raw_parts(ptr as _, size),
+                None,
+                Some(&mut vtx_shader),
+            )?
         };
 
-        let pix_shader = unsafe {
+        let mut pix_shader = None;
+        unsafe {
             let ps_blob = ps_blob.as_ref().unwrap();
             let ptr = ps_blob.GetBufferPointer();
             let size = ps_blob.GetBufferSize();
-            dasc.dev().CreatePixelShader(std::slice::from_raw_parts(ptr as _, size), None)?
+            dasc.dev().CreatePixelShader(
+                std::slice::from_raw_parts(ptr as _, size),
+                None,
+                Some(&mut pix_shader),
+            )?
         };
 
-        let layout = unsafe {
+        let mut layout = None;
+        unsafe {
             let vs_blob = vs_blob.as_ref().unwrap();
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
@@ -153,105 +162,124 @@ impl ShaderProgram {
                     },
                 ],
                 std::slice::from_raw_parts(ptr as _, size),
+                Some(&mut layout),
             )?
         };
 
-        let sampler = unsafe {
-            dasc.dev().CreateSamplerState(&D3D11_SAMPLER_DESC {
-                Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                AddressU: D3D11_TEXTURE_ADDRESS_WRAP,
-                AddressV: D3D11_TEXTURE_ADDRESS_WRAP,
-                AddressW: D3D11_TEXTURE_ADDRESS_WRAP,
-                MipLODBias: 0.,
-                ComparisonFunc: D3D11_COMPARISON_ALWAYS,
-                MinLOD: 0.,
-                MaxLOD: 0.,
-                BorderColor: [0.; 4],
-                MaxAnisotropy: 0,
-            })?
+        let mut sampler = None;
+        unsafe {
+            dasc.dev().CreateSamplerState(
+                &D3D11_SAMPLER_DESC {
+                    Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                    AddressU: D3D11_TEXTURE_ADDRESS_WRAP,
+                    AddressV: D3D11_TEXTURE_ADDRESS_WRAP,
+                    AddressW: D3D11_TEXTURE_ADDRESS_WRAP,
+                    MipLODBias: 0.,
+                    ComparisonFunc: D3D11_COMPARISON_ALWAYS,
+                    MinLOD: 0.,
+                    MaxLOD: 0.,
+                    BorderColor: [0.; 4],
+                    MaxAnisotropy: 0,
+                },
+                Some(&mut sampler),
+            )?
         };
 
-        let blend_state = unsafe {
-            dasc.dev().CreateBlendState(&D3D11_BLEND_DESC {
-                AlphaToCoverageEnable: BOOL(0),
-                IndependentBlendEnable: BOOL(0),
-                RenderTarget: [
-                    D3D11_RENDER_TARGET_BLEND_DESC {
-                        BlendEnable: BOOL(1),
-                        SrcBlend: D3D11_BLEND_SRC_ALPHA,
-                        DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
-                        BlendOp: D3D11_BLEND_OP_ADD,
-                        SrcBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
-                        DestBlendAlpha: D3D11_BLEND_ZERO,
-                        BlendOpAlpha: D3D11_BLEND_OP_ADD,
-                        RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
+        let mut blend_state = None;
+        unsafe {
+            dasc.dev().CreateBlendState(
+                &D3D11_BLEND_DESC {
+                    AlphaToCoverageEnable: BOOL(0),
+                    IndependentBlendEnable: BOOL(0),
+                    RenderTarget: [
+                        D3D11_RENDER_TARGET_BLEND_DESC {
+                            BlendEnable: BOOL(1),
+                            SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                            DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
+                            BlendOp: D3D11_BLEND_OP_ADD,
+                            SrcBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                            DestBlendAlpha: D3D11_BLEND_ZERO,
+                            BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                            RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
+                        },
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                        std::mem::zeroed(),
+                    ],
+                } as *const _,
+                Some(&mut blend_state),
+            )?
+        };
+
+        let mut rasterizer_state = None;
+        unsafe {
+            dasc.dev().CreateRasterizerState(
+                &D3D11_RASTERIZER_DESC {
+                    FillMode: D3D11_FILL_SOLID,
+                    CullMode: D3D11_CULL_NONE,
+                    ScissorEnable: BOOL(1),
+                    DepthClipEnable: BOOL(1),
+                    DepthBias: 0,
+                    DepthBiasClamp: 0.,
+                    SlopeScaledDepthBias: 0.,
+                    MultisampleEnable: BOOL(0),
+                    AntialiasedLineEnable: BOOL(0),
+                    FrontCounterClockwise: BOOL(0),
+                },
+                Some(&mut rasterizer_state),
+            )?
+        };
+
+        let mut depth_stencil_state = None;
+        unsafe {
+            dasc.dev().CreateDepthStencilState(
+                &D3D11_DEPTH_STENCIL_DESC {
+                    DepthEnable: BOOL(0),
+                    DepthFunc: D3D11_COMPARISON_ALWAYS,
+                    DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
+                    StencilEnable: BOOL(0),
+                    StencilReadMask: 0,
+                    StencilWriteMask: 0,
+                    FrontFace: D3D11_DEPTH_STENCILOP_DESC {
+                        StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+                        StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                        StencilFunc: D3D11_COMPARISON_ALWAYS,
                     },
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                    std::mem::zeroed(),
-                ],
-            } as *const _)?
-        };
-
-        let rasterizer_state = unsafe {
-            dasc.dev().CreateRasterizerState(&D3D11_RASTERIZER_DESC {
-                FillMode: D3D11_FILL_SOLID,
-                CullMode: D3D11_CULL_NONE,
-                ScissorEnable: BOOL(1),
-                DepthClipEnable: BOOL(1),
-                DepthBias: 0,
-                DepthBiasClamp: 0.,
-                SlopeScaledDepthBias: 0.,
-                MultisampleEnable: BOOL(0),
-                AntialiasedLineEnable: BOOL(0),
-                FrontCounterClockwise: BOOL(0),
-            })?
-        };
-
-        let depth_stencil_state = unsafe {
-            dasc.dev().CreateDepthStencilState(&D3D11_DEPTH_STENCIL_DESC {
-                DepthEnable: BOOL(0),
-                DepthFunc: D3D11_COMPARISON_ALWAYS,
-                DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
-                StencilEnable: BOOL(0),
-                StencilReadMask: 0,
-                StencilWriteMask: 0,
-                FrontFace: D3D11_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: D3D11_STENCIL_OP_KEEP,
-                    StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
-                    StencilPassOp: D3D11_STENCIL_OP_KEEP,
-                    StencilFunc: D3D11_COMPARISON_ALWAYS,
+                    BackFace: D3D11_DEPTH_STENCILOP_DESC {
+                        StencilFailOp: D3D11_STENCIL_OP_KEEP,
+                        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+                        StencilPassOp: D3D11_STENCIL_OP_KEEP,
+                        StencilFunc: D3D11_COMPARISON_ALWAYS,
+                    },
                 },
-                BackFace: D3D11_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: D3D11_STENCIL_OP_KEEP,
-                    StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
-                    StencilPassOp: D3D11_STENCIL_OP_KEEP,
-                    StencilFunc: D3D11_COMPARISON_ALWAYS,
-                },
-            })?
+                Some(&mut depth_stencil_state),
+            )?
         };
 
-        Ok(ShaderProgram {
-            vtx_shader,
-            pix_shader,
-            layout,
-            sampler,
-            blend_state,
-            depth_stencil_state,
-            rasterizer_state,
-        })
+        let shader_program = ShaderProgram {
+            vtx_shader: vtx_shader.unwrap(),
+            pix_shader: pix_shader.unwrap(),
+            layout: layout.unwrap(),
+            sampler: sampler.unwrap(),
+            blend_state: blend_state.unwrap(),
+            depth_stencil_state: depth_stencil_state.unwrap(),
+            rasterizer_state: rasterizer_state.unwrap(),
+        };
+
+        Ok(shader_program)
     }
 
     pub(crate) unsafe fn set_state(&self, dasc: &DeviceAndSwapChain) {
-        dasc.dev_ctx().VSSetShader(&self.vtx_shader, &[]);
-        dasc.dev_ctx().PSSetShader(&self.pix_shader, &[]);
+        dasc.dev_ctx().VSSetShader(&self.vtx_shader, None);
+        dasc.dev_ctx().PSSetShader(&self.pix_shader, None);
         dasc.dev_ctx().IASetInputLayout(&self.layout);
-        dasc.dev_ctx().PSSetSamplers(0, &[Some(self.sampler.clone())]);
-        dasc.dev_ctx().OMSetBlendState(&self.blend_state, &[0f32; 4] as _, 0xFFFFFFFF);
+        dasc.dev_ctx().PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
+        dasc.dev_ctx().OMSetBlendState(&self.blend_state, Some(&[0f32; 4] as _), 0xFFFFFFFF);
         dasc.dev_ctx().OMSetDepthStencilState(&self.depth_stencil_state, 0);
         dasc.dev_ctx().RSSetState(&self.rasterizer_state);
     }
