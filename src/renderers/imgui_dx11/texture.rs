@@ -27,7 +27,7 @@ impl Texture {
         let texture = fonts.build_rgba32_texture();
         let data = texture.data.to_vec();
 
-        let tex = None;
+        let mut tex = None;
         unsafe {
             dasc.dev().CreateTexture2D(
                 &D3D11_TEXTURE2D_DESC {
@@ -51,22 +51,24 @@ impl Texture {
             )?
         };
 
-        let tex_view = None;
+        let mut tex_view = None;
         unsafe {
-            dasc.dev().CreateShaderResourceView(
-                &ID3D11Texture2D::cast::<ID3D11Resource>(&tex.unwrap()).unwrap(),
-                Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
-                        Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
-                    },
-                }),
-                Some(&mut tex_view),
-            )
+            dasc.dev()
+                .CreateShaderResourceView(
+                    &ID3D11Texture2D::cast::<ID3D11Resource>(&tex.as_ref().unwrap()).unwrap(),
+                    Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
+                        },
+                    }),
+                    Some(&mut tex_view),
+                )
+                .unwrap()
         };
 
-        let _font_sampler = None;
+        let mut _font_sampler = None;
         unsafe {
             dasc.dev().CreateSamplerState(
                 &D3D11_SAMPLER_DESC {

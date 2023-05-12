@@ -82,7 +82,7 @@ impl DeviceAndSwapChain {
             dev.CreateRenderTargetView(&p_back_buffer, None, Some(&mut back_buffer))
                 .expect("CreateRenderTargetView");
 
-            dev_ctx.OMSetRenderTargets(Some(&[Some(back_buffer.unwrap().clone())]), None);
+            dev_ctx.OMSetRenderTargets(Some(&[Some(back_buffer.clone().unwrap())]), None);
 
             back_buffer
         };

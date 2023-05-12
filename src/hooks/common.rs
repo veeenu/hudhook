@@ -126,7 +126,7 @@ where
             io.mouse_down[2] = true;
         },
         WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
             io.mouse_down[btn] = true;
         },
         WM_LBUTTONUP => {
@@ -139,7 +139,7 @@ where
             io.mouse_down[2] = false;
         },
         WM_XBUTTONUP => {
-            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
             io.mouse_down[btn] = false;
         },
         WM_MOUSEWHEEL => {

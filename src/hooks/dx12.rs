@@ -297,7 +297,7 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
         trace!("Initializing renderer");
-        let desc = DXGI_SWAP_CHAIN_DESC::default();
+        let mut desc = DXGI_SWAP_CHAIN_DESC::default();
         swap_chain.GetDesc(&mut desc).unwrap();
         let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
 
@@ -439,7 +439,7 @@ impl ImguiRenderer {
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
-        let sd = DXGI_SWAP_CHAIN_DESC::default();
+        let mut sd = DXGI_SWAP_CHAIN_DESC::default();
         unsafe { swap_chain.GetDesc(&mut sd) }.unwrap();
         let mut rect: RECT = Default::default();
 

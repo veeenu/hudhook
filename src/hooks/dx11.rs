@@ -1,6 +1,5 @@
 use std::ffi::c_void;
 use std::mem;
-use std::ptr::null_mut;
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -169,10 +168,11 @@ impl ImguiRenderer {
         trace!("Initializing renderer");
 
         let dev: ID3D11Device = swap_chain.GetDevice().expect("GetDevice");
-        let mut dev_ctx: Option<ID3D11DeviceContext> = None;
-        dev.GetImmediateContext(&mut dev_ctx);
-        let dev_ctx = dev_ctx.unwrap();
-        let sd = swap_chain.GetDesc().expect("GetDesc");
+        let mut dev_ctx: ID3D11DeviceContext = dev.GetImmediateContext().unwrap();
+
+        let dev_ctx = dev_ctx;
+        let mut sd = DXGI_SWAP_CHAIN_DESC::default();
+        swap_chain.GetDesc(&mut sd).expect("GetDesc");
 
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
@@ -203,7 +203,8 @@ impl ImguiRenderer {
         trace!("Present impl: Rendering");
 
         let swap_chain = self.store_swap_chain(swap_chain);
-        let sd = swap_chain.GetDesc().expect("GetDesc");
+        let mut sd = DXGI_SWAP_CHAIN_DESC::default();
+        swap_chain.GetDesc(&mut sd).expect("GetDesc");
 
         // if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
         if let Some(rect) = self.engine.get_window_rect() {
@@ -250,7 +251,8 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let desc = swap_chain.GetDesc().unwrap();
+        let mut desc = DXGI_SWAP_CHAIN_DESC::default();
+        swap_chain.GetDesc(&mut desc).expect("GetDesc");
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
@@ -312,9 +314,9 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
             D3D_DRIVER_TYPE_NULL,
             None,
             D3D11_CREATE_DEVICE_FLAG(0),
-            &[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0],
+            Some(&[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0]),
             D3D11_SDK_VERSION,
-            &DXGI_SWAP_CHAIN_DESC {
+            Some(&DXGI_SWAP_CHAIN_DESC {
                 BufferDesc: DXGI_MODE_DESC {
                     Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                     ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
@@ -328,11 +330,11 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
                 SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
                 SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },
                 ..Default::default()
-            },
-            &mut p_swap_chain,
-            &mut p_device,
-            null_mut(),
-            &mut p_context,
+            }),
+            Some(&mut p_swap_chain),
+            Some(&mut p_device),
+            None,
+            Some(&mut p_context),
         )
         .expect("D3D11CreateDeviceAndSwapChain failed");
     }
