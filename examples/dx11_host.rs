@@ -4,7 +4,7 @@
 #![no_main]
 
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 use windows::core::{PCSTR, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};

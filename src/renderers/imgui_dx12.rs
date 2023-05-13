@@ -296,7 +296,7 @@ impl RenderEngine {
 
             if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
                 unsafe {
-                    vb.Map(0, Some(&range), Some(vtx_resource as *mut _))
+                    vb.Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as _))
                         .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
                     vb.Unmap(0, Some(&range));
@@ -305,7 +305,7 @@ impl RenderEngine {
 
             if let Some(ib) = frame_resources.index_buffer.as_ref() {
                 unsafe {
-                    ib.Map(0, Some(&range), Some(idx_resource as *mut _))
+                    ib.Map(0, Some(&range), Some(&mut idx_resource as *mut _ as _))
                         .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
                     ib.Unmap(0, Some(&range));
@@ -629,6 +629,8 @@ impl RenderEngine {
         let pipeline_state = unsafe { self.dev.CreateGraphicsPipelineState(&pso_desc) };
         self.pipeline_state = Some(pipeline_state.unwrap());
 
+        let _ = ManuallyDrop::into_inner(pso_desc.pRootSignature);
+
         self.create_font_texture(ctx).unwrap();
     }
 
@@ -719,7 +721,7 @@ impl RenderEngine {
         if let Some(ub) = upload_buffer.as_ref() {
             unsafe {
                 let mut ptr: *mut u8 = null_mut();
-                ub.Map(0, Some(&range), Some(ptr as *mut _)).unwrap();
+                ub.Map(0, Some(&range), Some(&mut ptr as *mut _ as _)).unwrap();
                 std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
                 ub.Unmap(0, Some(&range));
             }
@@ -798,9 +800,11 @@ impl RenderEngine {
             },
         };
 
+        let barriers = vec![barrier];
+
         unsafe {
             cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
-            cmd_list.ResourceBarrier(&[barrier]);
+            cmd_list.ResourceBarrier(&barriers);
             cmd_list.Close().unwrap();
             cmd_queue.ExecuteCommandLists(&[Some(
                 ID3D12GraphicsCommandList::cast::<ID3D12CommandList>(&cmd_list).unwrap(),
@@ -833,6 +837,13 @@ impl RenderEngine {
                 self.font_srv_cpu_desc_handle,
             )
         };
+
+        let barrier = barriers.into_iter().next().unwrap();
+
+        let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        let _t = ManuallyDrop::into_inner(transition.pResource);
+        let _d = ManuallyDrop::into_inner(dst_location.pResource);
+        let _s = ManuallyDrop::into_inner(src_location.pResource);
         drop(self.font_texture_resource.take());
         self.font_texture_resource = p_texture;
         fonts.tex_id = TextureId::from(self.font_srv_gpu_desc_handle.ptr as usize);

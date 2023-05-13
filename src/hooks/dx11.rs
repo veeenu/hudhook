@@ -168,7 +168,7 @@ impl ImguiRenderer {
         trace!("Initializing renderer");
 
         let dev: ID3D11Device = swap_chain.GetDevice().expect("GetDevice");
-        let mut dev_ctx: ID3D11DeviceContext = dev.GetImmediateContext().unwrap();
+        let dev_ctx: ID3D11DeviceContext = dev.GetImmediateContext().unwrap();
 
         let dev_ctx = dev_ctx;
         let mut sd = DXGI_SWAP_CHAIN_DESC::default();

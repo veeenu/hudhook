@@ -23,7 +23,7 @@
 #![no_main]
 
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use hudhook::renderers::imgui_dx9::Renderer;
 use imgui::Condition;

@@ -542,7 +542,8 @@ impl ImguiRenderer {
 
         let barrier = barriers.into_iter().next().unwrap();
 
-        let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        let ts = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        let _ = ManuallyDrop::into_inner(ts.pResource);
         trace!("Rendering done in {:?}", render_start.elapsed());
         None
     }

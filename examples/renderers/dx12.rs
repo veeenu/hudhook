@@ -4,7 +4,7 @@
 #![no_main]
 
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 use hudhook::renderers::imgui_dx12::RenderEngine;
 use imgui::Condition;
