@@ -10,6 +10,7 @@ use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
+use windows::Win32::Graphics::OpenGL::{glClearColor, glGetIntegerv, GL_VIEWPORT};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
@@ -64,6 +65,7 @@ unsafe fn draw(dc: HDC) {
                 wnd_proc,
                 flags: ImguiRenderLoopFlags { focused: false },
                 game_hwnd: hwnd,
+                resolution_and_rect: None,
             };
 
             // Initialize window events on the imgui renderer
@@ -116,12 +118,44 @@ unsafe extern "system" fn imgui_opengl32_wglSwapBuffers_impl(dc: HDC) {
     // Draw ImGui
     draw(dc);
 
+    // If resolution or window rect changes - reset ImGui
+    reset(dc);
+
     // Get the trampoline
     let trampoline_wglswapbuffers =
         TRAMPOLINE.get().expect("opengl32.wglSwapBuffers trampoline uninitialized");
 
     // Call the original function
     trampoline_wglswapbuffers(dc)
+}
+
+unsafe fn reset(hdc: HDC) {
+    if IMGUI_RENDERER.is_none() {
+        return;
+    }
+
+    if let Some(mut renderer) = IMGUI_RENDERER.as_mut().unwrap().try_lock() {
+        // Get resolution
+        let viewport = &mut [0; 4];
+        glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
+
+        let hwnd = WindowFromDC(hdc);
+        let rect = get_window_rect(&hwnd).unwrap();
+
+        let (resolution, window_rect) =
+            renderer.resolution_and_rect.get_or_insert(([viewport[2], viewport[3]], rect));
+
+        // Compare previously saved to current
+        if viewport[2] != resolution[0]
+            || viewport[3] != resolution[1]
+            || rect.right != window_rect.right
+            || rect.bottom != window_rect.bottom
+        {
+            renderer.cleanup();
+            glClearColor(0.0, 0.0, 0.0, 1.0);
+            IMGUI_RENDERER.take();
+        }
+    }
 }
 
 static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
@@ -134,6 +168,7 @@ struct ImguiRenderer {
     wnd_proc: WndProcType,
     flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
+    resolution_and_rect: Option<([i32; 2], RECT)>,
 }
 
 fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
