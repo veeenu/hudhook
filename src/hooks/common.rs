@@ -25,6 +25,7 @@ use super::{get_wheel_delta_wparam, hiword, Hooks};
 use crate::mh::{MhHook, MhHooks};
 
 pub static mut INPUT: OnceCell<Mutex<Input>> = OnceCell::new();
+pub static mut COMMON_HOOKS: OnceCell<CommonHooks> = OnceCell::new();
 
 #[derive(Debug)]
 pub struct Input {
@@ -563,15 +564,6 @@ type GetMessageFn = unsafe extern "system" fn(
     wmsgfiltermax: u32,
 ) -> BOOL;
 
-static POST_MESSAGE_A_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
-static POST_MESSAGE_W_TRAMPOLINE: OnceCell<PostMessageFn> = OnceCell::new();
-
-static PEEK_MESSAGE_A_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
-static PEEK_MESSAGE_W_TRAMPOLINE: OnceCell<PeekMessageFn> = OnceCell::new();
-
-static GET_MESSAGE_A_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
-static GET_MESSAGE_W_TRAMPOLINE: OnceCell<GetMessageFn> = OnceCell::new();
-
 unsafe extern "system" fn post_message_a_impl(
     hwnd: HWND,
     umsg: u32,
@@ -586,7 +578,7 @@ unsafe extern "system" fn post_message_a_impl(
         }
     }
 
-    let trampoline = POST_MESSAGE_A_TRAMPOLINE.get().expect("PostMessageA unitialized");
+    let trampoline = COMMON_HOOKS.get().unwrap().post_message_a_trampoline;
     trampoline(hwnd, umsg, wparam, lparam)
 }
 
@@ -604,7 +596,7 @@ unsafe extern "system" fn post_message_w_impl(
         }
     }
 
-    let trampoline = POST_MESSAGE_W_TRAMPOLINE.get().expect("PostMessageW unitialized");
+    let trampoline = COMMON_HOOKS.get().unwrap().post_message_w_trampoline;
     trampoline(hwnd, umsg, wparam, lparam)
 }
 
@@ -617,7 +609,7 @@ unsafe extern "system" fn peek_message_a_impl(
 ) -> BOOL {
     trace!("PeekMessageA invoked");
 
-    let trampoline = PEEK_MESSAGE_A_TRAMPOLINE.get().expect("PeekMessageA unitialized");
+    let trampoline = COMMON_HOOKS.get().unwrap().peek_message_a_trampoline;
     if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
         return BOOL::from(false);
     }
@@ -645,7 +637,7 @@ unsafe extern "system" fn peek_message_w_impl(
 ) -> BOOL {
     trace!("PeekMessageW invoked");
 
-    let trampoline = PEEK_MESSAGE_W_TRAMPOLINE.get().expect("PeekMessageW unitialized");
+    let trampoline = COMMON_HOOKS.get().unwrap().peek_message_w_trampoline;
     if !trampoline(lpmsg, hwnd, wmsgfiltermin, wmsgfiltermax, wremovemsg).as_bool() {
         return BOOL::from(false);
     }
@@ -694,7 +686,15 @@ unsafe extern "system" fn get_message_w_impl(
     return BOOL::from((*lpmsg).message != WM_QUIT);
 }
 
-pub struct CommonHooks(MhHooks);
+pub struct CommonHooks {
+    hooks: MhHooks,
+    post_message_a_trampoline: PostMessageFn,
+    post_message_w_trampoline: PostMessageFn,
+    _get_message_a_trampoline: GetMessageFn,
+    _get_message_w_trampoline: GetMessageFn,
+    peek_message_a_trampoline: PeekMessageFn,
+    peek_message_w_trampoline: PeekMessageFn,
+}
 
 impl CommonHooks {
     pub unsafe fn new() -> Self {
@@ -747,17 +747,14 @@ create PeekMessageW hook",
     create GetMessageW hook",
             );
 
-        POST_MESSAGE_A_TRAMPOLINE.get_or_init(|| std::mem::transmute(post_message_a.trampoline()));
-        POST_MESSAGE_W_TRAMPOLINE.get_or_init(|| std::mem::transmute(post_message_w.trampoline()));
-
-        PEEK_MESSAGE_A_TRAMPOLINE.get_or_init(|| std::mem::transmute(peek_message_a.trampoline()));
-        PEEK_MESSAGE_W_TRAMPOLINE.get_or_init(|| std::mem::transmute(peek_message_w.trampoline()));
-
-        GET_MESSAGE_A_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_message_a.trampoline()));
-        GET_MESSAGE_W_TRAMPOLINE.get_or_init(|| std::mem::transmute(get_message_w.trampoline()));
-
-        Self(
-            MhHooks::new([
+        CommonHooks {
+            post_message_a_trampoline: std::mem::transmute(post_message_a.trampoline()),
+            post_message_w_trampoline: std::mem::transmute(post_message_w.trampoline()),
+            _get_message_a_trampoline: std::mem::transmute(get_message_a.trampoline()),
+            _get_message_w_trampoline: std::mem::transmute(get_message_w.trampoline()),
+            peek_message_a_trampoline: std::mem::transmute(peek_message_a.trampoline()),
+            peek_message_w_trampoline: std::mem::transmute(peek_message_w.trampoline()),
+            hooks: MhHooks::new([
                 post_message_a,
                 post_message_w,
                 peek_message_a,
@@ -765,18 +762,18 @@ create PeekMessageW hook",
                 get_message_a,
                 get_message_w,
             ])
-            .expect("couldn't create hooks"),
-        )
+            .unwrap(),
+        }
     }
 }
 
 impl Hooks for CommonHooks {
     unsafe fn hook(&self) {
-        self.0.apply();
+        self.hooks.apply();
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        self.0.unapply();
+        self.hooks.unapply();
     }
 }

@@ -185,7 +185,7 @@ pub mod lifecycle {
 
     use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 
-    use crate::hooks::Hooks;
+    use crate::hooks::{common, Hooks};
 
     /// Disable hooks and eject the DLL.
     pub fn eject() {
@@ -196,7 +196,7 @@ pub mod lifecycle {
                 hooks.unhook();
             }
 
-            if let Some(mut hooks) = global_state::COMMON_HOOKS.take() {
+            if let Some(mut hooks) = common::COMMON_HOOKS.take() {
                 hooks.unhook();
             }
 
@@ -221,12 +221,10 @@ pub mod lifecycle {
 
         use windows::Win32::Foundation::HINSTANCE;
 
-        use crate::hooks::common::CommonHooks;
         use crate::hooks::{self};
 
         pub(super) static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
         pub(super) static mut HOOKS: OnceCell<Box<dyn hooks::Hooks>> = OnceCell::new();
-        pub(super) static mut COMMON_HOOKS: OnceCell<CommonHooks> = OnceCell::new();
 
         /// Please don't use me.
         pub fn set_module(module: HINSTANCE) {
@@ -243,11 +241,6 @@ pub mod lifecycle {
         /// Please don't use me.
         pub fn set_hooks(hooks: Box<dyn hooks::Hooks>) {
             unsafe { HOOKS.set(hooks).ok() };
-        }
-
-        /// Please don't use me.
-        pub fn set_common_hooks(hooks: CommonHooks) {
-            unsafe { COMMON_HOOKS.set(hooks).ok() };
         }
     }
 }
@@ -307,11 +300,8 @@ macro_rules! hudhook {
                 trace!("DllMain()");
                 std::thread::spawn(move || {
                     let hooks: Box<dyn hooks::Hooks> = { $hooks };
-                    let common_hooks = hooks::common::CommonHooks::new();
                     hooks.hook();
-                    common_hooks.hook();
                     hudhook::lifecycle::global_state::set_hooks(hooks);
-                    hudhook::lifecycle::global_state::set_common_hooks(common_hooks);
                 });
             }
         }
