@@ -275,8 +275,8 @@ impl ShaderProgram {
     }
 
     pub(crate) unsafe fn set_state(&self, dasc: &DeviceAndSwapChain) {
-        dasc.dev_ctx().VSSetShader(&self.vtx_shader, None);
-        dasc.dev_ctx().PSSetShader(&self.pix_shader, None);
+        dasc.dev_ctx().VSSetShader(&self.vtx_shader, Some(&[]));
+        dasc.dev_ctx().PSSetShader(&self.pix_shader, Some(&[]));
         dasc.dev_ctx().IASetInputLayout(&self.layout);
         dasc.dev_ctx().PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
         dasc.dev_ctx().OMSetBlendState(&self.blend_state, Some(&[0f32; 4] as _), 0xFFFFFFFF);

@@ -41,12 +41,12 @@ impl Texture {
                     BindFlags: D3D11_BIND_SHADER_RESOURCE,
                     CPUAccessFlags: D3D11_CPU_ACCESS_FLAG(0),
                     MiscFlags: D3D11_RESOURCE_MISC_FLAG(0),
-                },
+                } as *const _,
                 Some(&D3D11_SUBRESOURCE_DATA {
                     pSysMem: data.as_ptr() as _,
                     SysMemPitch: texture.width * 4,
                     SysMemSlicePitch: 0,
-                }),
+                } as *const _),
                 Some(&mut tex),
             )?
         };
@@ -62,7 +62,7 @@ impl Texture {
                         Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                             Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
                         },
-                    }),
+                    } as *const _),
                     Some(&mut tex_view),
                 )
                 .unwrap()

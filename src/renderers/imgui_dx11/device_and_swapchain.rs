@@ -36,7 +36,7 @@ impl DeviceAndSwapChain {
                 D3D_DRIVER_TYPE_HARDWARE,
                 None,
                 DEVICE_FLAGS,
-                None,
+                Some(&[]),
                 D3D11_SDK_VERSION,
                 Some(&DXGI_SWAP_CHAIN_DESC {
                     BufferCount: 1,

@@ -48,9 +48,17 @@ impl StateBackup {
             ..Default::default()
         };
         unsafe {
-            ctx.RSGetScissorRects(&mut r.scissor_rects_count, Some(&mut r.scissor_rects as _));
-            ctx.RSGetViewports(&mut r.viewports_count, Some(&mut r.viewports as _));
-            r.rasterizer_state = Some(ctx.RSGetState().unwrap());
+            ctx.RSGetScissorRects(
+                &mut r.scissor_rects_count,
+                Some(&mut r.scissor_rects as *mut _ as *mut _),
+            );
+            ctx.RSGetViewports(&mut r.viewports_count, Some(&mut r.viewports as *mut _ as *mut _));
+            if let Ok(state) = ctx.RSGetState() {
+                r.rasterizer_state = Some(state);
+            } else {
+                r.rasterizer_state = None;
+            }
+
             ctx.OMGetBlendState(
                 Some(&mut r.blend_state),
                 Some(&mut r.blend_factor as _),
