@@ -647,7 +647,7 @@ impl RenderEngine {
     }
 
     fn create_font_texture(&mut self, ctx: &mut imgui::Context) -> Result<()> {
-        let mut fonts = ctx.fonts();
+        let fonts = ctx.fonts();
         let texture = fonts.build_rgba32_texture();
 
         let mut p_texture: Option<ID3D12Resource> = None;

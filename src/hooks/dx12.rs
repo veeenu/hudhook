@@ -441,7 +441,7 @@ impl ImguiRenderer {
         let mut rect: RECT = Default::default();
 
         if unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() } {
-            let mut io = self.ctx.io_mut();
+            let io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
