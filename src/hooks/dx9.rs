@@ -280,6 +280,14 @@ impl ImguiDx9Hooks {
 }
 
 impl Hooks for ImguiDx9Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static,
+    {
+        Box::new(unsafe { ImguiDx9Hooks::new(t) })
+    }
+
     unsafe fn hook(&self) {
         self.0.apply();
     }

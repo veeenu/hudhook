@@ -298,6 +298,14 @@ impl ImguiOpenGl3Hooks {
 }
 
 impl Hooks for ImguiOpenGl3Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static,
+    {
+        Box::new(unsafe { ImguiOpenGl3Hooks::new(t) })
+    }
+
     unsafe fn hook(&self) {
         self.0.apply();
     }
