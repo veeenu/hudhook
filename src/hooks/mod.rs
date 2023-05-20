@@ -15,6 +15,11 @@ pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};
 
 /// Generic trait for platform-specific hooks.
 pub trait Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static;
+
     /// Find the hook target functions addresses, initialize the data, create
     /// and enable the hooks.
     ///
