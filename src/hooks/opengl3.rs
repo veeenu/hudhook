@@ -187,7 +187,7 @@ static mut LAST_FRAME: Option<Mutex<Instant>> = None;
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
         if let Some(rect) = get_window_rect(&self.game_hwnd) {
-            let mut io = self.ctx.io_mut();
+            let io = self.ctx.io_mut();
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
             let mut pos = POINT { x: 0, y: 0 };
 

@@ -26,7 +26,7 @@ pub(crate) trait ImguiWindowsEventHandler {
     fn wnd_proc(&self) -> WndProcType;
 
     fn setup_io(&mut self) {
-        let mut io = ImguiWindowsEventHandler::io_mut(self);
+        let io = ImguiWindowsEventHandler::io_mut(self);
 
         io.nav_active = true;
         io.nav_visible = true;
@@ -68,7 +68,7 @@ pub(crate) fn imgui_wnd_proc_impl<T>(
 where
     T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
 {
-    let mut io = imgui_renderer.io_mut();
+    let io = imgui_renderer.io_mut();
     match umsg {
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
             fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
