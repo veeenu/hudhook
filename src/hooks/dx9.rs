@@ -1,7 +1,7 @@
 use std::mem;
+use std::sync::OnceLock;
 
 use imgui::Context;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, trace};
 use windows::core::{Interface, HRESULT};
@@ -159,9 +159,9 @@ unsafe extern "system" fn imgui_dx9_present_impl(
     trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
 }
 
-static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
-static TRAMPOLINE: OnceCell<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceCell::new();
+static mut IMGUI_RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
+static mut IMGUI_RENDERER: OnceLock<Mutex<Box<ImguiRenderer>>> = OnceLock::new();
+static TRAMPOLINE: OnceLock<(Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn)> = OnceLock::new();
 
 struct ImguiRenderer {
     ctx: Context,

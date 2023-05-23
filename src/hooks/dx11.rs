@@ -1,9 +1,9 @@
 use std::ffi::c_void;
 use std::mem;
 use std::ptr::null_mut;
+use std::sync::OnceLock;
 
 use imgui::Context;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::core::{Interface, HRESULT};
@@ -66,15 +66,15 @@ trait Renderer {
 // Global singletons
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static TRAMPOLINE: OnceCell<(DXGISwapChainPresentType, DXGISwapChainResizeBuffersType)> =
-    OnceCell::new();
+static TRAMPOLINE: OnceLock<(DXGISwapChainPresentType, DXGISwapChainResizeBuffersType)> =
+    OnceLock::new();
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Hook entry points
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+static mut IMGUI_RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
+static mut IMGUI_RENDERER: OnceLock<Mutex<Box<ImguiRenderer>>> = OnceLock::new();
 
 unsafe extern "system" fn imgui_dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
