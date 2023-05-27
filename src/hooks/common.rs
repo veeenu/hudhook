@@ -7,10 +7,10 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
-use self::input::handle_raw_input;
+use self::raw_input::handle_raw_input;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
 
-mod input;
+mod raw_input;
 
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
