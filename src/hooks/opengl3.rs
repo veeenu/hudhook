@@ -1,8 +1,8 @@
 use std::ffi::CString;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use imgui::Context;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, trace};
 use windows::core::PCSTR;
@@ -158,9 +158,9 @@ unsafe fn reset(hdc: HDC) {
     }
 }
 
-static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+static mut IMGUI_RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static mut IMGUI_RENDERER: Option<Mutex<Box<ImguiRenderer>>> = None;
-static TRAMPOLINE: OnceCell<OpenGl32wglSwapBuffers> = OnceCell::new();
+static TRAMPOLINE: OnceLock<OpenGl32wglSwapBuffers> = OnceLock::new();
 
 struct ImguiRenderer {
     ctx: Context,

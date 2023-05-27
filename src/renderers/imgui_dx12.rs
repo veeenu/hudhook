@@ -1,11 +1,10 @@
 use std::ffi::c_void;
-use std::mem::{size_of, ManuallyDrop};
+use std::mem::{offset_of, size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use memoffset::offset_of;
 use tracing::{error, trace};
 use widestring::u16cstr;
 use windows::core::{Result, PCSTR, PCWSTR};
@@ -461,9 +460,9 @@ impl RenderEngine {
         let mut pix_shader: Option<ID3DBlob> = None;
 
         let vs = r#"
-                cbuffer vertexBuffer : register(b0) 
+                cbuffer vertexBuffer : register(b0)
                 {
-                  float4x4 ProjectionMatrix; 
+                  float4x4 ProjectionMatrix;
                 };
                 struct VS_INPUT
                 {
@@ -471,14 +470,14 @@ impl RenderEngine {
                   float4 col : COLOR0;
                   float2 uv  : TEXCOORD0;
                 };
-                
+
                 struct PS_INPUT
                 {
                   float4 pos : SV_POSITION;
                   float4 col : COLOR0;
                   float2 uv  : TEXCOORD0;
                 };
-                
+
                 PS_INPUT main(VS_INPUT input)
                 {
                   PS_INPUT output;
@@ -514,11 +513,11 @@ impl RenderEngine {
                 };
                 SamplerState sampler0 : register(s0);
                 Texture2D texture0 : register(t0);
-                
+
                 float4 main(PS_INPUT input) : SV_Target
                 {
-                  float4 out_col = input.col * texture0.Sample(sampler0, input.uv); 
-                  return out_col; 
+                  float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
+                  return out_col;
                 }"#;
 
         unsafe {
