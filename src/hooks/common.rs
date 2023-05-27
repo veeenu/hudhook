@@ -7,7 +7,10 @@ use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::{WHEEL_DELTA, WM_XBUTTONDBLCLK, XBUTTON1, *};
 
+use self::input::handle_raw_input;
 use super::{get_wheel_delta_wparam, hiword, loword, Hooks};
+
+mod input;
 
 pub(crate) type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -66,6 +69,7 @@ where
 {
     let io = imgui_renderer.io_mut();
     match umsg {
+        WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
             fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
                 match VIRTUAL_KEY(wparam) {
