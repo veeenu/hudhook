@@ -10,8 +10,7 @@ use std::time::{Duration, Instant};
 use imgui::Context;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
-use widestring::{u16cstr, U16CStr};
-use windows::core::{Interface, HRESULT, PCWSTR};
+use windows::core::{Interface, HRESULT, HSTRING, PCWSTR};
 use windows::w;
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
@@ -80,15 +79,15 @@ static TRAMPOLINE: OnceLock<(
     ResizeBuffersType,
 )> = OnceLock::new();
 
-const COMMAND_ALLOCATOR_NAMES: [&U16CStr; 8] = [
-    u16cstr!("hudhook Command allocator #0"),
-    u16cstr!("hudhook Command allocator #1"),
-    u16cstr!("hudhook Command allocator #2"),
-    u16cstr!("hudhook Command allocator #3"),
-    u16cstr!("hudhook Command allocator #4"),
-    u16cstr!("hudhook Command allocator #5"),
-    u16cstr!("hudhook Command allocator #6"),
-    u16cstr!("hudhook Command allocator #7"),
+const COMMAND_ALLOCATOR_NAMES: [&HSTRING; 8] = [
+    w!("hudhook Command allocator #0"),
+    w!("hudhook Command allocator #1"),
+    w!("hudhook Command allocator #2"),
+    w!("hudhook Command allocator #3"),
+    w!("hudhook Command allocator #4"),
+    w!("hudhook Command allocator #5"),
+    w!("hudhook Command allocator #6"),
+    w!("hudhook Command allocator #7"),
 ];
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -317,7 +316,7 @@ impl ImguiRenderer {
         command_list.Close().unwrap();
 
         command_list
-            .SetName(PCWSTR(u16cstr!("hudhook Command List").as_ptr()))
+            .SetName(PCWSTR(w!("hudhook Command List").as_ptr()))
             .expect("Couldn't set command list name");
 
         let rtv_heap: ID3D12DescriptorHeap = dev

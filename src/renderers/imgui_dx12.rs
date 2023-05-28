@@ -6,8 +6,8 @@ pub use imgui;
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use tracing::{error, trace};
-use widestring::u16cstr;
 use windows::core::{Result, PCSTR, PCWSTR};
+use windows::w;
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -736,17 +736,14 @@ impl RenderEngine {
         }
         .unwrap();
 
-        unsafe {
-            cmd_queue.SetName(PCWSTR(u16cstr!("hudhook font texture Command Queue").as_ptr()))
-        }
-        .unwrap();
+        unsafe { cmd_queue.SetName(PCWSTR(w!("hudhook font texture Command Queue").as_ptr())) }
+            .unwrap();
 
         let cmd_allocator: ID3D12CommandAllocator =
             unsafe { self.dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
 
         unsafe {
-            cmd_allocator
-                .SetName(PCWSTR(u16cstr!("hudhook font texture Command Allocator").as_ptr()))
+            cmd_allocator.SetName(PCWSTR(w!("hudhook font texture Command Allocator").as_ptr()))
         }
         .unwrap();
 
@@ -755,7 +752,7 @@ impl RenderEngine {
         }
         .unwrap();
 
-        unsafe { cmd_list.SetName(PCWSTR(u16cstr!("hudhook font texture Command List").as_ptr())) }
+        unsafe { cmd_list.SetName(PCWSTR(w!("hudhook font texture Command List").as_ptr())) }
             .unwrap();
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {

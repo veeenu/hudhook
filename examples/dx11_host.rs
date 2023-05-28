@@ -6,7 +6,7 @@
 use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 
-use windows::core::{PCSTR, PCWSTR};
+use windows::core::{HSTRING, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Dxgi::{
     DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
@@ -64,11 +64,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     println!("{:?}", dll_path.canonicalize());
     unsafe {
         LoadLibraryExW(
-            PCWSTR(
-                widestring::WideCString::from_os_str(dll_path.canonicalize().unwrap().as_os_str())
-                    .unwrap()
-                    .as_ptr(),
-            ),
+            PCWSTR(HSTRING::from(dll_path.canonicalize().unwrap().as_os_str()).as_ptr()),
             None,
             LOAD_LIBRARY_FLAGS(0),
         )
