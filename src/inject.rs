@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use std::ptr::{null, null_mut};
 
 use tracing::debug;
-use widestring::{U16CStr, U16CString};
-use windows::core::{Error, Result, HRESULT, PCSTR, PCWSTR};
+use windows::core::{Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -52,9 +51,7 @@ impl Process {
             )
         };
 
-        let dll_path =
-            widestring::WideCString::from_os_str(dll_path.canonicalize().unwrap().as_os_str())
-                .unwrap();
+        let dll_path = HSTRING::from(dll_path.canonicalize().unwrap().as_os_str());
         let dll_path_buf = unsafe {
             VirtualAllocEx(
                 self.0,
@@ -141,7 +138,7 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
 
 // 64-bit implementation. Uses [`widestring::U16CString`] and `FindWindowW`.
 unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
-    let title = U16CString::from_str_truncate(title);
+    let title = HSTRING::from(title);
     let hwnd = FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr()));
 
     if hwnd.0 == 0 {
@@ -210,7 +207,7 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
 // 64-bit implementation. Uses [`PROCESSENTRY32W`] and
 // [`widestring::U16CString`].
 unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
-    let name = U16CString::from_str_truncate(name);
+    let name = PCWSTR::from_raw(HSTRING::from(name).as_ptr()).display().to_string();
 
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
     let mut pe32 =
@@ -225,19 +222,14 @@ unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
     }
 
     let pid = loop {
-        let proc_name =
-            U16CStr::from_ptr_truncate(pe32.szExeFile.as_ptr(), pe32.szExeFile.len()).unwrap();
-
+        let proc_name = PCWSTR::from_raw(pe32.szExeFile.as_ptr()).display().to_string();
         if proc_name == name {
             break Ok(pe32.th32ProcessID);
         }
 
         if !Process32NextW(snapshot, &mut pe32).as_bool() {
             CloseHandle(snapshot);
-            break Err(Error::new(
-                HRESULT(0),
-                format!("Process {} not found", name.to_string_lossy()).into(),
-            ));
+            break Err(Error::new(HRESULT(0), format!("Process {} not found", name).into()));
         }
     }?;
 
