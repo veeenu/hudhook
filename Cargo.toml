@@ -69,6 +69,7 @@ crate-type = ["bin"]
 [dependencies]
 imgui = "0.11.0"
 imgui-opengl = "0.1.0"
+minhook_raw = "0.1.3"
 parking_lot = "0.11.2"
 windows = { version = "0.39.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
