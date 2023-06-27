@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 use std::ptr::null_mut;
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 
 use tracing::debug;
 
@@ -79,14 +79,14 @@ pub struct MhHook {
 impl MhHook {
     /// # Safety
     pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Result<Self, MH_STATUS> {
-        static INIT_CELL: LazyLock<()> = LazyLock::new(|| {
+        static INIT_CELL: OnceLock<()> = OnceLock::new();
+
+        INIT_CELL.get_or_init(|| {
             let status = unsafe { crate::mh::MH_Initialize() };
             debug!("MH_Initialize: {:?}", status);
 
             status.ok().expect("Couldn't initialize hooks");
         });
-
-        LazyLock::force(&INIT_CELL);
 
         let mut trampoline = null_mut();
         let status = MH_CreateHook(addr, hook_impl, &mut trampoline);

@@ -67,9 +67,9 @@ path = "examples/renderers/dx12.rs"
 crate-type = ["bin"]
 
 [dependencies]
-imgui = "0.11.0"
-imgui-opengl = "0.1.0"
-parking_lot = "0.11.2"
+imgui = "0.11"
+imgui-opengl = "0.1"
+parking_lot = "0.12"
 windows = { version = "0.39.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",
@@ -97,6 +97,8 @@ windows = { version = "0.39.0", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 tracing = { version = "0.1", features = ["log"] }
+memoffset = "0.9.0"
+once_cell = "1.18.0"
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
