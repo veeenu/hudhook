@@ -231,8 +231,6 @@ impl ImguiRenderer {
         let draw_data = ctx.render();
 
         if let Err(e) = self.engine.render_draw_data(draw_data) {
-            // if let Err(e) = self.engine.render(|ui| self.render_loop.render(ui,
-            // &self.flags)) {
             error!("ImGui renderer error: {:?}", e);
         }
     }
