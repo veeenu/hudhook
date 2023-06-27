@@ -439,7 +439,7 @@ impl ImguiRenderer {
         let sd = unsafe { swap_chain.GetDesc() }.unwrap();
         let mut rect: RECT = Default::default();
 
-        if unsafe { GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() } {
+        if unsafe { GetClientRect(sd.OutputWindow, &mut rect as _).as_bool() } {
             let io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
@@ -460,7 +460,7 @@ impl ImguiRenderer {
                 }
             }
         } else {
-            trace!("GetWindowRect error: {:x}", unsafe { GetLastError().0 });
+            trace!("GetClientRect error: {:x}", unsafe { GetLastError().0 });
         }
 
         let command_queue = match self.command_queue.as_ref() {

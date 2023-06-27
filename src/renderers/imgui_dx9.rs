@@ -49,7 +49,7 @@ use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
 use windows::Win32::System::SystemServices::{
     D3DFVF_DIFFUSE, D3DFVF_TEX1, D3DFVF_XYZ, D3DTA_DIFFUSE, D3DTA_TEXTURE,
 };
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 const FONT_TEX_ID: usize = !0;
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
@@ -121,10 +121,10 @@ impl Renderer {
     }
 
     /// Gets the window width & height via the backbuffer
-    pub fn get_window_rect(&self) -> Option<RECT> {
+    pub fn get_client_rect(&self) -> Option<RECT> {
         unsafe {
             let mut rect: RECT = core::mem::zeroed();
-            if GetWindowRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
+            if GetClientRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
                 Some(rect)
             } else {
                 None
