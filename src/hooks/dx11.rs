@@ -31,10 +31,11 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::common::{
+use crate::hooks::common::{
     imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
+    WndProcType,
 };
-use super::Hooks;
+use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -49,9 +50,6 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Data structures and traits
