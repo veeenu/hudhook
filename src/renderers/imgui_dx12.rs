@@ -1,10 +1,11 @@
 use std::ffi::c_void;
-use std::mem::{offset_of, size_of, ManuallyDrop};
+use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
+use memoffset::offset_of;
 use tracing::{error, trace};
 use windows::core::{Result, PCSTR, PCWSTR};
 use windows::w;

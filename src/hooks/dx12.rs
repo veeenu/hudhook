@@ -3,11 +3,11 @@ use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use imgui::Context;
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
 use windows::core::{Interface, HRESULT, HSTRING, PCWSTR};
@@ -73,11 +73,11 @@ trait Renderer {
 // Global singletons
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static TRAMPOLINE: OnceLock<(
+static TRAMPOLINE: OnceCell<(
     DXGISwapChainPresentType,
     ExecuteCommandListsType,
     ResizeBuffersType,
-)> = OnceLock::new();
+)> = OnceCell::new();
 
 const COMMAND_ALLOCATOR_NAMES: [&HSTRING; 8] = [
     w!("hudhook Command allocator #0"),
@@ -119,9 +119,9 @@ unsafe fn print_dxgi_debug_messages() {
 // Hook entry points
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static mut IMGUI_RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
-static mut IMGUI_RENDERER: OnceLock<Mutex<Box<ImguiRenderer>>> = OnceLock::new();
-static mut COMMAND_QUEUE_GUARD: OnceLock<()> = OnceLock::new();
+static mut IMGUI_RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+static mut IMGUI_RENDERER: OnceCell<Mutex<Box<ImguiRenderer>>> = OnceCell::new();
+static mut COMMAND_QUEUE_GUARD: OnceCell<()> = OnceCell::new();
 static DXGI_DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 static CQECL_RUNNING: Fence = Fence::new();
