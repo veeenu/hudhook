@@ -24,8 +24,7 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, HBRUSH};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::System::WindowsProgramming::INFINITE;
 #[cfg(target_arch = "x86")]
@@ -35,8 +34,8 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    imgui_wnd_proc_impl, Fence, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
-    WndProcType,
+    imgui_wnd_proc_impl, DummyHwnd, Fence, ImguiRenderLoop, ImguiRenderLoopFlags,
+    ImguiWindowsEventHandler, WndProcType,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -580,70 +579,6 @@ unsafe impl Sync for ImguiRenderer {}
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function address finders
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct DummyHwnd(HWND, WNDCLASSEXW);
-
-impl DummyHwnd {
-    fn new() -> Self {
-        unsafe extern "system" fn wnd_proc(
-            hwnd: HWND,
-            msg: u32,
-            wparam: WPARAM,
-            lparam: LPARAM,
-        ) -> LRESULT {
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-
-        let wndclass = WNDCLASSEXW {
-            cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(wnd_proc),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: unsafe { GetModuleHandleW(None).unwrap() },
-            hIcon: HICON(0),
-            hCursor: HCURSOR(0),
-            hbrBackground: HBRUSH(0),
-            lpszMenuName: PCWSTR(null()),
-            lpszClassName: w!("HUDHOOK").into(),
-            hIconSm: HICON(0),
-        };
-        debug!("{:?}", wndclass);
-        unsafe { RegisterClassExW(&wndclass) };
-        let hwnd = unsafe {
-            CreateWindowExW(
-                Default::default(),
-                wndclass.lpszClassName,
-                w!("HUDHOOK"),
-                WS_OVERLAPPEDWINDOW,
-                0,
-                0,
-                100,
-                100,
-                HWND_MESSAGE,
-                None,
-                wndclass.hInstance,
-                null(),
-            )
-        };
-        debug!("{:?}", hwnd);
-
-        Self(hwnd, wndclass)
-    }
-
-    fn hwnd(&self) -> HWND {
-        self.0
-    }
-}
-
-impl Drop for DummyHwnd {
-    fn drop(&mut self) {
-        unsafe {
-            DestroyWindow(self.0);
-            UnregisterClassW(self.1.lpszClassName, self.1.hInstance);
-        }
-    }
-}
 
 /// Get the `IDXGISwapChain::Present` function address.
 ///

@@ -32,8 +32,8 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    imgui_wnd_proc_impl, ImguiRenderLoop, ImguiRenderLoopFlags, ImguiWindowsEventHandler,
-    WndProcType,
+    imgui_wnd_proc_impl, DummyHwnd, ImguiRenderLoop, ImguiRenderLoopFlags,
+    ImguiWindowsEventHandler, WndProcType,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
@@ -301,6 +301,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
 
+    let dummy_hwnd = DummyHwnd::new();
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
@@ -318,7 +319,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
                 },
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                 BufferCount: 1,
-                OutputWindow: GetDesktopWindow(),
+                OutputWindow: dummy_hwnd.hwnd(), // GetDesktopWindow(),
                 Windowed: BOOL(1),
                 SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
                 SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },

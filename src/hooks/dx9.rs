@@ -19,10 +19,10 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetDesktopWindow, GetForegroundWindow, IsChild, GWLP_WNDPROC,
+    DefWindowProcW, GetCursorPos, GetForegroundWindow, IsChild, GWLP_WNDPROC,
 };
 
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
+use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
@@ -317,11 +317,12 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
         ..core::mem::zeroed()
     };
 
+    let dummy_hwnd = DummyHwnd::new();
     let mut device: Option<IDirect3DDevice9> = None;
     d9.CreateDevice(
         D3DADAPTER_DEFAULT,
         D3DDEVTYPE_NULLREF,
-        GetDesktopWindow(),
+        dummy_hwnd.hwnd(), // GetDesktopWindow(),
         D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
         &mut present_params,
         &mut device,
