@@ -296,6 +296,9 @@ where
     let wnd_proc = imgui_renderer.wnd_proc();
     let should_block_messages =
         imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
+
+    imgui_render_loop.as_ref().on_wnd_proc(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+
     drop(imgui_renderer);
 
     if should_block_messages {
