@@ -1,9 +1,19 @@
-use std::hint;
+use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::{hint, mem};
 
 use imgui::{Context, Io, Key, Ui};
+use tracing::debug;
+use windows::core::PCWSTR;
+use windows::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::HBRUSH;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, UnregisterClassW, CS_HREDRAW,
+    CS_VREDRAW, HCURSOR, HICON, HWND_MESSAGE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+};
 
 pub(crate) use self::wnd_proc::*;
 use crate::hooks::Hooks;
@@ -127,5 +137,69 @@ impl<'a> FenceGuard<'a> {
 impl<'a> Drop for FenceGuard<'a> {
     fn drop(&mut self) {
         self.0 .0.store(false, Ordering::SeqCst);
+    }
+}
+
+pub(crate) struct DummyHwnd(HWND, WNDCLASSEXW);
+
+impl DummyHwnd {
+    pub(crate) fn new() -> Self {
+        unsafe extern "system" fn wnd_proc(
+            hwnd: HWND,
+            msg: u32,
+            wparam: WPARAM,
+            lparam: LPARAM,
+        ) -> LRESULT {
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+
+        let wndclass = WNDCLASSEXW {
+            cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
+            style: CS_HREDRAW | CS_VREDRAW,
+            lpfnWndProc: Some(wnd_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: unsafe { GetModuleHandleW(None).unwrap() },
+            hIcon: HICON(0),
+            hCursor: HCURSOR(0),
+            hbrBackground: HBRUSH(0),
+            lpszMenuName: PCWSTR(null()),
+            lpszClassName: w!("HUDHOOK").into(),
+            hIconSm: HICON(0),
+        };
+        debug!("{:?}", wndclass);
+        unsafe { RegisterClassExW(&wndclass) };
+        let hwnd = unsafe {
+            CreateWindowExW(
+                Default::default(),
+                wndclass.lpszClassName,
+                w!("HUDHOOK"),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                100,
+                100,
+                HWND_MESSAGE,
+                None,
+                wndclass.hInstance,
+                null(),
+            )
+        };
+        debug!("{:?}", hwnd);
+
+        Self(hwnd, wndclass)
+    }
+
+    pub(crate) fn hwnd(&self) -> HWND {
+        self.0
+    }
+}
+
+impl Drop for DummyHwnd {
+    fn drop(&mut self) {
+        unsafe {
+            DestroyWindow(self.0);
+            UnregisterClassW(self.1.lpszClassName, self.1.hInstance);
+        }
     }
 }
