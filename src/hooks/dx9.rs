@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetCursorPos, GetDesktopWindow, GetForegroundWindow, IsChild, GWLP_WNDPROC,
 };
 
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
@@ -73,9 +73,6 @@ type Dx9PresentFn = unsafe extern "system" fn(
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 unsafe extern "system" fn imgui_dx9_reset_impl(
     this: IDirect3DDevice9,

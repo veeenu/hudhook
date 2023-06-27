@@ -20,10 +20,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsChild, GWLP_WNDPROC,
 };
 
-use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler};
+use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_opengl3::get_proc_address;
+
+type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
 
 unsafe fn draw(dc: HDC) {
     // Get the imgui renderer, or create it if it does not exist
@@ -78,11 +80,6 @@ unsafe fn draw(dc: HDC) {
 
     imgui_renderer.render();
 }
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-
-type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
 
 unsafe extern "system" fn imgui_wnd_proc(
     hwnd: HWND,
