@@ -203,8 +203,7 @@ impl ImguiRenderer {
         let swap_chain = self.store_swap_chain(swap_chain);
         let sd = swap_chain.GetDesc().expect("GetDesc");
 
-        // if GetWindowRect(sd.OutputWindow, &mut rect as _).as_bool() {
-        if let Some(rect) = self.engine.get_window_rect() {
+        if let Some(rect) = self.engine.get_client_rect() {
             let io = self.ctx_mut().io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];

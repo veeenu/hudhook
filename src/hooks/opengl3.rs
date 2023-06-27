@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    DefWindowProcW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsChild, GWLP_WNDPROC,
+    DefWindowProcW, GetClientRect, GetCursorPos, GetForegroundWindow, IsChild, GWLP_WNDPROC,
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
@@ -137,7 +137,7 @@ unsafe fn reset(hdc: HDC) {
         glGetIntegerv(GL_VIEWPORT, viewport.as_mut_ptr());
 
         let hwnd = WindowFromDC(hdc);
-        let rect = get_window_rect(&hwnd).unwrap();
+        let rect = get_client_rect(&hwnd).unwrap();
 
         let (resolution, window_rect) =
             renderer.resolution_and_rect.get_or_insert(([viewport[2], viewport[3]], rect));
@@ -168,10 +168,10 @@ struct ImguiRenderer {
     resolution_and_rect: Option<([i32; 2], RECT)>,
 }
 
-fn get_window_rect(hwnd: &HWND) -> Option<RECT> {
+fn get_client_rect(hwnd: &HWND) -> Option<RECT> {
     unsafe {
         let mut rect: RECT = core::mem::zeroed();
-        if GetWindowRect(*hwnd, &mut rect) != BOOL(0) {
+        if GetClientRect(*hwnd, &mut rect) != BOOL(0) {
             Some(rect)
         } else {
             None
@@ -183,7 +183,7 @@ static mut LAST_FRAME: Option<Mutex<Instant>> = None;
 
 impl ImguiRenderer {
     unsafe fn render(&mut self) {
-        if let Some(rect) = get_window_rect(&self.game_hwnd) {
+        if let Some(rect) = get_client_rect(&self.game_hwnd) {
             let io = self.ctx.io_mut();
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
             let mut pos = POINT { x: 0, y: 0 };
@@ -200,7 +200,7 @@ impl ImguiRenderer {
                 }
             }
         } else {
-            trace!("GetWindowRect error: {:x}", GetLastError().0);
+            trace!("GetClientRect error: {:x}", GetLastError().0);
         }
 
         // Update the delta time of ImGui as to tell it how long has elapsed since the
