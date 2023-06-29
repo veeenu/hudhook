@@ -6,9 +6,13 @@
 //! [`imgui`]: https://docs.rs/imgui/0.8.0/imgui/
 
 pub(crate) mod common;
+#[cfg(feature = "dx11")]
 pub mod dx11;
+#[cfg(feature = "dx12")]
 pub mod dx12;
+#[cfg(feature = "dx9")]
 pub mod dx9;
+#[cfg(feature = "opengl3")]
 pub mod opengl3;
 
 pub use common::{ImguiRenderLoop, ImguiRenderLoopFlags};

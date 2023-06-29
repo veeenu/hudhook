@@ -116,6 +116,7 @@
 mod mh;
 
 pub mod hooks;
+#[cfg(feature = "inject")]
 pub mod inject;
 pub mod renderers;
 

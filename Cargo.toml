@@ -14,11 +14,12 @@ default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc"]
 
 [features]
-default = ["dx9", "dx11", "dx12", "opengl3"]
+default = ["dx9", "dx11", "dx12", "opengl3", "inject"]
 dx9 = []
 dx11 = []
 dx12 = []
 opengl3 = []
+inject = []
 
 # Hook examples
 #
