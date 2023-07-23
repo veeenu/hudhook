@@ -3,8 +3,8 @@ use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{hint, thread};
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -34,12 +34,63 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{
-    imgui_wnd_proc_impl, DummyHwnd, Fence, ImguiRenderLoop, ImguiRenderLoopFlags,
+    imgui_wnd_proc_impl, DummyHwnd, ImguiRenderLoop, ImguiRenderLoopFlags,
     ImguiWindowsEventHandler, WndProcType,
 };
 use crate::hooks::Hooks;
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx12::RenderEngine;
+
+////////////////////////////////////////////////////////////////////////////////
+// Utilities
+////////////////////////////////////////////////////////////////////////////////
+
+/// Spin-loop based synchronization struct.
+///
+/// Call [`Fence::lock`] in a thread to indicate some operation is in progress,
+/// and [`Fence::wait`] on a different thread to create a spin-loop that waits
+/// for the lock to be dropped.
+struct Fence(AtomicBool);
+
+impl Fence {
+    const fn new() -> Self {
+        Self(AtomicBool::new(false))
+    }
+
+    /// Create a [`FenceGuard`].
+    fn lock(&self) -> FenceGuard<'_> {
+        FenceGuard::new(self)
+    }
+
+    /// Wait in a spin-loop for the [`FenceGuard`] created by [`Fence::lock`] to
+    /// be dropped.
+    fn wait(&self) {
+        while self.0.load(Ordering::SeqCst) {
+            hint::spin_loop();
+        }
+    }
+}
+
+/// A RAII implementation of a spin-loop for a [`Fence`]. When this is dropped,
+/// the wait on a [`Fence`] will terminate.
+struct FenceGuard<'a>(&'a Fence);
+
+impl<'a> FenceGuard<'a> {
+    fn new(fence: &'a Fence) -> Self {
+        fence.0.store(true, Ordering::SeqCst);
+        Self(fence)
+    }
+}
+
+impl<'a> Drop for FenceGuard<'a> {
+    fn drop(&mut self) {
+        self.0 .0.store(false, Ordering::SeqCst);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Type aliases
+////////////////////////////////////////////////////////////////////////////////
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;

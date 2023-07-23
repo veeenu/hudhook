@@ -1,6 +1,5 @@
+use std::mem;
 use std::ptr::null;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{hint, mem};
 
 use imgui::{Context, Io, Key, Ui};
 use tracing::debug;
@@ -97,53 +96,15 @@ pub(crate) trait ImguiWindowsEventHandler {
     }
 }
 
-/// Spin-loop based synchronization struct.
+/// A RAII dummy window.
 ///
-/// Call [`Fence::lock`] in a thread to indicate some operation is in progress,
-/// and [`Fence::wait`] on a different thread to create a spin-loop that waits
-/// for the lock to be dropped.
-pub(crate) struct Fence(AtomicBool);
-
-impl Fence {
-    pub(crate) const fn new() -> Self {
-        Self(AtomicBool::new(false))
-    }
-
-    /// Create a [`FenceGuard`].
-    pub(crate) fn lock(&self) -> FenceGuard<'_> {
-        FenceGuard::new(self)
-    }
-
-    /// Wait in a spin-loop for the [`FenceGuard`] created by [`Fence::lock`] to
-    /// be dropped.
-    pub(crate) fn wait(&self) {
-        while self.0.load(Ordering::SeqCst) {
-            hint::spin_loop();
-        }
-    }
-}
-
-/// A RAII implementation of a spin-loop for a [`Fence`]. When this is dropped,
-/// the wait on a [`Fence`] will terminate.
-pub(crate) struct FenceGuard<'a>(&'a Fence);
-
-impl<'a> FenceGuard<'a> {
-    fn new(fence: &'a Fence) -> Self {
-        fence.0.store(true, Ordering::SeqCst);
-        Self(fence)
-    }
-}
-
-impl<'a> Drop for FenceGuard<'a> {
-    fn drop(&mut self) {
-        self.0 .0.store(false, Ordering::SeqCst);
-    }
-}
-
-pub(crate) struct DummyHwnd(HWND, WNDCLASSEXW);
+/// Registers a class and creates a window on instantiation.
+/// Destroys the window and unregisters the class on drop.
+pub struct DummyHwnd(HWND, WNDCLASSEXW);
 
 impl DummyHwnd {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
+        // The window procedure for the class just calls `DefWindowProcW`.
         unsafe extern "system" fn wnd_proc(
             hwnd: HWND,
             msg: u32,
@@ -153,6 +114,7 @@ impl DummyHwnd {
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
 
+        // Create and register the class.
         let wndclass = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
             style: CS_HREDRAW | CS_VREDRAW,
@@ -169,6 +131,8 @@ impl DummyHwnd {
         };
         debug!("{:?}", wndclass);
         unsafe { RegisterClassExW(&wndclass) };
+
+        // Create the window.
         let hwnd = unsafe {
             CreateWindowExW(
                 Default::default(),
@@ -190,13 +154,15 @@ impl DummyHwnd {
         Self(hwnd, wndclass)
     }
 
-    pub(crate) fn hwnd(&self) -> HWND {
+    // Retrieve the window handle.
+    pub fn hwnd(&self) -> HWND {
         self.0
     }
 }
 
 impl Drop for DummyHwnd {
     fn drop(&mut self) {
+        // Destroy the window and unregister the class.
         unsafe {
             DestroyWindow(self.0);
             UnregisterClassW(self.1.lpszClassName, self.1.hInstance);
