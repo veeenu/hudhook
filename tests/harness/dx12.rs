@@ -194,7 +194,7 @@ impl Dx12Harness {
                             println!(
                                 "{}",
                                 String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription as *const u8,
+                                    diqm.pDescription,
                                     diqm.DescriptionByteLength
                                 ))
                             );

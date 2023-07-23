@@ -132,7 +132,7 @@ impl Dx11Harness {
                             eprintln!(
                                 "{}",
                                 String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription as *const u8,
+                                    diqm.pDescription,
                                     diqm.DescriptionByteLength
                                 ))
                             );

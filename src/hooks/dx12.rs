@@ -154,7 +154,7 @@ unsafe fn print_dxgi_debug_messages() {
         debug!(
             "[DIQ] {}",
             String::from_utf8_lossy(std::slice::from_raw_parts(
-                diqm.pDescription as *const u8,
+                diqm.pDescription,
                 diqm.DescriptionByteLength - 1
             ))
         );
