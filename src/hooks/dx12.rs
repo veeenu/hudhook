@@ -33,11 +33,8 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::hooks::common::{
-    imgui_wnd_proc_impl, DummyHwnd, ImguiRenderLoop, ImguiRenderLoopFlags,
-    ImguiWindowsEventHandler, WndProcType,
-};
-use crate::hooks::Hooks;
+use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
+use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx12::RenderEngine;
 

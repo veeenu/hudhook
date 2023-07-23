@@ -1,7 +1,7 @@
 use std::mem;
 use std::ptr::null;
 
-use imgui::{Context, Io, Key, Ui};
+use imgui::Key;
 use tracing::debug;
 use windows::core::PCWSTR;
 use windows::w;
@@ -14,49 +14,49 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CS_VREDRAW, HCURSOR, HICON, HWND_MESSAGE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 
-pub(crate) use self::wnd_proc::*;
-use crate::hooks::Hooks;
+pub use crate::hooks::common::wnd_proc::*;
+use crate::hooks::ImguiRenderLoop;
 
-mod wnd_proc;
+pub mod wnd_proc;
 
-/// Holds information useful to the render loop which can't be retrieved from
-/// `imgui::Ui`.
-pub struct ImguiRenderLoopFlags {
-    /// Whether the hooked program's window is currently focused.
-    pub focused: bool,
-}
-
-/// Implement your `imgui` rendering logic via this trait.
-pub trait ImguiRenderLoop {
-    /// Called once at the first occurrence of the hook. Implement this to
-    /// initialize your data.
-    fn initialize(&mut self, _ctx: &mut Context) {}
-
-    /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
-
-    /// Called during the window procedure.
-    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
-
-    /// If this function returns true, the WndProc function will not call the
-    /// procedure of the parent window.
-    fn should_block_messages(&self, _io: &Io) -> bool {
-        false
-    }
-
-    fn into_hook<T>(self) -> Box<T>
-    where
-        T: Hooks,
-        Self: Send + Sync + Sized + 'static,
-    {
-        T::from_render_loop(self)
-    }
-}
-
-pub(crate) type WndProcType =
+pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-pub(crate) trait ImguiWindowsEventHandler {
+/// Generic trait for platform-specific hooks.
+///
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static;
+
+    /// Find the hook target functions addresses, initialize the data, create
+    /// and enable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn hook(&self);
+
+    /// Cleanup global data and disable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn unhook(&mut self);
+}
+
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
     fn io_mut(&mut self) -> &mut imgui::Io;
 
@@ -101,6 +101,12 @@ pub(crate) trait ImguiWindowsEventHandler {
 /// Registers a class and creates a window on instantiation.
 /// Destroys the window and unregisters the class on drop.
 pub struct DummyHwnd(HWND, WNDCLASSEXW);
+
+impl Default for DummyHwnd {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DummyHwnd {
     pub fn new() -> Self {
