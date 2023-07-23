@@ -113,11 +113,10 @@
 //! ```
 #![allow(clippy::needless_doctest_main)]
 
-mod mh;
-
 pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
+pub mod mh;
 pub mod renderers;
 
 /// Utility functions.
