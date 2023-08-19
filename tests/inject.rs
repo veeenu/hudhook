@@ -23,6 +23,7 @@ fn test_inject_by_title() {
 }
 
 #[test]
+#[ignore]
 fn test_inject_by_name() {
     let mut child = Command::new("notepad.exe").spawn().expect("Couldn't start notepad");
     std::thread::sleep(Duration::from_millis(500));

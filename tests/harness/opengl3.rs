@@ -17,8 +17,9 @@ use windows::Win32::Graphics::OpenGL::{
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
-    PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, HCURSOR,
-    HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
+    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 pub struct Opengl3Harness {
@@ -109,6 +110,8 @@ impl Opengl3Harness {
 
                 let con = unsafe { wglCreateContext(window_handle) }.unwrap();
                 unsafe { wglMakeCurrent(window_handle, con) };
+
+                unsafe { SetTimer(hwnd, 0, 100, None) };
 
                 loop {
                     trace!("Debug");

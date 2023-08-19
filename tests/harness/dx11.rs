@@ -24,8 +24,9 @@ use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
-    PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, HCURSOR,
-    HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
+    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 pub struct Dx11Harness {
@@ -117,6 +118,8 @@ impl Dx11Harness {
                     .unwrap()
                 };
                 let swap_chain = p_swap_chain.unwrap();
+
+                unsafe { SetTimer(handle, 0, 100, None) };
 
                 loop {
                     unsafe {
