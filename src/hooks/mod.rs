@@ -47,10 +47,10 @@ pub trait ImguiRenderLoop {
     }
 }
 
-#[inline]
-fn loword(l: u32) -> u16 {
-    (l & 0xffff) as u16
-}
+// #[inline]
+// fn loword(l: u32) -> u16 {
+//     (l & 0xffff) as u16
+// }
 #[inline]
 fn hiword(l: u32) -> u16 {
     ((l >> 16) & 0xffff) as u16

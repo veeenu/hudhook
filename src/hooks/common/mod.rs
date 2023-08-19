@@ -60,9 +60,6 @@ pub trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
     fn io_mut(&mut self) -> &mut imgui::Io;
 
-    fn focus(&self) -> bool;
-    fn focus_mut(&mut self) -> &mut bool;
-
     fn wnd_proc(&self) -> WndProcType;
 
     fn setup_io(&mut self) {

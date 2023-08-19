@@ -266,14 +266,6 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
         self.ctx_mut().io_mut()
     }
 
-    fn focus(&self) -> bool {
-        self.io().want_capture_mouse
-    }
-
-    fn focus_mut(&mut self) -> &mut bool {
-        &mut self.io_mut().want_capture_mouse
-    }
-
     fn wnd_proc(&self) -> WndProcType {
         self.wnd_proc
     }
