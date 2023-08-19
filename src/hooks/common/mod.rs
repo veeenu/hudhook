@@ -1,8 +1,7 @@
+use std::mem;
 use std::ptr::null;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{hint, mem};
 
-use imgui::{Context, Io, Key, Ui};
+use imgui::Key;
 use tracing::debug;
 use windows::core::PCWSTR;
 use windows::w;
@@ -15,49 +14,49 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CS_VREDRAW, HCURSOR, HICON, HWND_MESSAGE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 
-pub(crate) use self::wnd_proc::*;
-use crate::hooks::Hooks;
+pub use crate::hooks::common::wnd_proc::*;
+use crate::hooks::ImguiRenderLoop;
 
-mod wnd_proc;
+pub mod wnd_proc;
 
-/// Holds information useful to the render loop which can't be retrieved from
-/// `imgui::Ui`.
-pub struct ImguiRenderLoopFlags {
-    /// Whether the hooked program's window is currently focused.
-    pub focused: bool,
-}
-
-/// Implement your `imgui` rendering logic via this trait.
-pub trait ImguiRenderLoop {
-    /// Called once at the first occurrence of the hook. Implement this to
-    /// initialize your data.
-    fn initialize(&mut self, _ctx: &mut Context) {}
-
-    /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
-
-    /// Called during the window procedure.
-    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
-
-    /// If this function returns true, the WndProc function will not call the
-    /// procedure of the parent window.
-    fn should_block_messages(&self, _io: &Io) -> bool {
-        false
-    }
-
-    fn into_hook<T>(self) -> Box<T>
-    where
-        T: Hooks,
-        Self: Send + Sync + Sized + 'static,
-    {
-        T::from_render_loop(self)
-    }
-}
-
-pub(crate) type WndProcType =
+pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
-pub(crate) trait ImguiWindowsEventHandler {
+/// Generic trait for platform-specific hooks.
+///
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static;
+
+    /// Find the hook target functions addresses, initialize the data, create
+    /// and enable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn hook(&self);
+
+    /// Cleanup global data and disable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn unhook(&mut self);
+}
+
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait ImguiWindowsEventHandler {
     fn io(&self) -> &imgui::Io;
     fn io_mut(&mut self) -> &mut imgui::Io;
 
@@ -97,53 +96,21 @@ pub(crate) trait ImguiWindowsEventHandler {
     }
 }
 
-/// Spin-loop based synchronization struct.
+/// A RAII dummy window.
 ///
-/// Call [`Fence::lock`] in a thread to indicate some operation is in progress,
-/// and [`Fence::wait`] on a different thread to create a spin-loop that waits
-/// for the lock to be dropped.
-pub(crate) struct Fence(AtomicBool);
+/// Registers a class and creates a window on instantiation.
+/// Destroys the window and unregisters the class on drop.
+pub struct DummyHwnd(HWND, WNDCLASSEXW);
 
-impl Fence {
-    pub(crate) const fn new() -> Self {
-        Self(AtomicBool::new(false))
-    }
-
-    /// Create a [`FenceGuard`].
-    pub(crate) fn lock(&self) -> FenceGuard<'_> {
-        FenceGuard::new(self)
-    }
-
-    /// Wait in a spin-loop for the [`FenceGuard`] created by [`Fence::lock`] to
-    /// be dropped.
-    pub(crate) fn wait(&self) {
-        while self.0.load(Ordering::SeqCst) {
-            hint::spin_loop();
-        }
+impl Default for DummyHwnd {
+    fn default() -> Self {
+        Self::new()
     }
 }
-
-/// A RAII implementation of a spin-loop for a [`Fence`]. When this is dropped,
-/// the wait on a [`Fence`] will terminate.
-pub(crate) struct FenceGuard<'a>(&'a Fence);
-
-impl<'a> FenceGuard<'a> {
-    fn new(fence: &'a Fence) -> Self {
-        fence.0.store(true, Ordering::SeqCst);
-        Self(fence)
-    }
-}
-
-impl<'a> Drop for FenceGuard<'a> {
-    fn drop(&mut self) {
-        self.0 .0.store(false, Ordering::SeqCst);
-    }
-}
-
-pub(crate) struct DummyHwnd(HWND, WNDCLASSEXW);
 
 impl DummyHwnd {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
+        // The window procedure for the class just calls `DefWindowProcW`.
         unsafe extern "system" fn wnd_proc(
             hwnd: HWND,
             msg: u32,
@@ -153,6 +120,7 @@ impl DummyHwnd {
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
 
+        // Create and register the class.
         let wndclass = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
             style: CS_HREDRAW | CS_VREDRAW,
@@ -169,6 +137,8 @@ impl DummyHwnd {
         };
         debug!("{:?}", wndclass);
         unsafe { RegisterClassExW(&wndclass) };
+
+        // Create the window.
         let hwnd = unsafe {
             CreateWindowExW(
                 Default::default(),
@@ -190,13 +160,15 @@ impl DummyHwnd {
         Self(hwnd, wndclass)
     }
 
-    pub(crate) fn hwnd(&self) -> HWND {
+    // Retrieve the window handle.
+    pub fn hwnd(&self) -> HWND {
         self.0
     }
 }
 
 impl Drop for DummyHwnd {
     fn drop(&mut self) {
+        // Destroy the window and unregister the class.
         unsafe {
             DestroyWindow(self.0);
             UnregisterClassW(self.1.lpszClassName, self.1.hInstance);

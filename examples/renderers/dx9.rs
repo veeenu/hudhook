@@ -156,7 +156,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
                 eprintln!(
                     "{}",
                     String::from_utf8_lossy(std::slice::from_raw_parts(
-                        diqm.pDescription as *const u8,
+                        diqm.pDescription,
                         diqm.DescriptionByteLength
                     ))
                 );

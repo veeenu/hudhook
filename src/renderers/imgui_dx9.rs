@@ -317,8 +317,8 @@ impl Renderer {
     }
 
     unsafe fn lock_buffers<'v, 'i>(
-        vb: &'v mut IDirect3DVertexBuffer9,
-        ib: &'i mut IDirect3DIndexBuffer9,
+        vb: &'v IDirect3DVertexBuffer9,
+        ib: &'i IDirect3DIndexBuffer9,
         vtx_count: usize,
         idx_count: usize,
     ) -> Result<(&'v mut [CustomVertex], &'i mut [DrawIdx])> {
@@ -351,8 +351,8 @@ impl Renderer {
 
     unsafe fn write_buffers(&mut self, draw_data: &DrawData) -> Result<()> {
         let (mut vtx_dst, mut idx_dst) = Self::lock_buffers(
-            &mut self.vertex_buffer.0,
-            &mut self.index_buffer.0,
+            &self.vertex_buffer.0,
+            &self.index_buffer.0,
             draw_data.total_vtx_count as usize,
             draw_data.total_idx_count as usize,
         )?;

@@ -232,7 +232,7 @@ fn handle_input(io: &mut Io, state: u32, WPARAM(wparam): WPARAM, LPARAM(lparam):
 ////////////////////////////////////////////////////////////////////////////////
 
 #[must_use]
-pub(crate) fn imgui_wnd_proc_impl<T>(
+pub fn imgui_wnd_proc_impl<T>(
     hwnd: HWND,
     umsg: u32,
     WPARAM(wparam): WPARAM,
