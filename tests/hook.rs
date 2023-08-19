@@ -6,7 +6,7 @@ pub struct HookExample;
 impl HookExample {
     pub fn new() -> Self {
         println!("Initializing");
-        hudhook::utils::alloc_console();
+        hudhook::alloc_console();
 
         HookExample
     }

@@ -35,7 +35,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop};
-use crate::mh::{MhHook, MhHooks};
+use crate::mh::MhHook;
 use crate::renderers::imgui_dx12::RenderEngine;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -699,7 +699,7 @@ pub fn disable_dxgi_debug() {
 }
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiDx12Hooks(MhHooks);
+pub struct ImguiDx12Hooks([MhHook; 3]);
 
 impl ImguiDx12Hooks {
     /// Construct a set of [`RawDetour`]s that will render UI via the provided
@@ -758,7 +758,7 @@ impl ImguiDx12Hooks {
             )
         });
 
-        Self(MhHooks::new([hook_dscp, hook_cqecl, hook_rbuf]).expect("couldn't create hooks"))
+        Self([hook_dscp, hook_cqecl, hook_rbuf])
     }
 }
 
@@ -771,13 +771,12 @@ impl Hooks for ImguiDx12Hooks {
         Box::new(unsafe { ImguiDx12Hooks::new(t) })
     }
 
-    unsafe fn hook(&self) {
-        self.0.apply();
+    fn hooks(&self) -> &[MhHook] {
+        &self.0
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        self.0.unapply();
 
         CQECL_RUNNING.wait();
         PRESENT_RUNNING.wait();

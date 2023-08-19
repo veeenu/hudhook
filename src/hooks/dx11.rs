@@ -33,7 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop};
-use crate::mh::{MhHook, MhHooks};
+use crate::mh::MhHook;
 use crate::renderers::imgui_dx11;
 
 type DXGISwapChainPresentType =
@@ -327,7 +327,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
 }
 
-pub struct ImguiDx11Hooks(MhHooks);
+pub struct ImguiDx11Hooks([MhHook; 2]);
 
 impl ImguiDx11Hooks {
     /// Construct a [`RawDetour`] that will render UI via the provided
@@ -359,7 +359,7 @@ impl ImguiDx11Hooks {
             )
         });
 
-        Self(MhHooks::new([hook_present, hook_resize_buffers]).expect("couldn't create hooks"))
+        Self([hook_present, hook_resize_buffers])
     }
 }
 
@@ -372,13 +372,12 @@ impl Hooks for ImguiDx11Hooks {
         Box::new(unsafe { ImguiDx11Hooks::new(t) })
     }
 
-    unsafe fn hook(&self) {
-        self.0.apply();
+    fn hooks(&self) -> &[MhHook] {
+        &self.0
     }
 
     unsafe fn unhook(&mut self) {
         trace!("Disabling hooks...");
-        self.0.unapply();
 
         trace!("Cleaning up renderer...");
         if let Some(renderer) = IMGUI_RENDERER.take() {

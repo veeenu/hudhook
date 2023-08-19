@@ -16,6 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub use crate::hooks::common::wnd_proc::*;
 use crate::hooks::ImguiRenderLoop;
+use crate::mh::MhHook;
 
 pub mod wnd_proc;
 
@@ -35,13 +36,8 @@ pub trait Hooks {
         Self: Sized,
         T: ImguiRenderLoop + Send + Sync + 'static;
 
-    /// Find the hook target functions addresses, initialize the data, create
-    /// and enable the hooks.
-    ///
-    /// # Safety
-    ///
-    /// Is most definitely UB.
-    unsafe fn hook(&self);
+    /// Return the list of hooks to be enabled, in order.
+    fn hooks(&self) -> &[MhHook];
 
     /// Cleanup global data and disable the hooks.
     ///

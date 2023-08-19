@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
 use crate::hooks::{Hooks, ImguiRenderLoop};
-use crate::mh::{MhHook, MhHooks};
+use crate::mh::MhHook;
 use crate::renderers::imgui_opengl3::get_proc_address;
 
 type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
@@ -255,7 +255,7 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
 }
 
 /// Stores hook detours and implements the [`Hooks`] trait.
-pub struct ImguiOpenGl3Hooks(MhHooks);
+pub struct ImguiOpenGl3Hooks([MhHook; 1]);
 
 impl ImguiOpenGl3Hooks {
     /// # Safety
@@ -280,7 +280,7 @@ impl ImguiOpenGl3Hooks {
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wgl_swap_buffers.trampoline()));
 
-        Self(MhHooks::new([hook_opengl_wgl_swap_buffers]).expect("couldn't create hooks"))
+        Self([hook_opengl_wgl_swap_buffers])
     }
 }
 
@@ -293,13 +293,11 @@ impl Hooks for ImguiOpenGl3Hooks {
         Box::new(unsafe { ImguiOpenGl3Hooks::new(t) })
     }
 
-    unsafe fn hook(&self) {
-        self.0.apply();
+    fn hooks(&self) -> &[MhHook] {
+        &self.0
     }
 
     unsafe fn unhook(&mut self) {
-        self.0.unapply();
-
         if let Some(renderer) = IMGUI_RENDERER.take() {
             renderer.lock().cleanup();
         }

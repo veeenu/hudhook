@@ -7,7 +7,7 @@ use std::time::Duration;
 use harness::dx12::Dx12Harness;
 use hook::HookExample;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
-use hudhook::hooks::{Hooks, ImguiRenderLoop};
+use hudhook::*;
 use tracing::metadata::LevelFilter;
 
 #[test]
@@ -23,10 +23,10 @@ fn test_imgui_dx12() {
     let dx12_harness = Dx12Harness::new("DX12 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    unsafe {
-        let hooks: Box<dyn Hooks> = { HookExample::new().into_hook::<ImguiDx12Hooks>() };
-        hooks.hook();
-        hudhook::lifecycle::global_state::set_hooks(hooks);
+    if let Err(e) =
+        Hudhook::builder().with(HookExample::new().into_hook::<ImguiDx12Hooks>()).build().apply()
+    {
+        eprintln!("Couldn't apply hooks: {e:?}");
     }
 
     thread::sleep(Duration::from_millis(5000));
