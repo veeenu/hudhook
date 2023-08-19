@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use harness::opengl3::Opengl3Harness;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
-use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::{self, ImguiRenderLoop};
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 use tracing::trace;
@@ -24,7 +24,7 @@ fn test_imgui_opengl3() {
     }
 
     impl ImguiRenderLoop for Opengl3HookExample {
-        fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+        fn render(&mut self, ui: &mut imgui::Ui) {
             ui.window("Hello world").size([300.0, 300.0], Condition::FirstUseEver).build(|| {
                 ui.text("Hello world!");
                 ui.text("こんにちは世界！");

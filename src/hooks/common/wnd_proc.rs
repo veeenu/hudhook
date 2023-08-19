@@ -17,7 +17,7 @@ use windows::Win32::UI::Input::{
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{ImguiRenderLoop, ImguiWindowsEventHandler};
-use crate::hooks::{get_wheel_delta_wparam, hiword, loword};
+use crate::hooks::{get_wheel_delta_wparam, hiword};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Raw input
@@ -286,10 +286,6 @@ where
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
-        WM_ACTIVATE => {
-            *imgui_renderer.focus_mut() = loword(wparam as _) != WA_INACTIVE as u16;
-            return LRESULT(1);
-        },
         _ => {},
     };
 

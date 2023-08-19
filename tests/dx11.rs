@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use harness::dx11::Dx11Harness;
 use hudhook::hooks::dx11::ImguiDx11Hooks;
-use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::{self, ImguiRenderLoop};
 use imgui::{Condition, StyleColor};
 use tracing::metadata::LevelFilter;
 
@@ -23,7 +23,7 @@ fn test_imgui_dx11() {
     }
 
     impl ImguiRenderLoop for Dx11HookExample {
-        fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+        fn render(&mut self, ui: &mut imgui::Ui) {
             ui.window("Hello world").size([300.0, 300.0], Condition::FirstUseEver).build(|| {
                 ui.text("Hello world!");
                 ui.text("こんにちは世界！");

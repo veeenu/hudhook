@@ -51,13 +51,13 @@
 //!
 //! ```no_run
 //! // lib.rs
-//! use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+//! use hudhook::hooks::ImguiRenderLoop;
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
 //!
 //! impl ImguiRenderLoop for MyRenderLoop {
-//!     fn render(&mut self, ui: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+//!     fn render(&mut self, ui: &mut imgui::Ui) {
 //!         ui.window("My first render loop")
 //!             .position([0., 0.], imgui::Condition::FirstUseEver)
 //!             .size([320., 200.], imgui::Condition::FirstUseEver)
@@ -259,13 +259,13 @@ pub mod reexports {
 /// Example usage:
 /// ```no_run
 /// use hudhook::hooks::dx12::ImguiDx12Hooks;
-/// use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+/// use hudhook::hooks::ImguiRenderLoop;
 /// use hudhook::*;
 ///
 /// pub struct MyRenderLoop;
 ///
 /// impl ImguiRenderLoop for MyRenderLoop {
-///     fn render(&mut self, frame: &mut imgui::Ui, flags: &ImguiRenderLoopFlags) {
+///     fn render(&mut self, frame: &mut imgui::Ui) {
 ///         // ...
 ///     }
 /// }
