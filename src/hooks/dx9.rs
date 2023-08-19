@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
-use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx9;
 
@@ -49,12 +49,7 @@ unsafe fn draw(this: &IDirect3DDevice9) {
                 imgui_wnd_proc as usize as i32,
             ));
 
-            Mutex::new(Box::new(ImguiRenderer {
-                ctx: context,
-                renderer,
-                wnd_proc,
-                flags: ImguiRenderLoopFlags { focused: false },
-            }))
+            Mutex::new(Box::new(ImguiRenderer { ctx: context, renderer, wnd_proc }))
         })
         .lock();
 
@@ -164,7 +159,6 @@ struct ImguiRenderer {
     ctx: Context,
     renderer: imgui_dx9::Renderer,
     wnd_proc: WndProcType,
-    flags: ImguiRenderLoopFlags,
 }
 
 impl ImguiRenderer {
@@ -195,7 +189,7 @@ impl ImguiRenderer {
 
         let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui);
         let draw_data = self.ctx.render();
         self.renderer.render(draw_data).unwrap();
     }
@@ -219,11 +213,11 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     }
 
     fn focus(&self) -> bool {
-        self.flags.focused
+        self.ctx.io().want_capture_mouse
     }
 
     fn focus_mut(&mut self) -> &mut bool {
-        &mut self.flags.focused
+        &mut self.ctx.io_mut().want_capture_mouse
     }
 
     fn wnd_proc(&self) -> WndProcType {

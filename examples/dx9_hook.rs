@@ -1,7 +1,7 @@
 #![feature(lazy_cell)]
 
 use hudhook::hooks::dx9::ImguiDx9Hooks;
-use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::ImguiRenderLoop;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 struct Dx9HookExample;
@@ -25,7 +25,7 @@ impl Dx9HookExample {
 }
 
 impl ImguiRenderLoop for Dx9HookExample {
-    fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+    fn render(&mut self, ui: &mut imgui::Ui) {
         ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use harness::dx12::Dx12Harness;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
-use hudhook::hooks::{self, ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::{self, ImguiRenderLoop};
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 
@@ -23,7 +23,7 @@ fn test_imgui_dx12() {
     }
 
     impl ImguiRenderLoop for Dx12HookExample {
-        fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+        fn render(&mut self, ui: &mut imgui::Ui) {
             ui.window("Hello world").size([300.0, 300.0], Condition::FirstUseEver).build(|| {
                 ui.text("Hello world!");
                 ui.text("こんにちは世界！");

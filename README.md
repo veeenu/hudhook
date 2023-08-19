@@ -21,7 +21,7 @@ Read up on the underlying architecture [here](https://veeenu.github.io/blog/seki
 ```rust
 // src/lib.rs
 use hudhook::hooks::dx11::ImguiDX11Hooks;
-use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::ImguiRenderLoop;
 use imgui::{Condition, Window};
 struct Dx11HookExample;
 
@@ -35,7 +35,7 @@ impl Dx11HookExample {
 }
 
 impl ImguiRenderLoop for Dx11HookExample {
-    fn render(&mut self, ui: &mut imgui::Ui, _: &ImguiRenderLoopFlags) {
+    fn render(&mut self, ui: &mut imgui::Ui) {
         ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");

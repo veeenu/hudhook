@@ -32,7 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHandler, WndProcType};
-use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_dx11;
 
@@ -146,7 +146,6 @@ struct ImguiRenderer {
     ctx: Context,
     engine: imgui_dx11::RenderEngine,
     wnd_proc: WndProcType,
-    flags: ImguiRenderLoopFlags,
     swap_chain: IDXGISwapChain,
 }
 
@@ -158,8 +157,6 @@ impl ImguiRenderer {
         ctx.set_ini_filename(None);
 
         IMGUI_RENDER_LOOP.get_mut().unwrap().initialize(&mut ctx);
-
-        let flags = ImguiRenderLoopFlags { focused: true };
 
         trace!("Initializing renderer");
 
@@ -187,7 +184,7 @@ impl ImguiRenderer {
         ));
 
         trace!("Renderer initialized");
-        let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, flags, swap_chain };
+        let mut renderer = ImguiRenderer { ctx, engine, wnd_proc, swap_chain };
 
         ImguiWindowsEventHandler::setup_io(&mut renderer);
 
@@ -224,7 +221,7 @@ impl ImguiRenderer {
 
         let ctx = &mut self.ctx;
         let ui = ctx.frame();
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui);
         let draw_data = ctx.render();
 
         if let Err(e) = self.engine.render_draw_data(draw_data) {
@@ -270,11 +267,11 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     }
 
     fn focus(&self) -> bool {
-        self.flags.focused
+        self.io().want_capture_mouse
     }
 
     fn focus_mut(&mut self) -> &mut bool {
-        &mut self.flags.focused
+        &mut self.io_mut().want_capture_mouse
     }
 
     fn wnd_proc(&self) -> WndProcType {

@@ -27,12 +27,12 @@ The trait consists of only one method, `render`. `hudhook` will supply the `imgu
 need to use to render our UI, we are only tasked with actually implementing our rendering code.
 
 ```rust
-use hudhook::hooks::{ImguiRenderLoop, ImguiRenderLoopFlags};
+use hudhook::hooks::ImguiRenderLoop;
 use imgui::*;
 
 
 impl ImguiRenderLoop for HelloHud {
-    fn render(&mut self, ui: &mut Ui, _flags: &ImguiRenderLoopFlags) {
+    fn render(&mut self, ui: &mut Ui) {
         ui.window("##hello")
             .size([320., 200.], Condition::Always)
             .build(|| {

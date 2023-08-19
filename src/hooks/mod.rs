@@ -20,13 +20,6 @@ pub mod dx9;
 #[cfg(feature = "opengl3")]
 pub mod opengl3;
 
-/// Holds information useful to the render loop which can't be retrieved from
-/// `imgui::Ui`.
-pub struct ImguiRenderLoopFlags {
-    /// Whether the hooked program's window is currently focused.
-    pub focused: bool,
-}
-
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
@@ -34,7 +27,7 @@ pub trait ImguiRenderLoop {
     fn initialize(&mut self, _ctx: &mut Context) {}
 
     /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui, flags: &ImguiRenderLoopFlags);
+    fn render(&mut self, ui: &mut Ui);
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}

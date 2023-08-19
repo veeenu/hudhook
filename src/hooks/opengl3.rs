@@ -21,7 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::hooks::common::{imgui_wnd_proc_impl, ImguiWindowsEventHandler, WndProcType};
-use crate::hooks::{Hooks, ImguiRenderLoop, ImguiRenderLoopFlags};
+use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::{MhHook, MhHooks};
 use crate::renderers::imgui_opengl3::get_proc_address;
 
@@ -65,7 +65,6 @@ unsafe fn draw(dc: HDC) {
                 ctx: context,
                 renderer,
                 wnd_proc,
-                flags: ImguiRenderLoopFlags { focused: false },
                 game_hwnd: hwnd,
                 resolution_and_rect: None,
             };
@@ -163,7 +162,6 @@ struct ImguiRenderer {
     ctx: Context,
     renderer: imgui_opengl::Renderer,
     wnd_proc: WndProcType,
-    flags: ImguiRenderLoopFlags,
     game_hwnd: HWND,
     resolution_and_rect: Option<([i32; 2], RECT)>,
 }
@@ -212,7 +210,7 @@ impl ImguiRenderer {
 
         let ui = self.ctx.frame();
 
-        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui, &self.flags);
+        IMGUI_RENDER_LOOP.get_mut().unwrap().render(ui);
         self.renderer.render(&mut self.ctx);
     }
 
@@ -235,11 +233,11 @@ impl ImguiWindowsEventHandler for ImguiRenderer {
     }
 
     fn focus(&self) -> bool {
-        self.flags.focused
+        self.ctx.io().want_capture_mouse
     }
 
     fn focus_mut(&mut self) -> &mut bool {
-        &mut self.flags.focused
+        &mut self.ctx.io_mut().want_capture_mouse
     }
 
     fn wnd_proc(&self) -> WndProcType {
