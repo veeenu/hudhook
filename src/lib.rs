@@ -117,7 +117,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use once_cell::sync::OnceCell;
-use tracing::{debug, error};
+use tracing::error;
 pub use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::Console::{
     AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
@@ -192,7 +192,11 @@ pub fn eject() {
     thread::spawn(|| unsafe {
         free_console();
 
-        drop(HUDHOOK.take());
+        if let Some(mut hudhook) = HUDHOOK.take() {
+            if let Err(e) = hudhook.unapply() {
+                error!("Couldn't unapply hooks: {e:?}");
+            }
+        }
 
         if let Some(module) = MODULE.take() {
             FreeLibraryAndExitThread(module, 0);
@@ -208,7 +212,18 @@ unsafe impl Sync for Hudhook {}
 impl Hudhook {
     /// Create a builder object.
     pub fn builder() -> HudhookBuilder {
-        HudhookBuilder(Hudhook(Vec::new()))
+        HudhookBuilder(Hudhook::new())
+    }
+
+    fn new() -> Self {
+        // Initialize minhook.
+        match unsafe { MH_Initialize() } {
+            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+            status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
+            _ => unreachable!(),
+        }
+
+        Hudhook(Vec::new())
     }
 
     /// Return an iterator of all the activated raw hooks.
@@ -218,22 +233,13 @@ impl Hudhook {
 
     /// Apply the hooks.
     pub fn apply(self) -> Result<(), MH_STATUS> {
-        // Initialize minhook.
-        let status = unsafe { MH_Initialize() };
-        debug!("MH_Initialize: {:?}", status);
-        status.ok()?;
-
         // Queue enabling all the hooks.
         for hook in self.hooks() {
-            let status = unsafe { hook.queue_enable() };
-            debug!("MH_QueueEnable: {:?}", status);
-            status.ok()?;
+            unsafe { hook.queue_enable()? };
         }
 
         // Apply the queue of enable actions.
-        let status = unsafe { MH_ApplyQueued() };
-        debug!("MH_ApplyQueued: {:?}", status);
-        status.ok()?;
+        unsafe { MH_ApplyQueued().ok_context("MH_ApplyQueued")? };
 
         unsafe { HUDHOOK.set(self).ok() };
 
@@ -243,20 +249,14 @@ impl Hudhook {
     pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
         // Queue disabling all the hooks.
         for hook in self.hooks() {
-            let status = unsafe { hook.queue_disable() };
-            debug!("MH_QueueDisable: {:?}", status);
-            status.ok()?;
+            unsafe { hook.queue_disable()? };
         }
 
         // Apply the queue of disable actions.
-        let status = unsafe { MH_ApplyQueued() };
-        debug!("MH_ApplyQueued: {:?}", status);
-        status.ok()?;
+        unsafe { MH_ApplyQueued().ok_context("MH_ApplyQueued")? };
 
         // Uninitialize minhook.
-        let status = unsafe { MH_Uninitialize() };
-        debug!("MH_Uninitialize: {:?}", status);
-        status.ok()?;
+        unsafe { MH_Uninitialize().ok_context("MH_Uninitialize")? };
 
         // Invoke cleanup for all hooks.
         for hook in &mut self.0 {
@@ -264,14 +264,6 @@ impl Hudhook {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for Hudhook {
-    fn drop(&mut self) {
-        if let Err(e) = self.unapply() {
-            error!("Couldn't unapply hooks: {e:?}");
-        }
     }
 }
 

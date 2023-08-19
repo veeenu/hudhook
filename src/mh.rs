@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 use std::ptr::null_mut;
 
-use tracing::debug;
+use tracing::error;
 
 #[allow(non_camel_case_types)]
 #[must_use]
@@ -58,6 +58,15 @@ extern "system" {
 }
 
 impl MH_STATUS {
+    pub fn ok_context(self, context: &str) -> Result<(), MH_STATUS> {
+        if self == MH_STATUS::MH_OK {
+            Ok(())
+        } else {
+            error!("{context}: {self:?}");
+            Err(self)
+        }
+    }
+
     pub fn ok(self) -> Result<(), MH_STATUS> {
         if self == MH_STATUS::MH_OK {
             Ok(())
@@ -81,10 +90,7 @@ impl MhHook {
     /// Most definitely undefined behavior.
     pub unsafe fn new(addr: *mut c_void, hook_impl: *mut c_void) -> Result<Self, MH_STATUS> {
         let mut trampoline = null_mut();
-        let status = MH_CreateHook(addr, hook_impl, &mut trampoline);
-        debug!("MH_CreateHook: {:?}", status);
-
-        status.ok()?;
+        MH_CreateHook(addr, hook_impl, &mut trampoline).ok_context("MH_CreateHook")?;
 
         Ok(Self { addr, hook_impl, trampoline })
     }
@@ -96,18 +102,14 @@ impl MhHook {
     /// # Safety
     ///
     /// Most definitely undefined behavior.
-    pub unsafe fn queue_enable(&self) -> MH_STATUS {
-        let status = MH_QueueEnableHook(self.hook_impl);
-        debug!("MH_QueueEnableHook: {:?}", status);
-        status
+    pub unsafe fn queue_enable(&self) -> Result<(), MH_STATUS> {
+        MH_QueueEnableHook(self.addr).ok_context("MH_QueueEnableHook")
     }
 
     /// # Safety
     ///
     /// Most definitely undefined behavior.
-    pub unsafe fn queue_disable(&self) -> MH_STATUS {
-        let status = MH_QueueDisableHook(self.hook_impl);
-        debug!("MH_QueueDisableHook: {:?}", status);
-        status
+    pub unsafe fn queue_disable(&self) -> Result<(), MH_STATUS> {
+        MH_QueueDisableHook(self.addr).ok_context("MH_QueueDisableHook")
     }
 }
