@@ -8,7 +8,6 @@
 - [Writing the DLL code](./creating-library/writing-dll.md)
 - [Writing the entry point](./creating-library/entry-point.md)
 - [Advanced](./advanced/README.md)
-  - [Roll your own DLL entry point](./advanced/roll-your-own-dllmain.md)
   - [Build a proxy DLL](./advanced/proxy-dll.md)
 
 # Injecting a library
