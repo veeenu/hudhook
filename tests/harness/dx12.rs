@@ -31,8 +31,9 @@ use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
-    PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, HCURSOR,
-    HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
+    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 pub struct Dx12Harness {
@@ -179,6 +180,8 @@ impl Dx12Harness {
                 }
 
                 let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
+
+                unsafe { SetTimer(hwnd, 0, 100, None) };
 
                 loop {
                     trace!("Debug");

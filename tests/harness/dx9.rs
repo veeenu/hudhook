@@ -7,21 +7,13 @@ use std::thread::{self, JoinHandle};
 
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION,
-};
-use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
-};
-use windows::Win32::Graphics::Dxgi::{
-    DXGIGetDebugInterface1, IDXGIInfoQueue, IDXGISwapChain, DXGI_DEBUG_ALL,
-    DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+use windows::Win32::Graphics::Direct3D9::{
+    Direct3DCreate9, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL,
+    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::System::SystemServices::D3DCLEAR_TARGET;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
@@ -29,13 +21,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_VISIBLE,
 };
 
-pub struct Dx11Harness {
+pub struct Dx9Harness {
     child: Option<JoinHandle<()>>,
     done: Arc<AtomicBool>,
     _caption: Arc<CString>,
 }
 
-impl Dx11Harness {
+impl Dx9Harness {
     #[allow(unused)]
     pub fn new(caption: &str) -> Self {
         let done = Arc::new(AtomicBool::new(false));
@@ -81,70 +73,32 @@ impl Dx11Harness {
                     )
                 };
 
-                let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
-
-                let mut p_device: Option<ID3D11Device> = None;
-                let mut p_swap_chain: Option<IDXGISwapChain> = None;
-                let mut p_context: Option<ID3D11DeviceContext> = None;
+                let direct3d = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
+                let mut device = None;
                 unsafe {
-                    D3D11CreateDeviceAndSwapChain(
-                        None,
-                        D3D_DRIVER_TYPE_HARDWARE,
-                        None,
-                        D3D11_CREATE_DEVICE_FLAG(0),
-                        &[D3D_FEATURE_LEVEL_11_0],
-                        D3D11_SDK_VERSION,
-                        &DXGI_SWAP_CHAIN_DESC {
-                            BufferDesc: DXGI_MODE_DESC {
-                                Width: 800,
-                                Height: 600,
-                                RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
-                                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                                ..Default::default()
-                            },
-                            BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                            BufferCount: 1,
-                            OutputWindow: handle,
+                    direct3d.CreateDevice(
+                        D3DADAPTER_DEFAULT,
+                        D3DDEVTYPE_HAL,
+                        handle,
+                        D3DCREATE_SOFTWARE_VERTEXPROCESSING as _,
+                        &mut D3DPRESENT_PARAMETERS {
                             Windowed: BOOL::from(true),
-                            SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-                            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                            SwapEffect: D3DSWAPEFFECT_DISCARD,
                             ..Default::default()
                         },
-                        &mut p_swap_chain,
-                        &mut p_device,
-                        null_mut(),
-                        &mut p_context,
+                        &mut device,
                     )
-                    .unwrap()
                 };
-                let swap_chain = p_swap_chain.unwrap();
+                let device = device.unwrap();
 
                 unsafe { SetTimer(handle, 0, 100, None) };
 
                 loop {
-                    unsafe {
-                        for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-                            eprintln!("Debug Message {i}");
-                            let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _)
-                                .unwrap();
-                            let diqm = vec![0u8; msg_len];
-                            let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
-                            let diqm = pdiqm.as_ref().unwrap();
-                            eprintln!(
-                                "{}",
-                                String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription,
-                                    diqm.DescriptionByteLength
-                                ))
-                            );
-                        }
-                        diq.ClearStoredMessages(DXGI_DEBUG_ALL);
-                    }
-
                     eprintln!("Present...");
-                    unsafe { swap_chain.Present(1, 0).unwrap() };
+                    unsafe {
+                        device.Clear(0, null(), D3DCLEAR_TARGET as _, 0, 1.0, 0);
+                        device.Present(null(), null(), None, null());
+                    }
 
                     eprintln!("Handle message");
                     if !handle_message(handle) {
@@ -162,7 +116,7 @@ impl Dx11Harness {
     }
 }
 
-impl Drop for Dx11Harness {
+impl Drop for Dx9Harness {
     fn drop(&mut self) {
         self.done.store(true, Ordering::SeqCst);
         self.child.take().unwrap().join().unwrap();
