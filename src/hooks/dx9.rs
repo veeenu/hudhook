@@ -176,7 +176,7 @@ impl ImguiRenderer {
                     || IsChild(active_window, self.renderer.get_hwnd()).as_bool())
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool()
+                if gcp.is_ok()
                     && ScreenToClient(self.renderer.get_hwnd(), &mut pos as *mut _).as_bool()
                 {
                     io.mouse_pos[0] = pos.x as _;
@@ -184,7 +184,7 @@ impl ImguiRenderer {
                 }
             }
         } else {
-            trace!("GetWindowRect error: {:x}", GetLastError().0);
+            trace!("GetWindowRect error: {:?}", GetLastError());
         }
 
         let ui = self.ctx.frame();

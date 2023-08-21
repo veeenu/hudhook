@@ -30,25 +30,24 @@ use imgui::internal::RawWrapper;
 use imgui::{
     BackendFlags, Context, DrawCmd, DrawCmdParams, DrawData, DrawIdx, TextureId, Textures,
 };
-use windows::Win32::Foundation::{BOOL, HWND, RECT};
-use windows::Win32::Graphics::Direct3D::{D3DMATRIX, D3DMATRIX_0};
+use windows::core::ComInterface;
+use windows::Foundation::Numerics::Matrix4x4;
+use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D9::{
     IDirect3DBaseTexture9, IDirect3DDevice9, IDirect3DIndexBuffer9, IDirect3DStateBlock9,
     IDirect3DSurface9, IDirect3DTexture9, IDirect3DVertexBuffer9, D3DBACKBUFFER_TYPE_MONO,
     D3DBLENDOP_ADD, D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DCULL_NONE,
-    D3DDEVICE_CREATION_PARAMETERS, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DLOCKED_RECT,
-    D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST, D3DRS_ALPHABLENDENABLE,
-    D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND, D3DRS_FOGENABLE,
-    D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND, D3DRS_ZENABLE,
-    D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD, D3DTEXF_LINEAR,
-    D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE, D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP,
-    D3DTSS_COLORARG1, D3DTSS_COLORARG2, D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW,
-    D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY, D3DVIEWPORT9,
+    D3DDEVICE_CREATION_PARAMETERS, D3DFMT_A8R8G8B8, D3DFMT_INDEX16, D3DFMT_INDEX32, D3DFVF_DIFFUSE,
+    D3DFVF_TEX1, D3DFVF_XYZ, D3DLOCKED_RECT, D3DLOCK_DISCARD, D3DPOOL_DEFAULT, D3DPT_TRIANGLELIST,
+    D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_BLENDOP, D3DRS_CULLMODE, D3DRS_DESTBLEND,
+    D3DRS_FOGENABLE, D3DRS_LIGHTING, D3DRS_SCISSORTESTENABLE, D3DRS_SHADEMODE, D3DRS_SRCBLEND,
+    D3DRS_ZENABLE, D3DSAMP_MAGFILTER, D3DSAMP_MINFILTER, D3DSBT_ALL, D3DSHADE_GOURAUD,
+    D3DTA_DIFFUSE, D3DTA_TEXTURE, D3DTEXF_LINEAR, D3DTOP_MODULATE, D3DTRANSFORMSTATETYPE,
+    D3DTSS_ALPHAARG1, D3DTSS_ALPHAARG2, D3DTSS_ALPHAOP, D3DTSS_COLORARG1, D3DTSS_COLORARG2,
+    D3DTSS_COLOROP, D3DTS_PROJECTION, D3DTS_VIEW, D3DUSAGE_DYNAMIC, D3DUSAGE_WRITEONLY,
+    D3DVIEWPORT9,
 };
 use windows::Win32::Graphics::Dxgi::DXGI_ERROR_INVALID_CALL;
-use windows::Win32::System::SystemServices::{
-    D3DFVF_DIFFUSE, D3DFVF_TEX1, D3DFVF_XYZ, D3DTA_DIFFUSE, D3DTA_TEXTURE,
-};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 const FONT_TEX_ID: usize = !0;
@@ -65,10 +64,23 @@ const D3DTS_WORLDMATRIX: D3DTRANSFORMSTATETYPE = D3DTRANSFORMSTATETYPE(256);
 /// Reexport of [`windows::core::Result<T>`]
 pub type Result<T> = windows::core::Result<T>;
 
-static MAT_IDENTITY: D3DMATRIX = D3DMATRIX {
-    Anonymous: D3DMATRIX_0 {
-        m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-    },
+static MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
+    M11: 1.0,
+    M22: 1.0,
+    M33: 1.0,
+    M44: 1.0,
+    M12: 0.0,
+    M13: 0.0,
+    M14: 0.0,
+    M21: 0.0,
+    M23: 0.0,
+    M24: 0.0,
+    M31: 0.0,
+    M32: 0.0,
+    M34: 0.0,
+    M41: 0.0,
+    M42: 0.0,
+    M43: 0.0,
 };
 
 #[repr(C)]
@@ -98,8 +110,8 @@ impl Renderer {
     ///
     /// [`IDirect3DDevice9`]: https://docs.rs/winapi/0.3/x86_64-pc-windows-msvc/winapi/shared/d3d9/struct.IDirect3DDevice9.html
     pub unsafe fn new(ctx: &mut Context, device: IDirect3DDevice9) -> Result<Self> {
-        let font_tex =
-            IDirect3DBaseTexture9::from(Self::create_font_texture(ctx.fonts(), &device)?);
+        let font_tex: IDirect3DBaseTexture9 =
+            Self::create_font_texture(ctx.fonts(), &device)?.cast()?;
 
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("imgui-dx9@", env!("CARGO_PKG_VERSION"))));
@@ -124,7 +136,7 @@ impl Renderer {
     pub fn get_client_rect(&self) -> Option<RECT> {
         unsafe {
             let mut rect: RECT = core::mem::zeroed();
-            if GetClientRect(self.device_creation_parameters.hFocusWindow, &mut rect) != BOOL(0) {
+            if GetClientRect(self.device_creation_parameters.hFocusWindow, &mut rect).is_ok() {
                 Some(rect)
             } else {
                 None
@@ -288,27 +300,23 @@ impl Renderer {
         let t = draw_data.display_pos[1] + 0.5;
         let b = draw_data.display_pos[1] + draw_data.display_size[1] + 0.5;
 
-        let mat_projection = D3DMATRIX {
-            Anonymous: D3DMATRIX_0 {
-                m: [
-                    2.0 / (r - l),
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    2.0 / (t - b),
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.5,
-                    0.0,
-                    (l + r) / (l - r),
-                    (t + b) / (b - t),
-                    0.5,
-                    1.0,
-                ],
-            },
+        let mat_projection = Matrix4x4 {
+            M11: 2.0 / (r - l),
+            M12: 0.0,
+            M13: 0.0,
+            M14: 0.0,
+            M21: 0.0,
+            M22: 2.0 / (t - b),
+            M23: 0.0,
+            M24: 0.0,
+            M31: 0.0,
+            M32: 0.0,
+            M33: 0.5,
+            M34: 0.0,
+            M41: (l + r) / (l - r),
+            M42: (t + b) / (b - t),
+            M43: 0.5,
+            M44: 1.0,
         };
 
         device.SetTransform(D3DTS_WORLDMATRIX, &MAT_IDENTITY).unwrap();
@@ -461,9 +469,9 @@ impl Renderer {
 
 struct StateBackup {
     state_block: IDirect3DStateBlock9,
-    mat_world: D3DMATRIX,
-    mat_view: D3DMATRIX,
-    mat_projection: D3DMATRIX,
+    mat_world: Matrix4x4,
+    mat_view: Matrix4x4,
+    mat_projection: Matrix4x4,
     viewport: D3DVIEWPORT9,
     surface: IDirect3DSurface9,
 }
@@ -472,9 +480,9 @@ impl StateBackup {
     unsafe fn backup(device: &IDirect3DDevice9) -> Result<Self> {
         match device.CreateStateBlock(D3DSBT_ALL) {
             Ok(state_block) => {
-                let mut mat_world: D3DMATRIX = core::mem::zeroed();
-                let mut mat_view: D3DMATRIX = core::mem::zeroed();
-                let mut mat_projection: D3DMATRIX = core::mem::zeroed();
+                let mut mat_world: Matrix4x4 = Default::default();
+                let mut mat_view: Matrix4x4 = Default::default();
+                let mut mat_projection: Matrix4x4 = Default::default();
                 let mut viewport: D3DVIEWPORT9 = core::mem::zeroed();
 
                 device.GetTransform(D3DTS_WORLDMATRIX, &mut mat_world)?;

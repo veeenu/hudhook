@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use tracing::trace;
-use windows::core::PCSTR;
+use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
 use windows::Win32::Graphics::OpenGL::{
@@ -42,8 +42,8 @@ impl Opengl3Harness {
                 let wnd_class = WNDCLASSA {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
-                    hInstance: hinstance,
-                    lpszClassName: PCSTR("MyClass\0".as_ptr()),
+                    hInstance: hinstance.into(),
+                    lpszClassName: s!("MyClass\0"),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hIcon: HICON::default(),
@@ -70,7 +70,7 @@ impl Opengl3Harness {
                         HWND::default(),  // hWndParent
                         HMENU::default(), // hMenu
                         hinstance,        // hInstance
-                        null(),
+                        None,
                     )
                 }; // lpParam
 
@@ -96,7 +96,7 @@ impl Opengl3Harness {
                     cDepthBits: 24,
                     cStencilBits: 8,
                     cAuxBuffers: 0,
-                    iLayerType: PFD_MAIN_PLANE,
+                    iLayerType: PFD_MAIN_PLANE.0 as u8,
                     bReserved: 0,
                     dwLayerMask: 0,
                     dwVisibleMask: 0,

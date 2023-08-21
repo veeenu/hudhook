@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use tracing::{debug, trace};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    GetLastError, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{ScreenToClient, WindowFromDC, HDC};
 use windows::Win32::Graphics::OpenGL::{glClearColor, glGetIntegerv, GL_VIEWPORT};
@@ -169,7 +169,7 @@ struct ImguiRenderer {
 fn get_client_rect(hwnd: &HWND) -> Option<RECT> {
     unsafe {
         let mut rect: RECT = core::mem::zeroed();
-        if GetClientRect(*hwnd, &mut rect) != BOOL(0) {
+        if GetClientRect(*hwnd, &mut rect).is_ok() {
             Some(rect)
         } else {
             None
@@ -192,13 +192,13 @@ impl ImguiRenderer {
                     || IsChild(active_window, self.game_hwnd).as_bool())
             {
                 let gcp = GetCursorPos(&mut pos as *mut _);
-                if gcp.as_bool() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
+                if gcp.is_ok() && ScreenToClient(self.game_hwnd, &mut pos as *mut _).as_bool() {
                     io.mouse_pos[0] = pos.x as _;
                     io.mouse_pos[1] = pos.y as _;
                 }
             }
         } else {
-            trace!("GetClientRect error: {:x}", GetLastError().0);
+            trace!("GetClientRect error: {:?}", GetLastError());
         }
 
         // Update the delta time of ImGui as to tell it how long has elapsed since the

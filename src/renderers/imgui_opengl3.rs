@@ -1,7 +1,7 @@
 use std::ffi::{c_void, CString};
 use std::sync::OnceLock;
 
-use windows::core::PCSTR;
+use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::wglGetProcAddress;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
@@ -9,9 +9,7 @@ use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 static OPENGL3_LIB: OnceLock<HINSTANCE> = OnceLock::new();
 
 unsafe fn get_opengl3_lib() -> HINSTANCE {
-    let opengl3_cstring = CString::new("opengl32.dll").unwrap();
-
-    LoadLibraryA(PCSTR(opengl3_cstring.as_ptr() as _)).unwrap()
+    LoadLibraryA(s!("opengl32.dll\0")).expect("LoadLibraryA").into()
 }
 
 /// # Safety

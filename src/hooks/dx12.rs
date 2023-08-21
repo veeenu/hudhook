@@ -1,7 +1,7 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use std::{hint, thread};
@@ -10,8 +10,7 @@ use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
-use windows::core::{Interface, HRESULT, HSTRING, PCWSTR};
-use windows::w;
+use windows::core::{w, ComInterface, Interface, HRESULT, PCWSTR};
 use windows::Win32::Foundation::{
     GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
@@ -25,8 +24,9 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
-use windows::Win32::System::WindowsProgramming::INFINITE;
+use windows::Win32::System::Threading::{
+    CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
+};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -126,7 +126,7 @@ static TRAMPOLINE: OnceCell<(
     ResizeBuffersType,
 )> = OnceCell::new();
 
-const COMMAND_ALLOCATOR_NAMES: [&HSTRING; 8] = [
+const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #0"),
     w!("hudhook Command allocator #1"),
     w!("hudhook Command allocator #2"),
@@ -146,10 +146,10 @@ unsafe fn print_dxgi_debug_messages() {
 
     for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
         let mut msg_len: usize = 0;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
         let diqm = vec![0u8; msg_len];
         let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
         let diqm = pdiqm.as_ref().unwrap();
         debug!(
             "[DIQ] {}",
@@ -341,8 +341,9 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
         trace!("Initializing renderer");
-        let desc = swap_chain.GetDesc().unwrap();
-        let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
+        let mut desc = Default::default();
+        swap_chain.GetDesc(&mut desc).expect("GetDesc");
+        let dev = swap_chain.GetDevice::<ID3D12Device>().expect("GetDevice");
 
         let renderer_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
@@ -387,8 +388,8 @@ impl ImguiRenderer {
                 };
                 trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
 
-                let back_buffer = swap_chain.GetBuffer(i).unwrap();
-                dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
+                let back_buffer: ID3D12Resource = swap_chain.GetBuffer(i).expect("GetBuffer");
+                dev.CreateRenderTargetView(&back_buffer, None, desc_handle);
 
                 let command_allocator: ID3D12CommandAllocator =
                     dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).unwrap();
@@ -405,7 +406,7 @@ impl ImguiRenderer {
                     command_allocator,
                     fence: dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                     fence_val: 0,
-                    fence_event: CreateEventExW(null(), PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
+                    fence_event: CreateEventExW(None, PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
                         .unwrap(),
                 }
             })
@@ -479,10 +480,11 @@ impl ImguiRenderer {
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
-        let sd = unsafe { swap_chain.GetDesc() }.unwrap();
+        let mut sd = Default::default();
+        unsafe { swap_chain.GetDesc(&mut sd) }.expect("GetDesc");
         let mut rect: RECT = Default::default();
 
-        if unsafe { GetClientRect(sd.OutputWindow, &mut rect as _).as_bool() } {
+        if unsafe { GetClientRect(sd.OutputWindow, &mut rect as _).is_ok() } {
             let io = self.ctx.io_mut();
 
             io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
@@ -495,7 +497,7 @@ impl ImguiRenderer {
                     || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
             {
                 let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
-                if gcp.as_bool()
+                if gcp.is_ok()
                     && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
                 {
                     io.mouse_pos[0] = pos.x as _;
@@ -503,7 +505,7 @@ impl ImguiRenderer {
                 }
             }
         } else {
-            trace!("GetClientRect error: {:x}", unsafe { GetLastError().0 });
+            trace!("GetClientRect error: {:?}", unsafe { GetLastError() });
         }
 
         let command_queue = match self.command_queue.as_ref() {
@@ -520,8 +522,9 @@ impl ImguiRenderer {
         unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui);
         let draw_data = ctx.render();
 
+        let back_buffer = ManuallyDrop::new(Some(frame_context.back_buffer.clone()));
         let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: Some(frame_context.back_buffer.clone()),
+            pResource: back_buffer,
             Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             StateBefore: D3D12_RESOURCE_STATE_PRESENT,
             StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -535,7 +538,6 @@ impl ImguiRenderer {
 
         frame_context.wait_fence();
         frame_context.incr();
-
         let command_allocator = &frame_context.command_allocator;
 
         unsafe {
@@ -544,9 +546,9 @@ impl ImguiRenderer {
             self.command_list.ResourceBarrier(&[barrier.clone()]);
             self.command_list.OMSetRenderTargets(
                 1,
-                &frame_context.desc_handle,
+                Some(&frame_context.desc_handle),
                 BOOL::from(false),
-                null(),
+                None,
             );
             self.command_list.SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
         };
@@ -572,23 +574,28 @@ impl ImguiRenderer {
         unsafe {
             self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
-            command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
+            command_queue.ExecuteCommandLists(&[Some(self.command_list.cast().unwrap())]);
             command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
         }
 
         let barrier = barriers.into_iter().next().unwrap();
 
-        let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        unsafe {
+            let transition = ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            let _ = ManuallyDrop::into_inner(transition.pResource);
+        };
+
         trace!("Rendering done in {:?}", render_start.elapsed());
         None
     }
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain3>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let desc = swap_chain.GetDesc().unwrap();
+        let mut sd = Default::default();
+        swap_chain.GetDesc(&mut sd).expect("GetDesc");
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
+        SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
         SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);

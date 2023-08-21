@@ -3,7 +3,7 @@
 use std::ffi::{CStr, CString};
 use std::mem::{self, size_of};
 use std::path::PathBuf;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
 use tracing::debug;
 use windows::core::{Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
@@ -18,9 +18,9 @@ use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, PROCESS_ALL_ACCESS,
+    CreateRemoteThread, GetExitCodeThread, OpenProcess, WaitForSingleObject, INFINITE,
+    PROCESS_ALL_ACCESS,
 };
-use windows::Win32::System::WindowsProgramming::INFINITE;
 use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, FindWindowW, GetWindowThreadProcessId};
 
 /// A process, open with the permissions appropriate for injection.
@@ -55,7 +55,7 @@ impl Process {
         let dll_path_buf = unsafe {
             VirtualAllocEx(
                 self.0,
-                null_mut(),
+                None,
                 (MAX_PATH as usize) * size_of::<u16>(),
                 MEM_RESERVE | MEM_COMMIT,
                 PAGE_READWRITE,
@@ -69,30 +69,30 @@ impl Process {
                 dll_path_buf,
                 dll_path.as_ptr() as *const std::ffi::c_void,
                 (MAX_PATH as usize) * size_of::<u16>(),
-                (&mut bytes_written) as *mut _,
+                Some(&mut bytes_written),
             )
         };
 
-        debug!("WriteProcessMemory: written {} bytes, returned {:x}", bytes_written, res.0);
+        debug!("WriteProcessMemory: written {} bytes, returned {:?}", bytes_written, res);
 
         let thread = unsafe {
             CreateRemoteThread(
                 self.0,
-                null(),
+                None,
                 0,
                 Some(std::mem::transmute(proc_addr)),
-                dll_path_buf,
+                Some(dll_path_buf),
                 0,
-                null_mut(),
+                None,
             )
         }?;
 
         unsafe {
             WaitForSingleObject(thread, INFINITE);
             let mut exit_code = 0u32;
-            GetExitCodeThread(thread, &mut exit_code as *mut u32);
-            CloseHandle(thread);
-            VirtualFreeEx(self.0, dll_path_buf, 0, MEM_RELEASE);
+            GetExitCodeThread(thread, &mut exit_code as *mut u32)?;
+            CloseHandle(thread)?;
+            VirtualFreeEx(self.0, dll_path_buf, 0, MEM_RELEASE)?;
 
             Ok(())
         }
@@ -101,7 +101,7 @@ impl Process {
 
 impl Drop for Process {
     fn drop(&mut self) {
-        unsafe { CloseHandle(self.0) };
+        unsafe { CloseHandle(self.0).expect("CloseHandle") };
     }
 }
 
@@ -123,15 +123,18 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowA(PCSTR(null()), PCSTR(title.as_bytes_with_nul().as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = GetLastError();
+        let last_error = match GetLastError() {
+            Ok(()) => Error::OK,
+            Err(e) => e,
+        };
         return Err(Error::new(
-            HRESULT(last_error.0 as _),
-            format!("FindWindowA returned NULL: {}", last_error.0).into(),
+            last_error.code(),
+            format!("FindWindowA returned NULL: {:?}", last_error).into(),
         ));
     }
 
     let mut pid: u32 = 0;
-    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
@@ -142,15 +145,18 @@ unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = GetLastError();
+        let last_error = match GetLastError() {
+            Ok(()) => Error::OK,
+            Err(e) => e,
+        };
         return Err(Error::new(
-            HRESULT(last_error.0 as _),
-            format!("FindWindowW returned NULL: {}", last_error.0).into(),
+            last_error.code(),
+            format!("FindWindowW returned NULL: {:?}", last_error).into(),
         ));
     }
 
     let mut pid: u32 = 0;
-    GetWindowThreadProcessId(hwnd, &mut pid as *mut _ as _);
+    GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
@@ -175,10 +181,13 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
     let mut pe32 =
         PROCESSENTRY32 { dwSize: mem::size_of::<PROCESSENTRY32>() as u32, ..Default::default() };
 
-    if !Process32First(snapshot, &mut pe32).as_bool() {
-        CloseHandle(snapshot);
+    if Process32First(snapshot, &mut pe32).is_err() {
+        CloseHandle(snapshot)?;
         return Err(Error::new(
-            HRESULT(GetLastError().0 as _),
+            match GetLastError() {
+                Ok(()) => Error::OK.code(),
+                Err(e) => e.code(),
+            },
             "Process32First failed".to_string().into(),
         ));
     }
@@ -190,8 +199,8 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
             break Ok(pe32.th32ProcessID);
         }
 
-        if !Process32Next(snapshot, &mut pe32).as_bool() {
-            CloseHandle(snapshot);
+        if Process32Next(snapshot, &mut pe32).is_err() {
+            CloseHandle(snapshot)?;
             break Err(Error::new(
                 HRESULT(0),
                 format!("Process {} not found", name.to_string_lossy()).into(),
@@ -199,7 +208,7 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
         }
     }?;
 
-    CloseHandle(snapshot);
+    CloseHandle(snapshot)?;
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
@@ -213,10 +222,13 @@ unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
     let mut pe32 =
         PROCESSENTRY32W { dwSize: mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
 
-    if !Process32FirstW(snapshot, &mut pe32).as_bool() {
-        CloseHandle(snapshot);
+    if Process32FirstW(snapshot, &mut pe32).is_err() {
+        CloseHandle(snapshot)?;
         return Err(Error::new(
-            HRESULT(GetLastError().0 as _),
+            match GetLastError() {
+                Ok(()) => Error::OK.code(),
+                Err(e) => e.code(),
+            },
             "Process32First failed".to_string().into(),
         ));
     }
@@ -227,13 +239,13 @@ unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
             break Ok(pe32.th32ProcessID);
         }
 
-        if !Process32NextW(snapshot, &mut pe32).as_bool() {
-            CloseHandle(snapshot);
+        if Process32NextW(snapshot, &mut pe32).is_err() {
+            CloseHandle(snapshot)?;
             break Err(Error::new(HRESULT(0), format!("Process {} not found", name).into()));
         }
     }?;
 
-    CloseHandle(snapshot);
+    CloseHandle(snapshot)?;
 
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }

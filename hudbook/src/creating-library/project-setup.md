@@ -19,14 +19,4 @@ crate-type = ["cdylib", "rlib"]
 name = "hello_hud"
 ```
 
-`hudhook` only supports Rust nightly, so let's create a `rust-toolchain.toml` at the top level of
-our crate, and paste the following content in it:
-
-```toml
-[toolchain]
-channel = "nightly"
-```
-
-This will instruct `cargo` to always use the nightly toolchain in the context of this project.
-
 We are now ready to start writing the code.
