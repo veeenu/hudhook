@@ -434,7 +434,7 @@ impl ImguiRenderer {
 
         #[cfg(target_arch = "x86")]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
-            desc.OutputWindow,
+            sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
         ));
@@ -597,7 +597,7 @@ impl ImguiRenderer {
         SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
-        SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
+        SetWindowLongA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
     }
 }
 
