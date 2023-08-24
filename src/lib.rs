@@ -113,60 +113,72 @@
 //! ```
 #![allow(clippy::needless_doctest_main)]
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+
+use once_cell::sync::OnceCell;
+use tracing::error;
+pub use windows::Win32::Foundation::HINSTANCE;
+use windows::Win32::System::Console::{
+    AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
+    ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+};
+use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
+pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
+pub use {imgui, tracing};
+
+use crate::hooks::Hooks;
+pub use crate::hooks::ImguiRenderLoop;
+use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
+
 pub mod hooks;
-#[cfg(feature = "inject")]
-pub mod inject;
 pub mod mh;
 pub mod renderers;
 
-/// Utility functions.
-pub mod utils {
-    use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "inject")]
+pub mod inject;
 
-    static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
+// Global state objects.
+static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
+static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
+static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
-    /// Allocate a Windows console.
-    pub fn alloc_console() {
-        if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
-            unsafe {
-                // Allocate a console
-                crate::reexports::AllocConsole();
-            }
-        }
+/// Allocate a Windows console.
+pub fn alloc_console() {
+    if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
+        unsafe { AllocConsole() };
     }
+}
 
-    pub fn enable_console_colors() {
-        if CONSOLE_ALLOCATED.load(Ordering::SeqCst) {
-            unsafe {
-                // Get the stdout handle
-                let stdout_handle =
-                    crate::reexports::GetStdHandle(crate::reexports::STD_OUTPUT_HANDLE).unwrap();
+/// Enable console colors if the console is allocated.
+pub fn enable_console_colors() {
+    if CONSOLE_ALLOCATED.load(Ordering::SeqCst) {
+        unsafe {
+            // Get the stdout handle
+            let stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE).unwrap();
 
-                // call GetConsoleMode to get the current mode of the console
-                let mut current_console_mode = crate::reexports::CONSOLE_MODE(0);
-                crate::reexports::GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
+            // call GetConsoleMode to get the current mode of the console
+            let mut current_console_mode = CONSOLE_MODE(0);
+            GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
 
-                // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING for ANSI
-                // escape sequences
-                current_console_mode.0 |= crate::reexports::ENABLE_VIRTUAL_TERMINAL_PROCESSING.0;
+            // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING for ANSI
+            // escape sequences
+            current_console_mode.0 |= ENABLE_VIRTUAL_TERMINAL_PROCESSING.0;
 
-                // Call SetConsoleMode to set the new mode
-                crate::reexports::SetConsoleMode(stdout_handle, current_console_mode).unwrap();
-            }
-        }
-    }
-
-    /// Free the previously allocated Windows console.
-    pub fn free_console() {
-        if CONSOLE_ALLOCATED.swap(false, Ordering::SeqCst) {
-            unsafe {
-                crate::reexports::FreeConsole();
-            }
+            // Call SetConsoleMode to set the new mode
+            SetConsoleMode(stdout_handle, current_console_mode).unwrap();
         }
     }
 }
 
-/// Functions that manage the lifecycle of hooks.
+/// Free the previously allocated Windows console.
+pub fn free_console() {
+    if CONSOLE_ALLOCATED.swap(false, Ordering::SeqCst) {
+        unsafe { FreeConsole() };
+    }
+}
+
+/// Disable hooks and eject the DLL.
 ///
 /// ## Ejecting a DLL
 ///
@@ -176,81 +188,141 @@ pub mod utils {
 ///
 /// Befor calling [`eject`], make sure to perform any manual cleanup (e.g.
 /// dropping/resetting the contents of static mutable variables).
+pub fn eject() {
+    thread::spawn(|| unsafe {
+        free_console();
+
+        if let Some(mut hudhook) = HUDHOOK.take() {
+            if let Err(e) = hudhook.unapply() {
+                error!("Couldn't unapply hooks: {e:?}");
+            }
+        }
+
+        if let Some(module) = MODULE.take() {
+            FreeLibraryAndExitThread(module, 0);
+        }
+    });
+}
+
+/// Holds all the activated hooks and manages their lifetime.
+pub struct Hudhook(Vec<Box<dyn Hooks>>);
+unsafe impl Send for Hudhook {}
+unsafe impl Sync for Hudhook {}
+
+impl Hudhook {
+    /// Create a builder object.
+    pub fn builder() -> HudhookBuilder {
+        HudhookBuilder(Hudhook::new())
+    }
+
+    fn new() -> Self {
+        // Initialize minhook.
+        match unsafe { MH_Initialize() } {
+            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+            status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
+            _ => unreachable!(),
+        }
+
+        Hudhook(Vec::new())
+    }
+
+    /// Return an iterator of all the activated raw hooks.
+    fn hooks(&self) -> impl IntoIterator<Item = &MhHook> {
+        self.0.iter().flat_map(|h| h.hooks())
+    }
+
+    /// Apply the hooks.
+    pub fn apply(self) -> Result<(), MH_STATUS> {
+        // Queue enabling all the hooks.
+        for hook in self.hooks() {
+            unsafe { hook.queue_enable()? };
+        }
+
+        // Apply the queue of enable actions.
+        unsafe { MH_ApplyQueued().ok_context("MH_ApplyQueued")? };
+
+        unsafe { HUDHOOK.set(self).ok() };
+
+        Ok(())
+    }
+
+    pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
+        // Queue disabling all the hooks.
+        for hook in self.hooks() {
+            unsafe { hook.queue_disable()? };
+        }
+
+        // Apply the queue of disable actions.
+        unsafe { MH_ApplyQueued().ok_context("MH_ApplyQueued")? };
+
+        // Uninitialize minhook.
+        unsafe { MH_Uninitialize().ok_context("MH_Uninitialize")? };
+
+        // Invoke cleanup for all hooks.
+        for hook in &mut self.0 {
+            unsafe { hook.unhook() };
+        }
+
+        Ok(())
+    }
+}
+
+/// Builder object for [`Hudhook`].
 ///
-/// [`eject`]: lifecycle::eject
-pub mod lifecycle {
+/// Example usage:
+/// ```no_run
+/// use hudhook::hooks::dx12::ImguiDx12Hooks;
+/// use hudhook::hooks::ImguiRenderLoop;
+/// use hudhook::*;
+///
+/// pub struct MyRenderLoop;
+///
+/// impl ImguiRenderLoop for MyRenderLoop {
+///     fn render(&mut self, frame: &mut imgui::Ui) {
+///         // ...
+///     }
+/// }
+///
+/// #[no_mangle]
+/// pub unsafe extern "stdcall" fn DllMain(
+///     hmodule: HINSTANCE,
+///     reason: u32,
+///     _: *mut std::ffi::c_void,
+/// ) {
+///     if reason == DLL_PROCESS_ATTACH {
+///         trace!("DllMain()");
+///         std::thread::spawn(move || {
+///             let hooks = Hudhook::builder()
+///                 .with(MyRenderLoop.into_hook::<ImguiDx12Hooks>())
+///                 .with_hmodule(hmodule)
+///                 .build();
+///             hooks.apply();
+///         });
+///     }
+/// }
 
-    use std::thread;
+pub struct HudhookBuilder(Hudhook);
 
-    use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
-
-    /// Disable hooks and eject the DLL.
-    pub fn eject() {
-        thread::spawn(|| unsafe {
-            crate::utils::free_console();
-
-            if let Some(mut hooks) = global_state::HOOKS.take() {
-                hooks.unhook();
-            }
-
-            if let Some(module) = global_state::MODULE.take() {
-                FreeLibraryAndExitThread(module, 0);
-            }
-        });
+impl HudhookBuilder {
+    /// Add a hook object.
+    pub fn with(mut self, hook: Box<dyn Hooks>) -> Self {
+        self.0 .0.push(hook);
+        self
     }
 
-    /// Exposes functions that store and manipulate global state data.
-    ///
-    /// The functions contained here are automatically invoked by the
-    /// [`hudhook`](crate::hudhook) macro, and are needed to manage the
-    /// hooks' lifetime.
-    ///
-    /// This module is not meant to be used by clients, but it has to be
-    /// exposed as `pub` because the [`hudhook`](crate::hudhook)
-    /// macro generates code in the client's library.
-    pub mod global_state {
+    /// Save the DLL instance (for the eject method).
+    pub fn with_hmodule(self, module: HINSTANCE) -> Self {
+        unsafe { MODULE.set(module).unwrap() };
+        self
+    }
 
-        use std::cell::OnceCell;
-
-        use windows::Win32::Foundation::HINSTANCE;
-
-        use crate::hooks;
-
-        pub(super) static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
-        pub(super) static mut HOOKS: OnceCell<Box<dyn hooks::Hooks>> = OnceCell::new();
-
-        /// Please don't use me.
-        pub fn set_module(module: HINSTANCE) {
-            unsafe {
-                MODULE.set(module).unwrap();
-            }
-        }
-
-        /// Please don't use me.
-        pub fn get_module() -> HINSTANCE {
-            unsafe { *MODULE.get().unwrap() }
-        }
-
-        /// Please don't use me.
-        pub fn set_hooks(hooks: Box<dyn hooks::Hooks>) {
-            unsafe { HOOKS.set(hooks).ok() };
-        }
+    /// Build the [`Hudhook`] object.
+    pub fn build(self) -> Hudhook {
+        self.0
     }
 }
 
-pub use {imgui, tracing};
-
-/// Convenience reexports for the [macro](crate::hudhook).
-pub mod reexports {
-    pub use windows::Win32::Foundation::HINSTANCE;
-    pub use windows::Win32::System::Console::{
-        AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
-        ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
-    };
-    pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
-}
-
-/// Entry point for the library.
+/// Entry point generator for the library.
 ///
 /// After implementing your [render loop](crate::hooks) of choice, invoke
 /// the macro to generate the `DllMain` function that will serve as entry point
@@ -275,7 +347,6 @@ pub mod reexports {
 #[macro_export]
 macro_rules! hudhook {
     ($hooks:expr) => {
-        use hudhook::reexports::*;
         use hudhook::tracing::*;
         use hudhook::*;
 
@@ -287,13 +358,14 @@ macro_rules! hudhook {
             _: *mut std::ffi::c_void,
         ) {
             if reason == DLL_PROCESS_ATTACH {
-                hudhook::lifecycle::global_state::set_module(hmodule);
-
                 trace!("DllMain()");
                 std::thread::spawn(move || {
-                    let hooks: Box<dyn hooks::Hooks> = { $hooks };
-                    hooks.hook();
-                    hudhook::lifecycle::global_state::set_hooks(hooks);
+                    if let Err(e) =
+                        Hudhook::builder().with({ $hooks }).with_hmodule(hmodule).build().apply()
+                    {
+                        error!("Couldn't apply hooks: {e:?}");
+                        eject();
+                    }
                 });
             }
         }

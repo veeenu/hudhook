@@ -7,7 +7,7 @@ use std::time::Duration;
 use harness::opengl3::Opengl3Harness;
 use hook::HookExample;
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
-use hudhook::hooks::{Hooks, ImguiRenderLoop};
+use hudhook::*;
 use tracing::metadata::LevelFilter;
 
 #[test]
@@ -23,10 +23,10 @@ fn test_imgui_opengl3() {
     let opengl3_harness = Opengl3Harness::new("OpenGL3 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    unsafe {
-        let hooks: Box<dyn Hooks> = { HookExample::new().into_hook::<ImguiOpenGl3Hooks>() };
-        hooks.hook();
-        hudhook::lifecycle::global_state::set_hooks(hooks);
+    if let Err(e) =
+        Hudhook::builder().with(HookExample::new().into_hook::<ImguiOpenGl3Hooks>()).build().apply()
+    {
+        eprintln!("Couldn't apply hooks: {e:?}");
     }
 
     thread::sleep(Duration::from_millis(5000));

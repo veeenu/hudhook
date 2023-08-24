@@ -9,8 +9,8 @@ struct HookYou;
 impl HookYou {
     fn new() -> Self {
         println!("Initializing");
-        hudhook::utils::alloc_console();
-        hudhook::utils::enable_console_colors();
+        hudhook::alloc_console();
+        hudhook::enable_console_colors();
 
         tracing_subscriber::fmt()
             .with_max_level(LevelFilter::TRACE)
