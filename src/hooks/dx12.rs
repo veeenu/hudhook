@@ -11,9 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
 use windows::core::{w, ComInterface, Interface, HRESULT, PCWSTR};
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
-};
+use windows::Win32::Foundation::{BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -37,6 +35,7 @@ use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHand
 use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::MhHook;
 use crate::renderers::imgui_dx12::RenderEngine;
+use crate::util::{try_out_param, try_out_ptr};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Utilities
@@ -341,14 +340,13 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
         trace!("Initializing renderer");
-        let mut desc = Default::default();
-        swap_chain.GetDesc(&mut desc).expect("GetDesc");
         let dev = swap_chain.GetDevice::<ID3D12Device>().expect("GetDevice");
+        let sd = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         let renderer_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                NumDescriptors: desc.BufferCount,
+                NumDescriptors: sd.BufferCount,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                 NodeMask: 0,
             })
@@ -369,7 +367,7 @@ impl ImguiRenderer {
         let rtv_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                NumDescriptors: desc.BufferCount,
+                NumDescriptors: sd.BufferCount,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
                 NodeMask: 1,
             })
@@ -381,7 +379,7 @@ impl ImguiRenderer {
         let rtv_handle_start = rtv_heap.GetCPUDescriptorHandleForHeapStart();
         trace!("rtv_handle_start ptr {:x}", rtv_handle_start.ptr);
 
-        let frame_contexts: Vec<FrameContext> = (0..desc.BufferCount)
+        let frame_contexts: Vec<FrameContext> = (0..sd.BufferCount)
             .map(|i| {
                 let desc_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                     ptr: rtv_handle_start.ptr + (i * rtv_heap_inc_size) as usize,
@@ -420,7 +418,7 @@ impl ImguiRenderer {
         let engine = RenderEngine::new(
             &mut ctx,
             dev,
-            desc.BufferCount,
+            sd.BufferCount,
             DXGI_FORMAT_R8G8B8A8_UNORM,
             renderer_heap.clone(),
             cpu_desc,
@@ -429,7 +427,7 @@ impl ImguiRenderer {
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-            desc.OutputWindow,
+            sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
@@ -480,32 +478,36 @@ impl ImguiRenderer {
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
-        let mut sd = Default::default();
-        unsafe { swap_chain.GetDesc(&mut sd) }.expect("GetDesc");
-        let mut rect: RECT = Default::default();
+        let sd = try_out_param(|sd| unsafe { swap_chain.GetDesc(sd) }).expect("GetDesc");
+        let rect: Result<RECT, _> =
+            try_out_param(|rect| unsafe { GetClientRect(sd.OutputWindow, rect) });
 
-        if unsafe { GetClientRect(sd.OutputWindow, &mut rect as _).is_ok() } {
-            let io = self.ctx.io_mut();
+        match rect {
+            Ok(rect) => {
+                let io = self.ctx.io_mut();
 
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+                io.display_size =
+                    [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            let mut pos = POINT { x: 0, y: 0 };
+                let mut pos = POINT { x: 0, y: 0 };
 
-            let active_window = unsafe { GetForegroundWindow() };
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == sd.OutputWindow
-                    || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
-            {
-                let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
-                if gcp.is_ok()
-                    && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
+                let active_window = unsafe { GetForegroundWindow() };
+                if !HANDLE(active_window.0).is_invalid()
+                    && (active_window == sd.OutputWindow
+                        || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
                 {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
+                    let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
+                    if gcp.is_ok()
+                        && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
+                    {
+                        io.mouse_pos[0] = pos.x as _;
+                        io.mouse_pos[1] = pos.y as _;
+                    }
                 }
-            }
-        } else {
-            trace!("GetClientRect error: {:?}", unsafe { GetLastError() });
+            },
+            Err(e) => {
+                trace!("GetClientRect error: {e:?}");
+            },
         }
 
         let command_queue = match self.command_queue.as_ref() {
@@ -591,8 +593,7 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain3>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let mut sd = Default::default();
-        swap_chain.GetDesc(&mut sd).expect("GetDesc");
+        let sd = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
@@ -631,9 +632,9 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
-    let mut dev: Option<ID3D12Device> = None;
-    unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut dev) }.unwrap();
-    let dev = dev.unwrap();
+    let dev: ID3D12Device =
+        try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
+            .expect("D3D12CreateDevice");
 
     let queue_desc = D3D12_COMMAND_QUEUE_DESC {
         Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -646,8 +647,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
 
     let dummy_hwnd = DummyHwnd::new();
-    let mut p_swap_chain: Option<IDXGISwapChain> = None;
-    if let Err(e) = unsafe {
+    let swap_chain: IDXGISwapChain = match try_out_ptr(|v| unsafe {
         factory
             .CreateSwapChain(
                 &command_queue,
@@ -668,17 +668,16 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
                     SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                     Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as _,
                 },
-                &mut p_swap_chain,
+                v,
             )
             .ok()
-    } {
-        unsafe {
+    }) {
+        Ok(swap_chain) => swap_chain,
+        Err(e) => unsafe {
             print_dxgi_debug_messages();
             panic!("{e:?}");
-        }
-    }
-
-    let swap_chain = p_swap_chain.unwrap();
+        },
+    };
 
     let present_ptr = swap_chain.vtable().Present;
     let ecl_ptr = command_queue.vtable().ExecuteCommandLists;

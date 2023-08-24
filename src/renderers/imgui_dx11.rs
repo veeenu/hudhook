@@ -1,3 +1,5 @@
+use std::slice;
+
 use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawListIterator, DrawVert};
 use tracing::{error, trace};
@@ -35,6 +37,8 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+
+use crate::util::try_out_ptr;
 
 const DEVICE_FLAGS: D3D11_CREATE_DEVICE_FLAG = D3D11_CREATE_DEVICE_DEBUG;
 
@@ -255,13 +259,13 @@ impl DeviceAndSwapChain {
         let back_buffer = unsafe {
             let p_back_buffer: ID3D11Resource = swap_chain.GetBuffer(0).expect("GetBuffer");
 
-            let mut back_buffer = None;
-            dev.CreateRenderTargetView(&p_back_buffer, None, Some(&mut back_buffer))
-                .expect("CreateRenderTargetView");
+            let back_buffer: ID3D11RenderTargetView =
+                try_out_ptr(|v| dev.CreateRenderTargetView(&p_back_buffer, None, Some(v)))
+                    .expect("CreateRenderTargetView");
 
-            dev_ctx.OMSetRenderTargets(Some(&[back_buffer.clone()]), None);
+            dev_ctx.OMSetRenderTargets(Some(&[Some(back_buffer.clone())]), None);
 
-            back_buffer.unwrap()
+            back_buffer
         };
 
         unsafe {
@@ -362,24 +366,21 @@ struct VertexConstantBuffer([[f32; 4]; 4]);
 
 impl Buffers {
     fn new(dasc: &DeviceAndSwapChain) -> Self {
-        let mut mtx_buffer: Option<ID3D11Buffer> = None;
-        unsafe {
-            dasc.dev()
-                .CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        MiscFlags: 0,
-                        StructureByteStride: 0,
-                    },
-                    None,
-                    Some(&mut mtx_buffer),
-                )
-                .expect("CreateBuffer")
-        };
-        let mtx_buffer = mtx_buffer.unwrap();
+        let mtx_buffer: ID3D11Buffer = try_out_ptr(|v| unsafe {
+            dasc.dev().CreateBuffer(
+                &D3D11_BUFFER_DESC {
+                    ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
+                    Usage: D3D11_USAGE_DYNAMIC,
+                    BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+                    MiscFlags: 0,
+                    StructureByteStride: 0,
+                },
+                None,
+                Some(v),
+            )
+        })
+        .expect("CreateBuffer");
 
         let vtx_buffer = Buffers::create_vertex_buffer(dasc, 1);
         let idx_buffer = Buffers::create_index_buffer(dasc, 1);
@@ -439,45 +440,41 @@ impl Buffers {
     }
 
     fn create_vertex_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
-        let mut buf: Option<ID3D11Buffer> = None;
-        unsafe {
-            dasc.dev()
-                .CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
-                        BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        MiscFlags: 0,
-                        StructureByteStride: 0,
-                    },
-                    None,
-                    Some(&mut buf),
-                )
-                .expect("CreateBuffer")
-        };
-        buf.unwrap()
+        let buf: ID3D11Buffer = try_out_ptr(|v| unsafe {
+            dasc.dev().CreateBuffer(
+                &D3D11_BUFFER_DESC {
+                    Usage: D3D11_USAGE_DYNAMIC,
+                    ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
+                    BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+                    MiscFlags: 0,
+                    StructureByteStride: 0,
+                },
+                None,
+                Some(v),
+            )
+        })
+        .expect("CreateBuffer");
+        buf
     }
 
     fn create_index_buffer(dasc: &DeviceAndSwapChain, size: usize) -> ID3D11Buffer {
-        let mut buf: Option<ID3D11Buffer> = None;
-        unsafe {
-            dasc.dev()
-                .CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
-                        BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        MiscFlags: 0,
-                        StructureByteStride: 0,
-                    },
-                    None,
-                    Some(&mut buf),
-                )
-                .expect("CreateBuffer")
-        };
-        buf.unwrap()
+        let buf: ID3D11Buffer = try_out_ptr(|v| unsafe {
+            dasc.dev().CreateBuffer(
+                &D3D11_BUFFER_DESC {
+                    Usage: D3D11_USAGE_DYNAMIC,
+                    ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
+                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+                    MiscFlags: 0,
+                    StructureByteStride: 0,
+                },
+                None,
+                Some(v),
+            )
+        })
+        .expect("CreateBuffer");
+        buf
     }
 
     fn vtx_buffer(&self) -> ID3D11Buffer {
@@ -505,8 +502,7 @@ impl Texture {
         let texture = fonts.build_rgba32_texture();
         let data = texture.data.to_vec();
 
-        let mut tex = None;
-        unsafe {
+        let tex: ID3D11Texture2D = try_out_ptr(|v| unsafe {
             dasc.dev().CreateTexture2D(
                 &D3D11_TEXTURE2D_DESC {
                     Width: texture.width as _,
@@ -519,19 +515,17 @@ impl Texture {
                     BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
                     CPUAccessFlags: 0, // D3D11_CPU_ACCESS_FLAG(0),
                     MiscFlags: 0,      // D3D11_RESOURCE_MISC_FLAG(0),
-                } as *const _,
+                },
                 Some(&D3D11_SUBRESOURCE_DATA {
                     pSysMem: data.as_ptr() as _,
                     SysMemPitch: texture.width * 4,
                     SysMemSlicePitch: 0,
                 }),
-                Some(&mut tex),
-            )?
-        };
-        let tex = tex.unwrap();
+                Some(v),
+            )
+        })?;
 
-        let mut tex_view = None;
-        unsafe {
+        let tex_view: ID3D11ShaderResourceView = try_out_ptr(|v| unsafe {
             dasc.dev().CreateShaderResourceView(
                 &tex,
                 Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
@@ -541,13 +535,11 @@ impl Texture {
                         Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
                     },
                 }),
-                Some(&mut tex_view),
-            )?
-        };
-        let tex_view = tex_view.unwrap();
+                Some(v),
+            )
+        })?;
 
-        let mut _font_sampler = None;
-        unsafe {
+        let _font_sampler: ID3D11SamplerState = try_out_ptr(|v| unsafe {
             dasc.dev().CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
                     Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
@@ -561,10 +553,9 @@ impl Texture {
                     BorderColor: [0.; 4],
                     MaxAnisotropy: 0,
                 },
-                Some(&mut _font_sampler),
-            )?
-        };
-        let _font_sampler = _font_sampler.unwrap();
+                Some(v),
+            )
+        })?;
 
         fonts.tex_id = imgui::TextureId::from(&tex_view as *const _ as usize);
         trace!("Texture view: {:x} id: {:x}", &tex_view as *const _ as usize, fonts.tex_id.id());
@@ -750,10 +741,7 @@ struct ShaderProgram {
 
 impl ShaderProgram {
     fn new(dasc: &DeviceAndSwapChain) -> Result<ShaderProgram, Error> {
-        let mut vs_blob: Option<ID3DBlob> = None;
-        let mut ps_blob: Option<ID3DBlob> = None;
-
-        unsafe {
+        let vs_blob: ID3DBlob = try_out_ptr(|v| unsafe {
             D3DCompile(
                 VERTEX_SHADER_SRC.as_ptr() as _,
                 VERTEX_SHADER_SRC.len(),
@@ -764,12 +752,12 @@ impl ShaderProgram {
                 s!("vs_4_0\0"),
                 0,
                 0,
-                &mut vs_blob,
+                v,
                 None,
-            )?
-        };
+            )
+        })?;
 
-        unsafe {
+        let ps_blob = try_out_ptr(|v| unsafe {
             D3DCompile(
                 PIXEL_SHADER_SRC.as_ptr() as _,
                 PIXEL_SHADER_SRC.len(),
@@ -780,40 +768,24 @@ impl ShaderProgram {
                 s!("ps_4_0\0"),
                 0,
                 0,
-                &mut ps_blob as *mut _ as _,
+                v,
                 None,
-            )?
-        };
+            )
+        })?;
 
-        let vtx_shader = unsafe {
-            let mut v = None;
-            let vs_blob = vs_blob.as_ref().unwrap();
+        let vtx_shader = try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
-            dasc.dev().CreateVertexShader(
-                std::slice::from_raw_parts(ptr as _, size),
-                None,
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+            dasc.dev().CreateVertexShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
+        })?;
 
-        let pix_shader = unsafe {
-            let mut v = None;
-            let ps_blob = ps_blob.as_ref().unwrap();
+        let pix_shader = try_out_ptr(|v| unsafe {
             let ptr = ps_blob.GetBufferPointer();
             let size = ps_blob.GetBufferSize();
-            dasc.dev().CreatePixelShader(
-                std::slice::from_raw_parts(ptr as _, size),
-                None,
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+            dasc.dev().CreatePixelShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
+        })?;
 
-        let layout = unsafe {
-            let mut v = None;
-            let vs_blob = vs_blob.as_ref().unwrap();
+        let layout = try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
             dasc.dev().CreateInputLayout(
@@ -846,14 +818,12 @@ impl ShaderProgram {
                         InstanceDataStepRate: 0,
                     },
                 ],
-                std::slice::from_raw_parts(ptr as _, size),
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+                slice::from_raw_parts(ptr as _, size),
+                Some(v),
+            )
+        })?;
 
-        let sampler = unsafe {
-            let mut v = None;
+        let sampler = try_out_ptr(|v| unsafe {
             dasc.dev().CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
                     Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
@@ -867,13 +837,11 @@ impl ShaderProgram {
                     BorderColor: [0.; 4],
                     MaxAnisotropy: 0,
                 },
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+                Some(v),
+            )
+        })?;
 
-        let blend_state = unsafe {
-            let mut v = None;
+        let blend_state = try_out_ptr(|v| unsafe {
             dasc.dev().CreateBlendState(
                 &D3D11_BLEND_DESC {
                     AlphaToCoverageEnable: BOOL(0),
@@ -898,13 +866,11 @@ impl ShaderProgram {
                         std::mem::zeroed(),
                     ],
                 },
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+                Some(v),
+            )
+        })?;
 
-        let rasterizer_state = unsafe {
-            let mut v = None;
+        let rasterizer_state = try_out_ptr(|v| unsafe {
             dasc.dev().CreateRasterizerState(
                 &D3D11_RASTERIZER_DESC {
                     FillMode: D3D11_FILL_SOLID,
@@ -918,13 +884,11 @@ impl ShaderProgram {
                     AntialiasedLineEnable: BOOL(0),
                     FrontCounterClockwise: BOOL(0),
                 },
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+                Some(v),
+            )
+        })?;
 
-        let depth_stencil_state = unsafe {
-            let mut v = None;
+        let depth_stencil_state = try_out_ptr(|v| unsafe {
             dasc.dev().CreateDepthStencilState(
                 &D3D11_DEPTH_STENCIL_DESC {
                     DepthEnable: BOOL(0),
@@ -946,10 +910,9 @@ impl ShaderProgram {
                         StencilFunc: D3D11_COMPARISON_ALWAYS,
                     },
                 },
-                Some(&mut v),
-            )?;
-            v.unwrap()
-        };
+                Some(v),
+            )
+        })?;
 
         Ok(ShaderProgram {
             vtx_shader,

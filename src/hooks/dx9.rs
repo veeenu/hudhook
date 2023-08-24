@@ -26,6 +26,7 @@ use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHand
 use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::MhHook;
 use crate::renderers::imgui_dx9;
+use crate::util::try_out_ptr;
 
 unsafe fn draw(this: &IDirect3DDevice9) {
     let mut imgui_renderer = IMGUI_RENDERER
@@ -299,17 +300,17 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     };
 
     let dummy_hwnd = DummyHwnd::new();
-    let mut device: Option<IDirect3DDevice9> = None;
-    d9.CreateDevice(
-        D3DADAPTER_DEFAULT,
-        D3DDEVTYPE_NULLREF,
-        dummy_hwnd.hwnd(), // GetDesktopWindow(),
-        D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
-        &mut present_params,
-        &mut device,
-    )
+    let device: IDirect3DDevice9 = try_out_ptr(|v| {
+        d9.CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_NULLREF,
+            dummy_hwnd.hwnd(), // GetDesktopWindow(),
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
+            &mut present_params,
+            v,
+        )
+    })
     .expect("IDirect3DDevice9::CreateDevice: failed to create device");
-    let device = device.unwrap();
 
     let end_scene_ptr = device.vtable().EndScene;
     let present_ptr = device.vtable().Present;

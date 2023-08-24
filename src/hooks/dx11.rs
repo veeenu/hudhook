@@ -34,6 +34,7 @@ use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHand
 use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::MhHook;
 use crate::renderers::imgui_dx11;
+use crate::util::try_out_param;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -161,8 +162,7 @@ impl ImguiRenderer {
 
         let dev: ID3D11Device = swap_chain.GetDevice().expect("GetDevice");
         let dev_ctx: ID3D11DeviceContext = dev.GetImmediateContext().expect("GetImmediateContext");
-        let mut sd: DXGI_SWAP_CHAIN_DESC = Default::default();
-        swap_chain.GetDesc(&mut sd).expect("GetDesc");
+        let sd: DXGI_SWAP_CHAIN_DESC = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         let engine =
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
@@ -193,8 +193,7 @@ impl ImguiRenderer {
         trace!("Present impl: Rendering");
 
         let swap_chain = self.store_swap_chain(swap_chain);
-        let mut sd: DXGI_SWAP_CHAIN_DESC = Default::default();
-        swap_chain.GetDesc(&mut sd).expect("GetDesc");
+        let sd: DXGI_SWAP_CHAIN_DESC = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         if let Some(rect) = self.engine.get_client_rect() {
             let io = self.ctx_mut().io_mut();
@@ -238,8 +237,7 @@ impl ImguiRenderer {
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let mut sd = Default::default();
-        swap_chain.GetDesc(&mut sd).unwrap();
+        let sd: DXGI_SWAP_CHAIN_DESC = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);

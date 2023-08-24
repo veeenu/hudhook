@@ -1,5 +1,6 @@
 //! This module contains functions related to processing input events.
 
+use std::ffi::c_void;
 use std::mem::size_of;
 
 use imgui::Io;
@@ -150,7 +151,7 @@ fn handle_raw_input(io: &mut Io, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM)
         GetRawInputData(
             HRAWINPUT(lparam),
             RID_INPUT,
-            Some(&mut raw_data as *mut _ as _),
+            Some(&mut raw_data as *mut _ as *mut c_void),
             &mut raw_data_size,
             raw_data_header_size,
         )

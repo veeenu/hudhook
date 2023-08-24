@@ -395,6 +395,7 @@ impl Renderer {
     ) -> Result<(IDirect3DVertexBuffer9, usize)> {
         let len = vtx_count + VERTEX_BUF_ADD_CAPACITY;
         let mut vertex_buffer: Option<IDirect3DVertexBuffer9> = None;
+
         device.CreateVertexBuffer(
             (len * mem::size_of::<CustomVertex>()) as u32,
             (D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY) as u32,
