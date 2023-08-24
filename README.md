@@ -8,8 +8,6 @@ overlays, largely inspired by [CheatEngine](https://cheatengine.org/).
 
 Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3.
 
-Compiles on Rust nightly only.
-
 Read the tutorial book [here](https://veeenu.github.io/hudhook).
 
 Read the API reference [here](https://veeenu.github.io/hudhook/rustdoc/hudhook).
