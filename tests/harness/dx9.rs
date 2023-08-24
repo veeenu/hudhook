@@ -8,12 +8,11 @@ use std::thread::{self, JoinHandle};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL,
-    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
+    Direct3DCreate9, D3DADAPTER_DEFAULT, D3DCLEAR_TARGET, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+    D3DDEVTYPE_HAL, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::System::SystemServices::D3DCLEAR_TARGET;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
@@ -41,7 +40,7 @@ impl Dx9Harness {
                 let wnd_class = WNDCLASSA {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
-                    hInstance: hinstance,
+                    hInstance: hinstance.into(),
                     lpszClassName: PCSTR("MyClass\0".as_ptr()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
@@ -69,7 +68,7 @@ impl Dx9Harness {
                         HWND(0),
                         HMENU(0),
                         hinstance,
-                        null(),
+                        None,
                     )
                 };
 

@@ -1,7 +1,7 @@
 //! Hook for DirectX 12 applications.
 use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use std::{hint, thread};
@@ -10,11 +10,8 @@ use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, info, trace};
-use windows::core::{Interface, HRESULT, HSTRING, PCWSTR};
-use windows::w;
-use windows::Win32::Foundation::{
-    GetLastError, BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
-};
+use windows::core::{w, ComInterface, Interface, HRESULT, PCWSTR};
+use windows::Win32::Foundation::{BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
@@ -25,8 +22,9 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
-use windows::Win32::System::WindowsProgramming::INFINITE;
+use windows::Win32::System::Threading::{
+    CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
+};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -37,6 +35,7 @@ use crate::hooks::common::{imgui_wnd_proc_impl, DummyHwnd, ImguiWindowsEventHand
 use crate::hooks::{Hooks, ImguiRenderLoop};
 use crate::mh::MhHook;
 use crate::renderers::imgui_dx12::RenderEngine;
+use crate::util::{try_out_param, try_out_ptr};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Utilities
@@ -126,7 +125,7 @@ static TRAMPOLINE: OnceCell<(
     ResizeBuffersType,
 )> = OnceCell::new();
 
-const COMMAND_ALLOCATOR_NAMES: [&HSTRING; 8] = [
+const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #0"),
     w!("hudhook Command allocator #1"),
     w!("hudhook Command allocator #2"),
@@ -146,10 +145,10 @@ unsafe fn print_dxgi_debug_messages() {
 
     for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
         let mut msg_len: usize = 0;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
         let diqm = vec![0u8; msg_len];
         let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
         let diqm = pdiqm.as_ref().unwrap();
         debug!(
             "[DIQ] {}",
@@ -341,13 +340,13 @@ struct ImguiRenderer {
 impl ImguiRenderer {
     unsafe fn new(swap_chain: IDXGISwapChain3) -> Self {
         trace!("Initializing renderer");
-        let desc = swap_chain.GetDesc().unwrap();
-        let dev = swap_chain.GetDevice::<ID3D12Device>().unwrap();
+        let dev = swap_chain.GetDevice::<ID3D12Device>().expect("GetDevice");
+        let sd = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         let renderer_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                NumDescriptors: desc.BufferCount,
+                NumDescriptors: sd.BufferCount,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                 NodeMask: 0,
             })
@@ -368,7 +367,7 @@ impl ImguiRenderer {
         let rtv_heap: ID3D12DescriptorHeap = dev
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                NumDescriptors: desc.BufferCount,
+                NumDescriptors: sd.BufferCount,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
                 NodeMask: 1,
             })
@@ -380,15 +379,15 @@ impl ImguiRenderer {
         let rtv_handle_start = rtv_heap.GetCPUDescriptorHandleForHeapStart();
         trace!("rtv_handle_start ptr {:x}", rtv_handle_start.ptr);
 
-        let frame_contexts: Vec<FrameContext> = (0..desc.BufferCount)
+        let frame_contexts: Vec<FrameContext> = (0..sd.BufferCount)
             .map(|i| {
                 let desc_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                     ptr: rtv_handle_start.ptr + (i * rtv_heap_inc_size) as usize,
                 };
                 trace!("desc handle {i} ptr {:x}", desc_handle.ptr);
 
-                let back_buffer = swap_chain.GetBuffer(i).unwrap();
-                dev.CreateRenderTargetView(&back_buffer, null(), desc_handle);
+                let back_buffer: ID3D12Resource = swap_chain.GetBuffer(i).expect("GetBuffer");
+                dev.CreateRenderTargetView(&back_buffer, None, desc_handle);
 
                 let command_allocator: ID3D12CommandAllocator =
                     dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT).unwrap();
@@ -405,7 +404,7 @@ impl ImguiRenderer {
                     command_allocator,
                     fence: dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                     fence_val: 0,
-                    fence_event: CreateEventExW(null(), PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
+                    fence_event: CreateEventExW(None, PCWSTR(null()), CREATE_EVENT(0), 0x1F0003)
                         .unwrap(),
                 }
             })
@@ -419,7 +418,7 @@ impl ImguiRenderer {
         let engine = RenderEngine::new(
             &mut ctx,
             dev,
-            desc.BufferCount,
+            sd.BufferCount,
             DXGI_FORMAT_R8G8B8A8_UNORM,
             renderer_heap.clone(),
             cpu_desc,
@@ -428,7 +427,7 @@ impl ImguiRenderer {
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
-            desc.OutputWindow,
+            sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
@@ -479,31 +478,36 @@ impl ImguiRenderer {
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
         trace!("Rendering started");
-        let sd = unsafe { swap_chain.GetDesc() }.unwrap();
-        let mut rect: RECT = Default::default();
+        let sd = try_out_param(|sd| unsafe { swap_chain.GetDesc(sd) }).expect("GetDesc");
+        let rect: Result<RECT, _> =
+            try_out_param(|rect| unsafe { GetClientRect(sd.OutputWindow, rect) });
 
-        if unsafe { GetClientRect(sd.OutputWindow, &mut rect as _).as_bool() } {
-            let io = self.ctx.io_mut();
+        match rect {
+            Ok(rect) => {
+                let io = self.ctx.io_mut();
 
-            io.display_size = [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+                io.display_size =
+                    [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
 
-            let mut pos = POINT { x: 0, y: 0 };
+                let mut pos = POINT { x: 0, y: 0 };
 
-            let active_window = unsafe { GetForegroundWindow() };
-            if !HANDLE(active_window.0).is_invalid()
-                && (active_window == sd.OutputWindow
-                    || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
-            {
-                let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
-                if gcp.as_bool()
-                    && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
+                let active_window = unsafe { GetForegroundWindow() };
+                if !HANDLE(active_window.0).is_invalid()
+                    && (active_window == sd.OutputWindow
+                        || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
                 {
-                    io.mouse_pos[0] = pos.x as _;
-                    io.mouse_pos[1] = pos.y as _;
+                    let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
+                    if gcp.is_ok()
+                        && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
+                    {
+                        io.mouse_pos[0] = pos.x as _;
+                        io.mouse_pos[1] = pos.y as _;
+                    }
                 }
-            }
-        } else {
-            trace!("GetClientRect error: {:x}", unsafe { GetLastError().0 });
+            },
+            Err(e) => {
+                trace!("GetClientRect error: {e:?}");
+            },
         }
 
         let command_queue = match self.command_queue.as_ref() {
@@ -520,8 +524,9 @@ impl ImguiRenderer {
         unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui);
         let draw_data = ctx.render();
 
+        let back_buffer = ManuallyDrop::new(Some(frame_context.back_buffer.clone()));
         let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: Some(frame_context.back_buffer.clone()),
+            pResource: back_buffer,
             Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
             StateBefore: D3D12_RESOURCE_STATE_PRESENT,
             StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -535,7 +540,6 @@ impl ImguiRenderer {
 
         frame_context.wait_fence();
         frame_context.incr();
-
         let command_allocator = &frame_context.command_allocator;
 
         unsafe {
@@ -544,9 +548,9 @@ impl ImguiRenderer {
             self.command_list.ResourceBarrier(&[barrier.clone()]);
             self.command_list.OMSetRenderTargets(
                 1,
-                &frame_context.desc_handle,
+                Some(&frame_context.desc_handle),
                 BOOL::from(false),
-                null(),
+                None,
             );
             self.command_list.SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
         };
@@ -572,23 +576,25 @@ impl ImguiRenderer {
         unsafe {
             self.command_list.ResourceBarrier(&barriers);
             self.command_list.Close().unwrap();
-            command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().into())]);
+            command_queue.ExecuteCommandLists(&[Some(self.command_list.cast().unwrap())]);
             command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
         }
 
         let barrier = barriers.into_iter().next().unwrap();
 
-        let _ = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+        let _ = ManuallyDrop::into_inner(transition.pResource);
+
         trace!("Rendering done in {:?}", render_start.elapsed());
         None
     }
 
     unsafe fn cleanup(&mut self, swap_chain: Option<IDXGISwapChain3>) {
         let swap_chain = self.store_swap_chain(swap_chain);
-        let desc = swap_chain.GetDesc().unwrap();
+        let sd = try_out_param(|sd| swap_chain.GetDesc(sd)).expect("GetDesc");
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        SetWindowLongPtrA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
+        SetWindowLongPtrA(sd.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as isize);
 
         #[cfg(target_arch = "x86")]
         SetWindowLongA(desc.OutputWindow, GWLP_WNDPROC, self.wnd_proc as usize as i32);
@@ -624,9 +630,9 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
-    let mut dev: Option<ID3D12Device> = None;
-    unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut dev) }.unwrap();
-    let dev = dev.unwrap();
+    let dev: ID3D12Device =
+        try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
+            .expect("D3D12CreateDevice");
 
     let queue_desc = D3D12_COMMAND_QUEUE_DESC {
         Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -639,8 +645,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
         unsafe { dev.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
 
     let dummy_hwnd = DummyHwnd::new();
-    let mut p_swap_chain: Option<IDXGISwapChain> = None;
-    if let Err(e) = unsafe {
+    let swap_chain: IDXGISwapChain = match try_out_ptr(|v| unsafe {
         factory
             .CreateSwapChain(
                 &command_queue,
@@ -661,17 +666,16 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
                     SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                     Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as _,
                 },
-                &mut p_swap_chain,
+                v,
             )
             .ok()
-    } {
-        unsafe {
+    }) {
+        Ok(swap_chain) => swap_chain,
+        Err(e) => unsafe {
             print_dxgi_debug_messages();
             panic!("{e:?}");
-        }
-    }
-
-    let swap_chain = p_swap_chain.unwrap();
+        },
+    };
 
     let present_ptr = swap_chain.vtable().Present;
     let ecl_ptr = command_queue.vtable().ExecuteCommandLists;

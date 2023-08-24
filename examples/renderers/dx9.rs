@@ -23,7 +23,7 @@
 #![no_main]
 
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use hudhook::renderers::imgui_dx9::Renderer;
 use imgui::Condition;
@@ -31,7 +31,7 @@ use tracing::metadata::LevelFilter;
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, IDirect3D9, IDirect3DDevice9, D3DADAPTER_DEFAULT,
+    Direct3DCreate9, IDirect3D9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DCLEAR_TARGET,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DFMT_R5G6B5, D3DMULTISAMPLE_NONE,
     D3DPRESENT_INTERVAL_DEFAULT, D3DPRESENT_PARAMETERS, D3DPRESENT_RATE_DEFAULT,
     D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
@@ -41,7 +41,6 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::System::SystemServices::D3DCLEAR_TARGET;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
     PostQuitMessage, RegisterClassA, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW, HCURSOR,
@@ -104,7 +103,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         lpfnWndProc: Some(window_proc),
         cbClsExtra: 0,
         cbWndExtra: 0,
-        hInstance: hinstance,
+        hInstance: hinstance.into(),
         hIcon: HICON(0),
         hCursor: HCURSOR(0),
         hbrBackground: HBRUSH(0),
@@ -113,7 +112,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     };
     unsafe { RegisterClassA(&wnd_class) };
     let mut rect = RECT { left: 0, top: 0, right: WINDOW_WIDTH as _, bottom: WINDOW_HEIGHT as _ };
-    unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false)) };
+    unsafe {
+        AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))
+            .expect("GetWindowRect")
+    };
     let handle = unsafe {
         CreateWindowExA(
             WINDOW_EX_STYLE(0),
@@ -128,7 +130,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             HWND(0),
             HMENU(0),
             hinstance,
-            null(),
+            None,
         )
     };
 
@@ -148,10 +150,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 eprintln!("Debug Message {i}");
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 eprintln!(
                     "{}",

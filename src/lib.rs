@@ -2,12 +2,10 @@
 //!
 //! This library implements a mechanism for hooking into the
 //! render loop of applications and drawing things on screen via
-//! [`imgui`](https://docs.rs/imgui/0.8.0/imgui/). It has been largely inspired
+//! [`imgui`](https://docs.rs/imgui/0.11.0/imgui/). It has been largely inspired
 //! by [CheatEngine](https://www.cheatengine.org/).
 //!
 //! Currently, DirectX9, DirectX 11, DirectX 12 and OpenGL 3 are supported.
-//!
-//! This library **requires** Rust nightly.
 //!
 //! For complete, fully fledged examples of usage, check out the following
 //! projects:
@@ -118,6 +116,7 @@ use std::thread;
 
 use once_cell::sync::OnceCell;
 use tracing::error;
+use windows::core::Error;
 pub use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::Console::{
     AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
@@ -138,16 +137,20 @@ pub mod renderers;
 #[cfg(feature = "inject")]
 pub mod inject;
 
+mod util;
+
 // Global state objects.
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
 /// Allocate a Windows console.
-pub fn alloc_console() {
+pub fn alloc_console() -> Result<(), Error> {
     if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
-        unsafe { AllocConsole() };
+        unsafe { AllocConsole()? };
     }
+
+    Ok(())
 }
 
 /// Enable console colors if the console is allocated.
@@ -172,10 +175,12 @@ pub fn enable_console_colors() {
 }
 
 /// Free the previously allocated Windows console.
-pub fn free_console() {
+pub fn free_console() -> Result<(), Error> {
     if CONSOLE_ALLOCATED.swap(false, Ordering::SeqCst) {
-        unsafe { FreeConsole() };
+        unsafe { FreeConsole()? };
     }
+
+    Ok(())
 }
 
 /// Disable hooks and eject the DLL.
@@ -190,7 +195,9 @@ pub fn free_console() {
 /// dropping/resetting the contents of static mutable variables).
 pub fn eject() {
     thread::spawn(|| unsafe {
-        free_console();
+        if let Err(e) = free_console() {
+            error!("{e:?}");
+        }
 
         if let Some(mut hudhook) = HUDHOOK.take() {
             if let Err(e) = hudhook.unapply() {
@@ -290,7 +297,6 @@ impl Hudhook {
 ///     _: *mut std::ffi::c_void,
 /// ) {
 ///     if reason == DLL_PROCESS_ATTACH {
-///         trace!("DllMain()");
 ///         std::thread::spawn(move || {
 ///             let hooks = Hudhook::builder()
 ///                 .with(MyRenderLoop.into_hook::<ImguiDx12Hooks>())
@@ -353,13 +359,13 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: HINSTANCE,
+            hmodule: ::hudhook::HINSTANCE,
             reason: u32,
-            _: *mut std::ffi::c_void,
+            _: *mut ::std::ffi::c_void,
         ) {
             if reason == DLL_PROCESS_ATTACH {
                 trace!("DllMain()");
-                std::thread::spawn(move || {
+                ::std::thread::spawn(move || {
                     if let Err(e) =
                         Hudhook::builder().with({ $hooks }).with_hmodule(hmodule).build().apply()
                     {

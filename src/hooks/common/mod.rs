@@ -3,8 +3,7 @@ use std::ptr::null;
 
 use imgui::Key;
 use tracing::debug;
-use windows::core::PCWSTR;
-use windows::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -120,12 +119,12 @@ impl DummyHwnd {
             lpfnWndProc: Some(wnd_proc),
             cbClsExtra: 0,
             cbWndExtra: 0,
-            hInstance: unsafe { GetModuleHandleW(None).unwrap() },
+            hInstance: unsafe { GetModuleHandleW(None).unwrap().into() },
             hIcon: HICON(0),
             hCursor: HCURSOR(0),
             hbrBackground: HBRUSH(0),
             lpszMenuName: PCWSTR(null()),
-            lpszClassName: w!("HUDHOOK").into(),
+            lpszClassName: w!("HUDHOOK"),
             hIconSm: HICON(0),
         };
         debug!("{:?}", wndclass);
@@ -145,7 +144,7 @@ impl DummyHwnd {
                 HWND_MESSAGE,
                 None,
                 wndclass.hInstance,
-                null(),
+                None,
             )
         };
         debug!("{:?}", hwnd);
@@ -163,8 +162,8 @@ impl Drop for DummyHwnd {
     fn drop(&mut self) {
         // Destroy the window and unregister the class.
         unsafe {
-            DestroyWindow(self.0);
-            UnregisterClassW(self.1.lpszClassName, self.1.hInstance);
+            DestroyWindow(self.0).expect("DestroyWindow");
+            UnregisterClassW(self.1.lpszClassName, self.1.hInstance).expect("DestroyWindow");
         }
     }
 }

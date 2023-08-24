@@ -4,9 +4,9 @@
 #![no_main]
 
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 
-use windows::core::{HSTRING, PCSTR, PCWSTR};
+use windows::core::{s, HSTRING, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Dxgi::{
     DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
@@ -27,8 +27,8 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
     let wnd_class = WNDCLASSA {
         style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
         lpfnWndProc: Some(window_proc),
-        hInstance: hinstance,
-        lpszClassName: PCSTR("MyClass\0".as_ptr()),
+        hInstance: hinstance.into(),
+        lpszClassName: s!("MyClass\0"),
         cbClsExtra: 0,
         cbWndExtra: 0,
         hIcon: HICON(0),
@@ -51,7 +51,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
             HWND(0),   // hWndParent
             HMENU(0),  // hMenu
             hinstance, // hInstance
-            null(),
+            None,
         )
     }; // lpParam
 
@@ -76,10 +76,10 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
         unsafe {
             for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                 let mut msg_len: usize = 0;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                 let diqm = vec![0u8; msg_len];
                 let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
                 let diqm = pdiqm.as_ref().unwrap();
                 println!(
                     "{}",
@@ -125,10 +125,10 @@ pub unsafe extern "system" fn window_proc(
             let mut paint_struct = MaybeUninit::uninit();
             let mut rect = MaybeUninit::uninit();
             let hdc = BeginPaint(hwnd, paint_struct.as_mut_ptr());
-            GetClientRect(hwnd, rect.as_mut_ptr());
+            GetClientRect(hwnd, rect.as_mut_ptr()).expect("GetClientRect");
             DrawTextA(
                 hdc,
-                "Test\0".as_bytes(),
+                &mut b"Test".to_vec(),
                 rect.as_mut_ptr(),
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER,
             );

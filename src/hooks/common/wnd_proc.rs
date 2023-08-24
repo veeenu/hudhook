@@ -1,14 +1,15 @@
 //! This module contains functions related to processing input events.
 
+use std::ffi::c_void;
 use std::mem::size_of;
 
 use imgui::Io;
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyA, VIRTUAL_KEY, VK_CONTROL, VK_LBUTTON, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
-    VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
-    VK_XBUTTON1, VK_XBUTTON2,
+    MapVirtualKeyA, MAPVK_VSC_TO_VK_EX, VIRTUAL_KEY, VK_CONTROL, VK_LBUTTON, VK_LCONTROL, VK_LMENU,
+    VK_LSHIFT, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN,
+    VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
 };
 use windows::Win32::UI::Input::{
     GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE_0_0,
@@ -150,7 +151,7 @@ fn handle_raw_input(io: &mut Io, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM)
         GetRawInputData(
             HRAWINPUT(lparam),
             RID_INPUT,
-            &mut raw_data as *mut _ as _,
+            Some(&mut raw_data as *mut _ as *mut c_void),
             &mut raw_data_size,
             raw_data_header_size,
         )
@@ -259,7 +260,7 @@ where
             io.mouse_down[2] = true;
         },
         WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
             io.mouse_down[btn] = true;
         },
         WM_LBUTTONUP => {
@@ -272,7 +273,7 @@ where
             io.mouse_down[2] = false;
         },
         WM_XBUTTONUP => {
-            let btn = if hiword(wparam as _) == XBUTTON1.0 as u16 { 3 } else { 4 };
+            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
             io.mouse_down[btn] = false;
         },
         WM_MOUSEWHEEL => {

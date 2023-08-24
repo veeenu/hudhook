@@ -1,5 +1,3 @@
-#![feature(lazy_cell)]
-
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::hooks::ImguiRenderLoop;
 use imgui::Condition;
@@ -9,7 +7,7 @@ struct HookYou;
 impl HookYou {
     fn new() -> Self {
         println!("Initializing");
-        hudhook::alloc_console();
+        hudhook::alloc_console().expect("AllocConsole");
         hudhook::enable_console_colors();
 
         tracing_subscriber::fmt()

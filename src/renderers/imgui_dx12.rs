@@ -7,8 +7,7 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use tracing::{error, trace};
-use windows::core::{Result, PCSTR, PCWSTR};
-use windows::w;
+use windows::core::{s, w, ComInterface, Result, PCSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -17,6 +16,8 @@ use windows::Win32::Graphics::Direct3D::{
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::System::Threading::{CreateEventA, WaitForSingleObject};
+
+use crate::util::{try_out_param, try_out_ptr};
 
 pub struct RenderEngine {
     dev: ID3D12Device,
@@ -99,19 +100,22 @@ impl RenderEngine {
         };
 
         unsafe {
-            cmd_list.IASetVertexBuffers(0, &[D3D12_VERTEX_BUFFER_VIEW {
-                BufferLocation: frame_resources
-                    .vertex_buffer
-                    .as_ref()
-                    .unwrap()
-                    .GetGPUVirtualAddress(),
-                SizeInBytes: (frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
-                StrideInBytes: size_of::<DrawVert>() as _,
-            }])
+            cmd_list.IASetVertexBuffers(
+                0,
+                Some(&[D3D12_VERTEX_BUFFER_VIEW {
+                    BufferLocation: frame_resources
+                        .vertex_buffer
+                        .as_ref()
+                        .unwrap()
+                        .GetGPUVirtualAddress(),
+                    SizeInBytes: (frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
+                    StrideInBytes: size_of::<DrawVert>() as _,
+                }]),
+            )
         };
 
         unsafe {
-            cmd_list.IASetIndexBuffer(&D3D12_INDEX_BUFFER_VIEW {
+            cmd_list.IASetIndexBuffer(Some(&D3D12_INDEX_BUFFER_VIEW {
                 BufferLocation: frame_resources
                     .index_buffer
                     .as_ref()
@@ -123,7 +127,7 @@ impl RenderEngine {
                 } else {
                     DXGI_FORMAT_R32_UINT
                 },
-            });
+            }));
             cmd_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             cmd_list.SetPipelineState(self.pipeline_state.as_ref().unwrap());
             cmd_list.SetGraphicsRootSignature(self.root_signature.as_ref().unwrap());
@@ -133,7 +137,7 @@ impl RenderEngine {
                 self.const_buf.as_ptr() as *const c_void,
                 0,
             );
-            cmd_list.OMSetBlendFactor(&[0f32; 4]);
+            cmd_list.OMSetBlendFactor(Some(&[0f32; 4]));
         }
     }
 
@@ -184,19 +188,19 @@ impl RenderEngine {
 
             if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
                 unsafe {
-                    vb.Map(0, &range, &mut vtx_resource as *mut _ as _)
+                    vb.Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as *mut *mut c_void))
                         .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
-                    vb.Unmap(0, &range);
+                    vb.Unmap(0, Some(&range));
                 }
             };
 
             if let Some(ib) = frame_resources.index_buffer.as_ref() {
                 unsafe {
-                    ib.Map(0, &range, &mut idx_resource as *mut _ as _)
+                    ib.Map(0, Some(&range), Some(&mut idx_resource as *mut _ as *mut *mut c_void))
                         .map_err(print_device_removed_reason)?;
                     std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
-                    ib.Unmap(0, &range);
+                    ib.Unmap(0, Some(&range));
                 }
             };
         }
@@ -323,7 +327,7 @@ impl RenderEngine {
                 &root_signature_desc,
                 D3D_ROOT_SIGNATURE_VERSION_1_0,
                 &mut blob,
-                &mut err_blob,
+                Some(&mut err_blob),
             )
         } {
             if let Some(err_blob) = err_blob {
@@ -347,9 +351,6 @@ impl RenderEngine {
             }
             .unwrap(),
         );
-
-        let mut vtx_shader: Option<ID3DBlob> = None;
-        let mut pix_shader: Option<ID3DBlob> = None;
 
         let vs = r#"
                 cbuffer vertexBuffer : register(b0)
@@ -379,22 +380,22 @@ impl RenderEngine {
                   return output;
                 }"#;
 
-        unsafe {
+        let vtx_shader: ID3DBlob = try_out_ptr(|v| unsafe {
             D3DCompile(
                 vs.as_ptr() as _,
                 vs.len(),
-                PCSTR(null()),
-                null(),
+                None,
+                None,
                 None::<&ID3DInclude>,
-                PCSTR("main\0".as_ptr()),
-                PCSTR("vs_5_0\0".as_ptr()),
+                s!("main\0"),
+                s!("vs_5_0\0"),
                 0,
                 0,
-                &mut vtx_shader as *mut _,
-                &mut None as _,
+                v,
+                None,
             )
-        }
-        .unwrap();
+        })
+        .expect("D3DCompile vertex shader");
 
         let ps = r#"
                 struct PS_INPUT
@@ -412,25 +413,26 @@ impl RenderEngine {
                   return out_col;
                 }"#;
 
-        unsafe {
+        let pix_shader = try_out_ptr(|v| unsafe {
             D3DCompile(
                 ps.as_ptr() as _,
                 ps.len(),
-                PCSTR(null()),
-                null(),
+                None,
+                None,
                 None::<&ID3DInclude>,
-                PCSTR("main\0".as_ptr()),
-                PCSTR("ps_5_0\0".as_ptr()),
+                s!("main\0"),
+                s!("ps_5_0\0"),
                 0,
                 0,
-                &mut pix_shader as *mut _,
-                &mut None as _,
+                v,
+                None,
             )
-        }
-        .unwrap();
+        })
+        .expect("D3DCompile pixel shader");
 
+        let root_signature = ManuallyDrop::new(self.root_signature.clone());
         let mut pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-            pRootSignature: self.root_signature.clone(),
+            pRootSignature: root_signature,
             NodeMask: 1,
             PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
             SampleMask: u32::MAX,
@@ -442,13 +444,11 @@ impl RenderEngine {
         pso_desc.RTVFormats[0] = self.rtv_format;
         pso_desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 
-        let vtx_shader = vtx_shader.unwrap();
         pso_desc.VS = D3D12_SHADER_BYTECODE {
             pShaderBytecode: unsafe { vtx_shader.GetBufferPointer() },
             BytecodeLength: unsafe { vtx_shader.GetBufferSize() },
         };
 
-        let pix_shader = pix_shader.unwrap();
         pso_desc.PS = D3D12_SHADER_BYTECODE {
             pShaderBytecode: unsafe { pix_shader.GetBufferPointer() },
             BytecodeLength: unsafe { pix_shader.GetBufferSize() },
@@ -541,35 +541,36 @@ impl RenderEngine {
         let fonts = ctx.fonts();
         let texture = fonts.build_rgba32_texture();
 
-        let mut p_texture: Option<ID3D12Resource> = None;
-        unsafe {
-            self.dev.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_DEFAULT,
-                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                    CreationNodeMask: Default::default(),
-                    VisibleNodeMask: Default::default(),
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                    Alignment: 0,
-                    Width: texture.width as _,
-                    Height: texture.height as _,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                    Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                    Flags: D3D12_RESOURCE_FLAG_NONE,
-                },
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                null(),
-                &mut p_texture,
-            )
-        }
-        .unwrap();
+        let p_texture: ManuallyDrop<Option<ID3D12Resource>> = ManuallyDrop::new(
+            try_out_param(|v| unsafe {
+                self.dev.CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_DEFAULT,
+                        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                        CreationNodeMask: Default::default(),
+                        VisibleNodeMask: Default::default(),
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                        Alignment: 0,
+                        Width: texture.width as _,
+                        Height: texture.height as _,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                        Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    None,
+                    v,
+                )
+            })
+            .expect("CreateCommittedResource p_texture"),
+        );
 
         let mut upload_buffer: Option<ID3D12Resource> = None;
         let upload_pitch = texture.width * 4;
@@ -597,26 +598,27 @@ impl RenderEngine {
                     Flags: D3D12_RESOURCE_FLAG_NONE,
                 },
                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                null(),
+                None,
                 &mut upload_buffer,
             )
         }
-        .unwrap();
+        .expect("CreateCommittedResource upload_buffer");
+        let upload_buffer = ManuallyDrop::new(upload_buffer);
 
         let range = D3D12_RANGE { Begin: 0, End: upload_size as usize };
         if let Some(ub) = upload_buffer.as_ref() {
             unsafe {
                 let mut ptr: *mut u8 = null_mut();
-                ub.Map(0, &range, &mut ptr as *mut _ as _).unwrap();
+                ub.Map(0, Some(&range), Some(&mut ptr as *mut _ as *mut *mut c_void)).unwrap();
                 std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
-                ub.Unmap(0, &range);
+                ub.Unmap(0, Some(&range));
             }
         };
 
         let fence: ID3D12Fence = unsafe { self.dev.CreateFence(0, D3D12_FENCE_FLAG_NONE) }.unwrap();
 
         let event =
-            unsafe { CreateEventA(null(), BOOL::from(false), BOOL::from(false), PCSTR(null())) }?;
+            unsafe { CreateEventA(None, BOOL::from(false), BOOL::from(false), PCSTR(null())) }?;
 
         let cmd_queue: ID3D12CommandQueue = unsafe {
             self.dev.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
@@ -626,26 +628,21 @@ impl RenderEngine {
                 NodeMask: 1,
             })
         }
-        .unwrap();
+        .expect("CreateCommandQueue");
 
-        unsafe { cmd_queue.SetName(PCWSTR(w!("hudhook font texture Command Queue").as_ptr())) }
-            .unwrap();
+        unsafe { cmd_queue.SetName(w!("hudhook font texture Command Queue")) }.unwrap();
 
         let cmd_allocator: ID3D12CommandAllocator =
             unsafe { self.dev.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }.unwrap();
 
-        unsafe {
-            cmd_allocator.SetName(PCWSTR(w!("hudhook font texture Command Allocator").as_ptr()))
-        }
-        .unwrap();
+        unsafe { cmd_allocator.SetName(w!("hudhook font texture Command Allocator")) }.unwrap();
 
         let cmd_list: ID3D12GraphicsCommandList = unsafe {
             self.dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &cmd_allocator, None)
         }
-        .unwrap();
+        .expect("CreateCommandList");
 
-        unsafe { cmd_list.SetName(PCWSTR(w!("hudhook font texture Command List").as_ptr())) }
-            .unwrap();
+        unsafe { cmd_list.SetName(w!("hudhook font texture Command List")) }.unwrap();
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: upload_buffer,
@@ -684,10 +681,10 @@ impl RenderEngine {
         };
 
         unsafe {
-            cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, null());
+            cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
             cmd_list.ResourceBarrier(&[barrier]);
             cmd_list.Close().unwrap();
-            cmd_queue.ExecuteCommandLists(&[Some(cmd_list.into())]);
+            cmd_queue.ExecuteCommandLists(&[Some(cmd_list.cast().unwrap())]);
             cmd_queue.Signal(&fence, 1).unwrap();
             fence.SetEventOnCompletion(1, event).unwrap();
             WaitForSingleObject(event, u32::MAX);
@@ -707,18 +704,20 @@ impl RenderEngine {
             },
         };
 
-        unsafe { CloseHandle(event) };
+        unsafe { CloseHandle(event)? };
 
         unsafe {
             self.dev.CreateShaderResourceView(
                 p_texture.as_ref(),
-                &srv_desc,
+                Some(&srv_desc),
                 self.font_srv_cpu_desc_handle,
             )
         };
         drop(self.font_texture_resource.take());
-        self.font_texture_resource = p_texture;
+        self.font_texture_resource = ManuallyDrop::into_inner(p_texture);
         fonts.tex_id = TextureId::from(self.font_srv_gpu_desc_handle.ptr as usize);
+
+        drop(ManuallyDrop::into_inner(src_location.pResource));
 
         Ok(())
     }
@@ -769,8 +768,8 @@ impl FrameResources {
                     D3D12_HEAP_FLAG_NONE,
                     &desc,
                     D3D12_RESOURCE_STATE_GENERIC_READ,
-                    null(),
-                    &mut self.vertex_buffer as *mut Option<_>,
+                    None,
+                    &mut self.vertex_buffer,
                 )
             }
             .map_err(|e| {
@@ -808,8 +807,8 @@ impl FrameResources {
                     D3D12_HEAP_FLAG_NONE,
                     &desc,
                     D3D12_RESOURCE_STATE_GENERIC_READ,
-                    null(),
-                    &mut self.index_buffer as *mut _,
+                    None,
+                    &mut self.index_buffer,
                 )
             }
             .map_err(|e| {

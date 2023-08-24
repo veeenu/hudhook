@@ -1,12 +1,12 @@
 use std::ffi::CString;
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use tracing::trace;
-use windows::core::{Interface, PCSTR};
+use windows::core::{s, ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
@@ -56,8 +56,8 @@ impl Dx12Harness {
                 let wnd_class = WNDCLASSA {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
-                    hInstance: hinstance,
-                    lpszClassName: PCSTR("MyClass\0".as_ptr()),
+                    hInstance: hinstance.into(),
+                    lpszClassName: s!("MyClass\0"),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hIcon: HICON::default(),
@@ -84,7 +84,7 @@ impl Dx12Harness {
                         HWND::default(),  // hWndParent
                         HMENU::default(), // hMenu
                         hinstance,        // hInstance
-                        null(),
+                        None,
                     )
                 }; // lpParam
 
@@ -143,7 +143,11 @@ impl Dx12Harness {
                 }
                 .unwrap();
                 let swap_chain: IDXGISwapChain3 = swap_chain.unwrap().cast().unwrap();
-                let desc = unsafe { swap_chain.GetDesc().unwrap() };
+                let desc = unsafe {
+                    let mut desc = Default::default();
+                    swap_chain.GetDesc(&mut desc).unwrap();
+                    desc
+                };
 
                 let _renderer_heap: ID3D12DescriptorHeap = unsafe {
                     dev.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
@@ -175,7 +179,7 @@ impl Dx12Harness {
                         let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                             ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
                         };
-                        dev.CreateRenderTargetView(&buf, null(), rtv_handle);
+                        dev.CreateRenderTargetView(&buf, None, rtv_handle);
                     }
                 }
 
@@ -188,11 +192,11 @@ impl Dx12Harness {
                     unsafe {
                         for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
                             let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, null_mut(), &mut msg_len as _)
-                                .unwrap();
+                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
                             let diqm = vec![0u8; msg_len];
                             let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, pdiqm, &mut msg_len as _).unwrap();
+                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
+                                .unwrap();
                             let diqm = pdiqm.as_ref().unwrap();
                             println!(
                                 "{}",
