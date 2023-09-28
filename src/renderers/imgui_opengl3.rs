@@ -1,5 +1,6 @@
-use std::ffi::{c_void, CString};
-use std::sync::OnceLock;
+use alloc::boxed::Box;
+use core::ffi::{c_void, CString};
+use core::sync::OnceLock;
 
 use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};

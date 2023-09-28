@@ -1,6 +1,7 @@
-use std::ffi::c_void;
-use std::mem;
-use std::sync::OnceLock;
+use alloc::boxed::Box;
+use core::ffi::c_void;
+use core::mem;
+use core::sync::OnceLock;
 
 use imgui::Context;
 use parking_lot::Mutex;
@@ -168,14 +169,14 @@ impl ImguiRenderer {
             imgui_dx11::RenderEngine::new_with_ptrs(dev, dev_ctx, swap_chain.clone(), &mut ctx);
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+        let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
 
         #[cfg(target_arch = "x86")]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+        let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
@@ -322,7 +323,7 @@ fn get_present_addr() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     let present_ptr = swap_chain.vtable().Present;
     let resize_buffers_ptr = swap_chain.vtable().ResizeBuffers;
 
-    unsafe { (std::mem::transmute(present_ptr), std::mem::transmute(resize_buffers_ptr)) }
+    unsafe { (mem::transmute(present_ptr), mem::transmute(resize_buffers_ptr)) }
 }
 
 pub struct ImguiDx11Hooks([MhHook; 2]);

@@ -24,7 +24,8 @@
 #![deny(missing_docs)]
 //! This crate offers a DirectX 9 renderer for the [imgui-rs](https://docs.rs/imgui/) rust bindings.
 
-use std::{mem, ptr, slice};
+use alloc::String;
+use core::{mem, ptr, slice};
 
 use imgui::internal::RawWrapper;
 use imgui::{
@@ -459,7 +460,7 @@ impl Renderer {
             let d3d9_memory = bits.add(pitch * y);
             let pixels = texture.data.as_ptr();
             let pixels = pixels.add((width * 4) * y);
-            std::ptr::copy(pixels, d3d9_memory, width * 4);
+            ptr::copy(pixels, d3d9_memory, width * 4);
         }
 
         result_texture.UnlockRect(0).unwrap();

@@ -1,7 +1,8 @@
 //! This module contains functions related to processing input events.
 
-use std::ffi::c_void;
-use std::mem::size_of;
+use alloc::boxed::Box;
+use core::ffi::c_void;
+use core::mem::size_of;
 
 use imgui::Io;
 use parking_lot::MutexGuard;

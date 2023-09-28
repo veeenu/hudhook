@@ -1,6 +1,8 @@
-use std::ffi::CString;
-use std::sync::OnceLock;
-use std::time::Instant;
+use alloc::boxed::Box;
+use core::mem;
+use core::ffi::CString;
+use core::sync::OnceLock;
+use core::time::Instant;
 
 use imgui::Context;
 use parking_lot::Mutex;
@@ -48,13 +50,13 @@ unsafe fn draw(dc: HDC) {
             // Set the new wnd proc, and assign the old one to a variable for further
             // storing
             #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
                 hwnd,
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as isize,
             ));
             #[cfg(target_arch = "x86")]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongA(
                 hwnd,
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as i32,
@@ -251,7 +253,7 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
     let wglswapbuffers_func =
         GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
 
-    std::mem::transmute(wglswapbuffers_func)
+    mem::transmute(wglswapbuffers_func)
 }
 
 /// Stores hook detours and implements the [`Hooks`] trait.
@@ -278,7 +280,7 @@ impl ImguiOpenGl3Hooks {
 
         // Initialize the render loop and store detours
         IMGUI_RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_opengl_wgl_swap_buffers.trampoline()));
+        TRAMPOLINE.get_or_init(|| mem::transmute(hook_opengl_wgl_swap_buffers.trampoline()));
 
         Self([hook_opengl_wgl_swap_buffers])
     }

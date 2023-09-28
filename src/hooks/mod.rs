@@ -5,6 +5,8 @@
 //!
 //! [`imgui`]: https://docs.rs/imgui/0.8.0/imgui/
 
+use alloc::boxed::Box;
+
 use imgui::{Context, Io, Ui};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 

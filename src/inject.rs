@@ -1,9 +1,10 @@
 //! Facilities for injecting compiled DLLs into target processes.
 
-use std::ffi::{CStr, CString};
-use std::mem::{self, size_of};
-use std::path::PathBuf;
-use std::ptr::null;
+use alloc::string::ToString;
+use core::ffi::{CStr, CString};
+use core::mem::{self, size_of};
+use core::path::PathBuf;
+use core::ptr::null;
 
 use tracing::debug;
 use windows::core::{Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
@@ -67,7 +68,7 @@ impl Process {
             WriteProcessMemory(
                 self.0,
                 dll_path_buf,
-                dll_path.as_ptr() as *const std::ffi::c_void,
+                dll_path.as_ptr() as *const core::ffi::c_void,
                 (MAX_PATH as usize) * size_of::<u16>(),
                 Some(&mut bytes_written),
             )
@@ -80,7 +81,7 @@ impl Process {
                 self.0,
                 None,
                 0,
-                Some(std::mem::transmute(proc_addr)),
+                Some(mem::transmute(proc_addr)),
                 Some(dll_path_buf),
                 0,
                 None,
@@ -116,7 +117,7 @@ fn get_process_by_title(title: &str) -> Result<HANDLE> {
     }
 }
 
-// 32-bit implementation. Uses [`std::ffi::CString`] and `FindWindowA`.
+// 32-bit implementation. Uses [`core::ffi::CString`] and `FindWindowA`.
 unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     let title = title.split_once('\0').map(|(t, _)| t).unwrap_or(title);
     let title = CString::new(title).unwrap();

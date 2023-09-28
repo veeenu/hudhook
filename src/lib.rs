@@ -1,3 +1,4 @@
+#![no_std]
 //! # hudhook
 //!
 //! This library implements a mechanism for hooking into the
@@ -111,8 +112,12 @@
 //! ```
 #![allow(clippy::needless_doctest_main)]
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::thread;
 
 use once_cell::sync::OnceCell;
 use tracing::error;

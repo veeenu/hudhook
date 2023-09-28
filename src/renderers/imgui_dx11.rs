@@ -1,4 +1,5 @@
-use std::slice;
+use core::{slice, ptr, mem};
+use alloc::{Vec, String};
 
 use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawListIterator, DrawVert};
@@ -123,12 +124,12 @@ impl RenderEngine {
                 0,
                 1,
                 Some(&Some(self.buffers.vtx_buffer())),
-                Some(&(std::mem::size_of::<DrawVert>() as u32)),
+                Some(&(mem::size_of::<DrawVert>() as u32)),
                 Some(&0),
             );
             dev_ctx.IASetIndexBuffer(
                 &self.buffers.idx_buffer(),
-                if std::mem::size_of::<imgui::DrawIdx>() == 2 {
+                if mem::size_of::<imgui::DrawIdx>() == 2 {
                     DXGI_FORMAT_R16_UINT
                 } else {
                     DXGI_FORMAT_R32_UINT
@@ -369,7 +370,7 @@ impl Buffers {
         let mtx_buffer: ID3D11Buffer = try_out_ptr(|v| unsafe {
             dasc.dev().CreateBuffer(
                 &D3D11_BUFFER_DESC {
-                    ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
+                    ByteWidth: mem::size_of::<VertexConstantBuffer>() as u32,
                     Usage: D3D11_USAGE_DYNAMIC,
                     BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
                     CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
@@ -392,7 +393,7 @@ impl Buffers {
         let [l, t, r, b] = rect;
 
         dasc.with_mapped(&self.mtx_buffer, |ms| unsafe {
-            std::ptr::copy_nonoverlapping(
+            ptr::copy_nonoverlapping(
                 &VertexConstantBuffer([
                     [2. / (r - l), 0., 0., 0.],
                     [0., 2. / (t - b), 0., 0.],
@@ -417,11 +418,11 @@ impl Buffers {
         self.resize(dasc, vertices.len(), indices.len());
 
         dasc.with_mapped(&self.vtx_buffer, |ms| unsafe {
-            std::ptr::copy_nonoverlapping(vertices.as_ptr(), ms.pData as _, vertices.len());
+            ptr::copy_nonoverlapping(vertices.as_ptr(), ms.pData as _, vertices.len());
         });
 
         dasc.with_mapped(&self.idx_buffer, |ms| unsafe {
-            std::ptr::copy_nonoverlapping(indices.as_ptr(), ms.pData as _, indices.len());
+            ptr::copy_nonoverlapping(indices.as_ptr(), ms.pData as _, indices.len());
         });
     }
 
@@ -444,7 +445,7 @@ impl Buffers {
             dasc.dev().CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     Usage: D3D11_USAGE_DYNAMIC,
-                    ByteWidth: (size * std::mem::size_of::<imgui::DrawVert>()) as u32,
+                    ByteWidth: (size * mem::size_of::<imgui::DrawVert>()) as u32,
                     BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as u32,
                     CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
                     MiscFlags: 0,
@@ -463,7 +464,7 @@ impl Buffers {
             dasc.dev().CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     Usage: D3D11_USAGE_DYNAMIC,
-                    ByteWidth: (size * std::mem::size_of::<u32>()) as u32,
+                    ByteWidth: (size * mem::size_of::<u32>()) as u32,
                     BindFlags: D3D11_BIND_INDEX_BUFFER.0 as u32,
                     CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
                     MiscFlags: 0,
@@ -857,13 +858,13 @@ impl ShaderProgram {
                             BlendOpAlpha: D3D11_BLEND_OP_ADD,
                             RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
                         },
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
-                        std::mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
+                        mem::zeroed(),
                     ],
                 },
                 Some(v),

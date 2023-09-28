@@ -1,6 +1,7 @@
-use std::ffi::c_void;
-use std::mem::{size_of, ManuallyDrop};
-use std::ptr::{null, null_mut};
+use alloc::{Vec, String};
+use core::ffi::c_void;
+use core::mem::{size_of, ManuallyDrop};
+use core::ptr::{null, null_mut};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
@@ -190,7 +191,7 @@ impl RenderEngine {
                 unsafe {
                     vb.Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as *mut *mut c_void))
                         .map_err(print_device_removed_reason)?;
-                    std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
+                    core::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
                     vb.Unmap(0, Some(&range));
                 }
             };
@@ -199,7 +200,7 @@ impl RenderEngine {
                 unsafe {
                     ib.Map(0, Some(&range), Some(&mut idx_resource as *mut _ as *mut *mut c_void))
                         .map_err(print_device_removed_reason)?;
-                    std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
+                    core::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
                     ib.Unmap(0, Some(&range));
                 }
             };
@@ -343,7 +344,7 @@ impl RenderEngine {
             unsafe {
                 self.dev.CreateRootSignature(
                     0,
-                    std::slice::from_raw_parts(
+                    core::slice::from_raw_parts(
                         blob.GetBufferPointer() as *const u8,
                         blob.GetBufferSize(),
                     ),
@@ -610,7 +611,7 @@ impl RenderEngine {
             unsafe {
                 let mut ptr: *mut u8 = null_mut();
                 ub.Map(0, Some(&range), Some(&mut ptr as *mut _ as *mut *mut c_void)).unwrap();
-                std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
+                core::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
                 ub.Unmap(0, Some(&range));
             }
         };

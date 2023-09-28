@@ -1,10 +1,12 @@
 //! Hook for DirectX 12 applications.
-use std::ffi::c_void;
-use std::mem::{self, ManuallyDrop};
-use std::ptr::null;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
-use std::{hint, thread};
+use alloc::boxed::Box;
+use alloc::{Vec, String};
+use core::ffi::c_void;
+use core::mem::{self, ManuallyDrop};
+use core::ptr::null;
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::time::{Duration, Instant};
+use core::{hint, thread};
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -152,7 +154,7 @@ unsafe fn print_dxgi_debug_messages() {
         let diqm = pdiqm.as_ref().unwrap();
         debug!(
             "[DIQ] {}",
-            String::from_utf8_lossy(std::slice::from_raw_parts(
+            String::from_utf8_lossy(core::slice::from_raw_parts(
                 diqm.pDescription,
                 diqm.DescriptionByteLength - 1
             ))
@@ -426,14 +428,14 @@ impl ImguiRenderer {
         );
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+        let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as isize,
         ));
 
         #[cfg(target_arch = "x86")]
-        let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+        let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongA(
             sd.OutputWindow,
             GWLP_WNDPROC,
             imgui_wnd_proc as usize as i32,
@@ -683,9 +685,9 @@ fn get_present_addr() -> (DXGISwapChainPresentType, ExecuteCommandListsType, Res
 
     unsafe {
         (
-            std::mem::transmute(present_ptr),
-            std::mem::transmute(ecl_ptr),
-            std::mem::transmute(rbuf_ptr),
+            mem::transmute(present_ptr),
+            mem::transmute(ecl_ptr),
+            mem::transmute(rbuf_ptr),
         )
     }
 }

@@ -1,5 +1,6 @@
-use std::mem;
-use std::sync::OnceLock;
+use alloc::boxed::Box;
+use core::mem;
+use core::sync::OnceLock;
 
 use imgui::Context;
 use parking_lot::Mutex;
@@ -37,14 +38,14 @@ unsafe fn draw(this: &IDirect3DDevice9) {
             let renderer = imgui_dx9::Renderer::new(&mut context, this.clone()).unwrap();
 
             #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
+            let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongPtrA(
                 renderer.get_hwnd(),
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as isize,
             ));
 
             #[cfg(target_arch = "x86")]
-            let wnd_proc = std::mem::transmute::<_, WndProcType>(SetWindowLongA(
+            let wnd_proc = mem::transmute::<_, WndProcType>(SetWindowLongA(
                 renderer.get_hwnd(),
                 GWLP_WNDPROC,
                 imgui_wnd_proc as usize as i32,
@@ -317,8 +318,8 @@ unsafe fn get_dx9_present_addr() -> (Dx9EndSceneFn, Dx9PresentFn, Dx9ResetFn) {
     let reset_ptr = device.vtable().Reset;
 
     (
-        std::mem::transmute(end_scene_ptr),
-        std::mem::transmute(present_ptr),
-        std::mem::transmute(reset_ptr),
+        mem::transmute(end_scene_ptr),
+        mem::transmute(present_ptr),
+        mem::transmute(reset_ptr),
     )
 }
