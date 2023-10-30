@@ -18,50 +18,57 @@ Read up on the underlying architecture [here](https://veeenu.github.io/blog/seki
 
 ```rust
 // src/lib.rs
-use hudhook::hooks::dx11::ImguiDX11Hooks;
-use hudhook::hooks::ImguiRenderLoop;
-use imgui::{Condition, Window};
-struct Dx11HookExample;
+use hudhook::*;
 
-impl Dx11HookExample {
-    fn new() -> Self {
-        println!("Initializing");
-        hudhook::utils::alloc_console();
+pub struct MyRenderLoop;
 
-        Dx11HookExample
-    }
-}
-
-impl ImguiRenderLoop for Dx11HookExample {
+impl ImguiRenderLoop for MyRenderLoop {
     fn render(&mut self, ui: &mut imgui::Ui) {
-        ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
-            ui.text("Hello world!");
-            ui.text("こんにちは世界！");
-            ui.text("This...is...imgui-rs!");
-            ui.separator();
-            let mouse_pos = ui.io().mouse_pos;
-            ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
-        });
+        ui.window("My first render loop")
+            .position([0., 0.], imgui::Condition::FirstUseEver)
+            .size([320., 200.], imgui::Condition::FirstUseEver)
+            .build(|| {
+                ui.text("Hello, hello!");
+            });
     }
 }
 
-hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDX11Hooks>());
+{
+    // Use this if hooking into a DirectX 9 application.
+    use hudhook::hooks::dx9::ImguiDx9Hooks;
+    hudhook!(MyRenderLoop.into_hook::<ImguiDx9Hooks>());
+}
+
+{
+    // Use this if hooking into a DirectX 11 application.
+    use hudhook::hooks::dx11::ImguiDx11Hooks;
+    hudhook!(MyRenderLoop.into_hook::<ImguiDx11Hooks>());
+}
+
+{
+    // Use this if hooking into a DirectX 12 application.
+    use hudhook::hooks::dx12::ImguiDx12Hooks;
+    hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
+}
+
+{
+    // Use this if hooking into a DirectX 9 application.
+    use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
+    hudhook!(MyRenderLoop.into_hook::<ImguiOpenGl3Hooks>());
+}
 ```
 
 ```rust
 // src/main.rs
-use hudhook::inject;
-use std::process::Command;
+use hudhook::inject::Process;
 
-#[test]
-fn test_run_against_sample() {
-    let mut child = Command::new("my_dx11_application.exe")
-        .spawn()
-        .expect("Failed to run child process");
-    std::thread::sleep(std::time::Duration::from_millis(250));
+fn main() {
+    let mut cur_exe = std::env::current_exe().unwrap();
+    cur_exe.push("..");
+    cur_exe.push("libmyhook.dll");
 
-    inject::inject("my_dx11_application.exe", "target/release/libmycrate.dll").ok();
+    let cur_dll = cur_exe.canonicalize().unwrap();
 
-    child.wait().expect("Child process error");
+    Process::by_name("MyTargetApplication.exe").unwrap().inject(cur_dll).unwrap();
 }
 ```
