@@ -2,7 +2,7 @@ use std::mem;
 use std::ptr::null;
 
 use imgui::Key;
-use tracing::debug;
+use tracing::{debug, error};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::HBRUSH;
