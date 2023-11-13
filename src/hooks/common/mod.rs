@@ -2,7 +2,7 @@ use std::mem;
 use std::ptr::null;
 
 use imgui::Key;
-use tracing::debug;
+use tracing::{debug, error};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::HBRUSH;
@@ -162,8 +162,12 @@ impl Drop for DummyHwnd {
     fn drop(&mut self) {
         // Destroy the window and unregister the class.
         unsafe {
-            DestroyWindow(self.0).expect("DestroyWindow");
-            UnregisterClassW(self.1.lpszClassName, self.1.hInstance).expect("DestroyWindow");
+            if let Err(e) = DestroyWindow(self.0) {
+                error!("DestroyWindow: {e}");
+            }
+            if let Err(e) = UnregisterClassW(self.1.lpszClassName, self.1.hInstance) {
+                error!("UnregisterClass: {e}");
+            }
         }
     }
 }
