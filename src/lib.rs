@@ -84,7 +84,7 @@
 //! }
 //!
 //! {
-//!     // Use this if hooking into a DirectX 9 application.
+//!     // Use this if hooking into a OpenGL 3 application.
 //!     use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 //!     hudhook!(MyRenderLoop.into_hook::<ImguiOpenGl3Hooks>());
 //! }
