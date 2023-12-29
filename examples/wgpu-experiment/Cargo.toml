@@ -7,11 +7,16 @@ edition = "2021"
 default-target = "x86_64-pc-windows-msvc"
 targets = ["x86_64-pc-windows-msvc"]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 imgui = "0.11.0"
 imgui-wgpu = "0.24.0"
 pollster = "0.3.0"
 raw-window-handle = "0.5"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
 wgpu = "0.17.0"
 windows = { version = "0.52.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
@@ -27,6 +32,7 @@ windows = { version = "0.52.0", features = [
   "Win32_System_SystemServices",
   "Win32_System_Threading",
   "Win32_System_WindowsProgramming",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Dxgi",
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_Direct3D9",
