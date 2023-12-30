@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
@@ -17,47 +18,46 @@ use windows::Win32::Foundation::{
 use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_12_2};
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
-    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource,
-    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
-    D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE, D3D12_RESOURCE_BARRIER,
+    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource, D3D12_CLEAR_VALUE,
+    D3D12_CLEAR_VALUE_0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
+    D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC,
+    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE,
+    D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_BARRIER,
     D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-    D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET,
-    D3D12_RESOURCE_TRANSITION_BARRIER,
+    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC,
+    D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+    D3D12_RESOURCE_STATES, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET,
+    D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_TEXTURE_LAYOUT_UNKNOWN,
 };
 use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
+use windows::Win32::Graphics::Dwm::{
+    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+};
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
+    DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+    DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, CreateDXGIFactory2, DXGIGetDebugInterface1, IDXGIAdapter, IDXGIFactory,
-    IDXGIFactory2, IDXGIInfoQueue, IDXGISwapChain, IDXGISwapChain3, DXGI_ADAPTER_DESC,
-    DXGI_CREATE_FACTORY_DEBUG, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
-    DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    CreateDXGIFactory2, DXGIGetDebugInterface1, IDXGIAdapter, IDXGIFactory2, IDXGIInfoQueue,
+    IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
+    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{ScreenToClient, UpdateWindow};
+use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, ScreenToClient};
 use windows::Win32::System::Threading::{
     CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageA, GetClientRect, GetCursorPos,
-    GetForegroundWindow, GetMessageA, GetWindowRect, IsChild, RegisterClassExW,
-    SetLayeredWindowAttributes, TranslateMessage, CS_HREDRAW, CS_VREDRAW, LWA_COLORKEY, WM_CLOSE,
-    WM_QUIT, WNDCLASSEXW, WS_CAPTION, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_POPUP,
-    WS_VISIBLE,
+    GetForegroundWindow, GetMessageA, IsChild, RegisterClassExW, SetLayeredWindowAttributes,
+    TranslateMessage, CS_HREDRAW, CS_VREDRAW, LWA_COLORKEY, WM_CLOSE, WM_QUIT, WNDCLASSEXW,
+    WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
 };
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
-
-type WndProcType =
-    unsafe extern "system" fn(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 unsafe extern "system" fn window_proc(
     hwnd: HWND,
@@ -100,15 +100,14 @@ struct Dcomp {
     dxgi_adapter: IDXGIAdapter,
     d3d12_dev: ID3D12Device,
     swap_chain: IDXGISwapChain3,
-
     command_queue: ID3D12CommandQueue,
     command_list: ID3D12GraphicsCommandList,
     renderer_heap: ID3D12DescriptorHeap,
     rtv_heap: ID3D12DescriptorHeap,
 
-    // dcomp_dev: IDCompositionDevice,
-    // dcomp_target: IDCompositionTarget,
-    // root_visual: IDCompositionVisual,
+    dcomp_dev: IDCompositionDevice,
+    dcomp_target: IDCompositionTarget,
+    root_visual: IDCompositionVisual,
     engine: RenderEngine,
     ctx: Context,
     frame_contexts: Vec<FrameContext>,
@@ -138,31 +137,25 @@ impl Dcomp {
 
         let (width, height) = win_size(target_hwnd);
 
-        let sd = DXGI_SWAP_CHAIN_DESC {
-            BufferDesc: DXGI_MODE_DESC {
-                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-                Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-                Width: width as _,
-                Height: height as _,
-                RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
-            },
+        let sd = DXGI_SWAP_CHAIN_DESC1 {
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            Width: width as _,
+            Height: height as _,
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 2,
-            OutputWindow: target_hwnd,
-            Windowed: BOOL(1),
             SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-            Flags: Default::default(), // DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as _,
+            AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
+            ..Default::default()
         };
 
-        let mut swap_chain = None;
-        dxgi_factory
-            .CreateSwapChain(&command_queue, &sd, &mut swap_chain)
+        let swap_chain = dxgi_factory
+            .CreateSwapChainForComposition(&command_queue, &sd, None)
             .ok()
-            .context("create swap chain")?;
-        let swap_chain =
-            swap_chain.unwrap().cast::<IDXGISwapChain3>().ok().context("query interface")?;
+            .context("create swap chain")?
+            .cast::<IDXGISwapChain3>()
+            .ok()
+            .context("query interface")?;
 
         let renderer_heap: ID3D12DescriptorHeap = unsafe {
             d3d12_dev
@@ -255,14 +248,15 @@ impl Dcomp {
             gpu_desc,
         );
 
-        // let dcomp_dev: IDCompositionDevice =
-        //     DCompositionCreateDevice(None).context("create dcomp device")?;
-        // let dcomp_target = dcomp_dev
-        //     .CreateTargetForHwnd(target_hwnd, BOOL::from(true))
-        //     .context("create target for hwnd")?;
-        //
-        // let root_visual = dcomp_dev.CreateVisual().context("create visual")?;
-        // dcomp_target.SetRoot(&root_visual)?;
+        let dcomp_dev: IDCompositionDevice =
+            DCompositionCreateDevice(None).context("create dcomp device")?;
+        let dcomp_target = dcomp_dev
+            .CreateTargetForHwnd(target_hwnd, BOOL::from(true))
+            .context("create target for hwnd")?;
+
+        let root_visual = dcomp_dev.CreateVisual().context("create visual")?;
+        dcomp_target.SetRoot(&root_visual).context("set root")?;
+        dcomp_dev.Commit().context("commit")?;
 
         Ok(Self {
             target_hwnd,
@@ -274,9 +268,9 @@ impl Dcomp {
             command_list,
             renderer_heap,
             rtv_heap,
-            // dcomp_dev,
-            // dcomp_target,
-            // root_visual,
+            dcomp_dev,
+            dcomp_target,
+            root_visual,
             engine,
             ctx,
             frame_contexts,
@@ -284,41 +278,31 @@ impl Dcomp {
     }
 
     unsafe fn render(&mut self) -> Result<()> {
-        let render_start = Instant::now();
-
         let frame_contexts_idx = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
         let frame_context = &mut self.frame_contexts[frame_contexts_idx];
 
-        let sd = try_out_param(|sd| unsafe { self.swap_chain.GetDesc(sd) }).context("GetDesc")?;
-        let rect: Result<RECT, _> =
-            try_out_param(|rect| unsafe { GetClientRect(sd.OutputWindow, rect) });
+        let sd = try_out_param(|sd| unsafe { self.swap_chain.GetDesc1(sd) }).context("get desc")?;
+        let width = sd.Width;
+        let height = sd.Height;
 
-        match rect {
-            Ok(rect) => {
-                let io = self.ctx.io_mut();
+        let io = self.ctx.io_mut();
 
-                io.display_size =
-                    [(rect.right - rect.left) as f32, (rect.bottom - rect.top) as f32];
+        io.display_size = [width as f32, height as f32];
 
-                let mut pos = POINT { x: 0, y: 0 };
+        let mut pos = POINT { x: 0, y: 0 };
 
-                let active_window = unsafe { GetForegroundWindow() };
-                if !HANDLE(active_window.0).is_invalid()
-                    && (active_window == sd.OutputWindow
-                        || unsafe { IsChild(active_window, sd.OutputWindow) }.as_bool())
-                {
-                    let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
-                    if gcp.is_ok()
-                        && unsafe { ScreenToClient(sd.OutputWindow, &mut pos as *mut _) }.as_bool()
-                    {
-                        io.mouse_pos[0] = pos.x as _;
-                        io.mouse_pos[1] = pos.y as _;
-                    }
-                }
-            },
-            Err(e) => {
-                eprintln!("GetClientRect error: {e:?}");
-            },
+        let active_window = unsafe { GetForegroundWindow() };
+        if !HANDLE(active_window.0).is_invalid()
+            && (active_window == self.target_hwnd
+                || unsafe { IsChild(active_window, self.target_hwnd) }.as_bool())
+        {
+            let gcp = unsafe { GetCursorPos(&mut pos as *mut _) };
+            if gcp.is_ok()
+                && unsafe { ScreenToClient(self.target_hwnd, &mut pos as *mut _) }.as_bool()
+            {
+                io.mouse_pos[0] = pos.x as _;
+                io.mouse_pos[1] = pos.y as _;
+            }
         }
 
         self.engine.new_frame(&mut self.ctx);
@@ -328,19 +312,13 @@ impl Dcomp {
         // unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui);
         let draw_data = ctx.render();
 
-        let back_buffer = ManuallyDrop::new(Some(frame_context.back_buffer.clone()));
-        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: back_buffer,
-            Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-            StateBefore: D3D12_RESOURCE_STATE_PRESENT,
-            StateAfter: D3D12_RESOURCE_STATE_RENDER_TARGET,
-        });
+        let back_buffer = frame_context.back_buffer.clone();
 
-        let mut barrier = D3D12_RESOURCE_BARRIER {
-            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
-        };
+        let back_buffer_to_rt_barrier = Barrier::create(
+            back_buffer.clone(),
+            D3D12_RESOURCE_STATE_PRESENT,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+        );
 
         frame_context.wait_fence();
         frame_context.incr();
@@ -349,7 +327,7 @@ impl Dcomp {
         unsafe {
             command_allocator.Reset().unwrap();
             self.command_list.Reset(command_allocator, None).unwrap();
-            self.command_list.ResourceBarrier(&[barrier.clone()]);
+            self.command_list.ResourceBarrier(&back_buffer_to_rt_barrier);
             self.command_list.OMSetRenderTargets(
                 1,
                 Some(&frame_context.desc_handle),
@@ -365,30 +343,64 @@ impl Dcomp {
             eprintln!("{}", e);
         };
 
-        // Explicit auto deref necessary because this is ManuallyDrop.
-        #[allow(clippy::explicit_auto_deref)]
-        unsafe {
-            (*barrier.Anonymous.Transition).StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-            (*barrier.Anonymous.Transition).StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-        }
-
-        let barriers = vec![barrier];
+        let back_buffer_to_present_barrier = Barrier::create(
+            back_buffer.clone(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT,
+        );
 
         unsafe {
-            self.command_list.ResourceBarrier(&barriers);
-            self.command_list.Close().unwrap();
-            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast().unwrap())]);
-            self.command_queue.Signal(&frame_context.fence, frame_context.fence_val).unwrap();
+            self.command_list.ResourceBarrier(&back_buffer_to_present_barrier);
         }
 
-        let barrier = barriers.into_iter().next().unwrap();
+        unsafe {
+            self.command_list.Close()?;
+            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
+            self.command_queue.Signal(&frame_context.fence, frame_context.fence_val)?;
+        }
 
-        let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-        let _ = ManuallyDrop::into_inner(transition.pResource);
+        self.swap_chain.Present(1, 0).ok().context("present")?;
 
-        self.swap_chain.Present(1, 0).ok()?;
+        Barrier::drop(back_buffer_to_rt_barrier);
+        Barrier::drop(back_buffer_to_present_barrier);
+        // Barrier::drop(rtv_to_psr_barrier);
+
+        self.root_visual.SetContent(&self.swap_chain).context("set content")?;
+        self.dcomp_dev.Commit()?;
 
         Ok(())
+    }
+}
+
+struct Barrier;
+
+impl Barrier {
+    fn create(
+        buf: ID3D12Resource,
+        before: D3D12_RESOURCE_STATES,
+        after: D3D12_RESOURCE_STATES,
+    ) -> Vec<D3D12_RESOURCE_BARRIER> {
+        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+            pResource: ManuallyDrop::new(Some(buf)),
+            Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            StateBefore: before,
+            StateAfter: after,
+        });
+
+        let barrier = D3D12_RESOURCE_BARRIER {
+            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
+        };
+
+        vec![barrier]
+    }
+
+    fn drop(barriers: Vec<D3D12_RESOURCE_BARRIER>) {
+        for barrier in barriers {
+            let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+            let _ = ManuallyDrop::into_inner(transition.pResource);
+        }
     }
 }
 
@@ -421,6 +433,17 @@ unsafe fn create_window() -> HWND {
     );
 
     SetLayeredWindowAttributes(hwnd, COLORREF(0), 0, LWA_COLORKEY).unwrap();
+
+    let region = CreateRectRgn(0, 0, -1, -1);
+
+    let bb = DWM_BLURBEHIND {
+        dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+        fEnable: true.into(),
+        hRgnBlur: region,
+        fTransitionOnMaximized: true.into(),
+    };
+    DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
+    DeleteObject(region);
 
     hwnd
 }
