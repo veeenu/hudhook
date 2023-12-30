@@ -17,7 +17,7 @@ use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::System::Threading::{CreateEventA, WaitForSingleObject};
 
-use crate::util::{try_out_param, try_out_ptr};
+use crate::{try_out_param, try_out_ptr};
 
 pub struct RenderEngine {
     dev: ID3D12Device,
