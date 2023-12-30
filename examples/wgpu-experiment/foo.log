@@ -1,0 +1,4 @@
+2023-12-30T09:43:21.884037Z TRACE main ThreadId(01) wgpu_experiment::imgui_dx12: src\imgui_dx12.rs:90: Display size 1920x1080
+2023-12-30T09:43:21.885407Z TRACE main ThreadId(01) wgpu_experiment::imgui_dx12: src\imgui_dx12.rs:90: Display size 1920x1080
+2023-12-30T09:43:21.887011Z TRACE main ThreadId(01) wgpu_experiment::imgui_dx12: src\imgui_dx12.rs:90: Display size 1920x1080
+2023-12-30T09:43:27.570858Z TRACE main ThreadId(01) wgpu_experiment::imgui_dx12: src\imgui_dx12.rs:90: Display size 1920x1080
