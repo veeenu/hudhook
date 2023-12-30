@@ -1,40 +1,30 @@
 use std::fs::File;
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
 
-use anyhow::{bail, Context as AnyhowCtx, Result};
+use anyhow::{Context as AnyhowCtx, Result};
 use imgui::Context;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::prelude::*;
 use wgpu_experiment::imgui_dx12::RenderEngine;
-use wgpu_experiment::try_out_param;
 use windows::core::{w, ComInterface, PCWSTR};
-use windows::Win32::Foundation::{
-    BOOL, COLORREF, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
-};
-use windows::Win32::Graphics::Direct3D::{D3D_FEATURE_LEVEL_12_0, D3D_FEATURE_LEVEL_12_2};
+use windows::Win32::Foundation::{BOOL, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_12_2;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
-    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource, D3D12_CLEAR_VALUE,
-    D3D12_CLEAR_VALUE_0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
-    D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC,
-    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
-    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE,
-    D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_BARRIER,
+    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource,
+    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
+    D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+    D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE, D3D12_RESOURCE_BARRIER,
     D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_DESC,
-    D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
     D3D12_RESOURCE_STATES, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET,
-    D3D12_RESOURCE_TRANSITION_BARRIER, D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    D3D12_RESOURCE_TRANSITION_BARRIER,
 };
 use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
-};
-use windows::Win32::Graphics::Dwm::{
-    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -45,16 +35,27 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
     DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, ScreenToClient};
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::{
     CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageA, GetClientRect, GetCursorPos,
-    GetForegroundWindow, GetMessageA, IsChild, RegisterClassExW, SetLayeredWindowAttributes,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, LWA_COLORKEY, WM_CLOSE, WM_QUIT, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
+    GetForegroundWindow, GetMessageA, IsChild, RegisterClassExW, TranslateMessage, CS_HREDRAW,
+    CS_VREDRAW, WM_CLOSE, WM_QUIT, WNDCLASSEXW, WS_EX_TRANSPARENT, WS_POPUP, WS_VISIBLE,
 };
+
+fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
+where
+    T: Default,
+    F: FnMut(&mut T) -> Result<O, E>,
+{
+    let mut t: T = Default::default();
+    match f(&mut t) {
+        Ok(_) => Ok(t),
+        Err(e) => Err(e),
+    }
+}
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
@@ -309,7 +310,6 @@ impl Dcomp {
         let ctx = &mut self.ctx;
         let ui = ctx.frame();
         ui.show_demo_window(&mut true);
-        // unsafe { IMGUI_RENDER_LOOP.get_mut() }.unwrap().render(ui);
         let draw_data = ctx.render();
 
         let back_buffer = frame_context.back_buffer.clone();
@@ -363,7 +363,6 @@ impl Dcomp {
 
         Barrier::drop(back_buffer_to_rt_barrier);
         Barrier::drop(back_buffer_to_present_barrier);
-        // Barrier::drop(rtv_to_psr_barrier);
 
         self.root_visual.SetContent(&self.swap_chain).context("set content")?;
         self.dcomp_dev.Commit()?;
@@ -417,8 +416,8 @@ unsafe fn create_window() -> HWND {
 
     RegisterClassExW(&wndclassex);
 
-    let hwnd = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TRANSPARENT,
+    CreateWindowExW(
+        WS_EX_TRANSPARENT,
         w!("OverlayClass"),
         w!("OverlayClass"),
         WS_VISIBLE | WS_POPUP,
@@ -430,22 +429,7 @@ unsafe fn create_window() -> HWND {
         None,
         None,
         None,
-    );
-
-    SetLayeredWindowAttributes(hwnd, COLORREF(0), 0, LWA_COLORKEY).unwrap();
-
-    let region = CreateRectRgn(0, 0, -1, -1);
-
-    let bb = DWM_BLURBEHIND {
-        dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
-        fEnable: true.into(),
-        hRgnBlur: region,
-        fTransitionOnMaximized: true.into(),
-    };
-    DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
-    DeleteObject(region);
-
-    hwnd
+    )
 }
 
 unsafe fn print_dxgi_debug_messages() {
