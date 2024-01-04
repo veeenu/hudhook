@@ -5,7 +5,9 @@ use anyhow::{Context as AnyhowCtx, Result};
 use imgui::Context;
 use windows::core::{w, ComInterface, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HANDLE, HWND, POINT};
-use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_12_2;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_9_1,
+};
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
     ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12Resource,
@@ -106,7 +108,7 @@ impl Dcomp {
         let dxgi_adapter = dxgi_factory.EnumAdapters(0).context("enum adapters")?;
 
         let mut d3d12_dev: Option<ID3D12Device> = None;
-        D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_12_2, &mut d3d12_dev)
+        D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, &mut d3d12_dev)
             .context("create device")?;
         let d3d12_dev = d3d12_dev.unwrap();
 

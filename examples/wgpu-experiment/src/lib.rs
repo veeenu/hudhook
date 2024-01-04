@@ -21,6 +21,11 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
     D3D11_SDK_VERSION,
 };
+use windows::Win32::Graphics::Direct3D9::{
+    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
+    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
+    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
+};
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
@@ -28,6 +33,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
+use windows::Win32::Graphics::Gdi::RGNDATA;
 use windows::Win32::System::LibraryLoader::{
     GetModuleFileNameW, GetModuleHandleExA, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
     GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -130,16 +136,26 @@ unsafe extern "system" fn window_proc(
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
 
+type Dx9PresentFn = unsafe extern "system" fn(
+    this: IDirect3DDevice9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+) -> HRESULT;
+
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut RENDERER: OnceLock<Mutex<Dcomp>> = OnceLock::new();
-static mut TRAMPOLINE: OnceLock<DXGISwapChainPresentType> = OnceLock::new();
+static mut TRAMPOLINE_DX11: OnceLock<DXGISwapChainPresentType> = OnceLock::new();
+static mut TRAMPOLINE_DX9: OnceLock<Dx9PresentFn> = OnceLock::new();
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
-    let trampoline = TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
+    let trampoline =
+        TRAMPOLINE_DX11.get().expect("IDXGISwapChain::Present trampoline uninitialized");
     GAME_HWND.get_or_init(|| {
         let mut desc = Default::default();
         p_this.GetDesc(&mut desc).unwrap();
@@ -204,7 +220,68 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     unsafe { std::mem::transmute(present_ptr) }
 }
 
-unsafe fn hook() {
+unsafe extern "system" fn imgui_dx9_present_impl(
+    this: IDirect3DDevice9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+) -> HRESULT {
+    trace!("IDirect3DDevice9::Present invoked");
+
+    GAME_HWND.get_or_init(|| {
+        let mut dcp = Default::default();
+        this.GetCreationParameters(&mut dcp).unwrap();
+        dcp.hFocusWindow
+    });
+
+    if let Some(renderer) = RENDERER.get() {
+        if let Ok(mut renderer) = renderer.try_lock() {
+            if let Err(e) = renderer.render() {
+                error!("Render: {e:?}");
+            }
+        }
+    }
+
+    let trampoline_present =
+        TRAMPOLINE_DX9.get().expect("IDirect3DDevice9::Present trampoline uninitialized");
+
+    trampoline_present(this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
+}
+
+unsafe fn get_dx9_present_addr() -> Dx9PresentFn {
+    let d9 = Direct3DCreate9(D3D_SDK_VERSION).unwrap();
+
+    let mut d3d_display_mode =
+        D3DDISPLAYMODE { Width: 0, Height: 0, RefreshRate: 0, Format: D3DFORMAT(0) };
+    d9.GetAdapterDisplayMode(D3DADAPTER_DEFAULT, &mut d3d_display_mode).unwrap();
+
+    let mut present_params = D3DPRESENT_PARAMETERS {
+        Windowed: BOOL(1),
+        SwapEffect: D3DSWAPEFFECT_DISCARD,
+        BackBufferFormat: d3d_display_mode.Format,
+        ..core::mem::zeroed()
+    };
+
+    let dummy_hwnd = unsafe { GetDesktopWindow() };
+    let device: IDirect3DDevice9 = try_out_ptr(|v| {
+        d9.CreateDevice(
+            D3DADAPTER_DEFAULT,
+            D3DDEVTYPE_NULLREF,
+            dummy_hwnd, // GetDesktopWindow(),
+            D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
+            &mut present_params,
+            v,
+        )
+    })
+    .expect("IDirect3DDevice9::CreateDevice: failed to create device");
+
+    let present_ptr = device.vtable().Present;
+
+    std::mem::transmute(present_ptr)
+}
+
+unsafe fn hook_dx11() {
     match unsafe { MH_Initialize() } {
         MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
         status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
@@ -214,7 +291,23 @@ unsafe fn hook() {
     let present_addr = get_present_addr();
     let hook_present =
         MhHook::new(present_addr as *mut _, dxgi_swap_chain_present_impl as _).unwrap();
-    TRAMPOLINE.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+    TRAMPOLINE_DX11.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+
+    hook_present.queue_enable().unwrap();
+
+    MH_ApplyQueued().ok_context("").unwrap();
+}
+
+unsafe fn hook_dx9() {
+    match unsafe { MH_Initialize() } {
+        MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+        status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
+        _ => unreachable!(),
+    }
+
+    let present_addr = get_dx9_present_addr();
+    let hook_present = MhHook::new(present_addr as *mut _, imgui_dx9_present_impl as _).unwrap();
+    TRAMPOLINE_DX9.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
 
     hook_present.queue_enable().unwrap();
 
@@ -241,10 +334,12 @@ unsafe fn run_dcomp() -> Result<()> {
             None => std::thread::sleep(Duration::from_millis(100)),
         }
     };
+    info!("Found hwnd {base_hwnd:?}");
 
     // let hwnd = create_overlay_window(base_hwnd);
 
     let renderer = Dcomp::new(base_hwnd)?;
+    info!("Built dcomp");
 
     RENDERER.get_or_init(move || Mutex::new(renderer));
 
@@ -312,7 +407,7 @@ pub unsafe extern "stdcall" fn DllMain(
 
             tracing_subscriber::registry().with(LevelFilter::TRACE).with(file_layer).init();
             info!("Hooking...");
-            hook();
+            hook_dx11();
 
             info!("Doing thing...");
             if let Err(e) = run_dcomp() {

@@ -10,6 +10,7 @@ fn main() -> Result<()> {
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let status = Command::new(cargo)
         .current_dir(project_root())
+        // .args(["build", "--lib", "--release", "--target", "i686-pc-windows-msvc"])
         .args(["build", "--lib", "--release"])
         .status()
         .map_err(|e| anyhow!("cargo: {}", e))?;
@@ -19,10 +20,16 @@ fn main() -> Result<()> {
     }
 
     println!("{:?}", project_root());
-    let dll_path =
-        project_root().join("target").join("release").join("wgpu_experiment.dll").canonicalize()?;
+    let dll_path = project_root()
+        .join("target")
+        //.join("i686-pc-windows-msvc")
+        .join("release")
+        .join("wgpu_experiment.dll")
+        .canonicalize()?;
 
-    let process = OwnedProcess::find_first_by_name("DarkSoulsIII.exe")
+    // let process = OwnedProcess::find_first_by_name("DarkSoulsIII.exe")
+    // let process = OwnedProcess::find_first_by_name("DARKSOULS.exe")
+    let process = OwnedProcess::find_first_by_name("eldenring.exe")
         .ok_or_else(|| anyhow!("Could not find process"))?;
     let syringe = Syringe::for_process(process);
     syringe.inject(dll_path)?;
