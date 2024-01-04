@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::ffi::{CString, OsString};
 use std::mem::MaybeUninit;
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
@@ -33,10 +33,10 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::Graphics::Gdi::RGNDATA;
+use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC, RGNDATA};
 use windows::Win32::System::LibraryLoader::{
-    GetModuleFileNameW, GetModuleHandleExA, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
-    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+    GetModuleFileNameW, GetModuleHandleA, GetModuleHandleExA, GetProcAddress,
+    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 };
 use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -133,21 +133,19 @@ unsafe extern "system" fn window_proc(
 ////////////////////////////////////////////////////////////////////////////////
 // Hooking logic
 ////////////////////////////////////////////////////////////////////////////////
-type DXGISwapChainPresentType =
-    unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
-
-type Dx9PresentFn = unsafe extern "system" fn(
-    this: IDirect3DDevice9,
-    psourcerect: *const RECT,
-    pdestrect: *const RECT,
-    hdestwindowoverride: HWND,
-    pdirtyregion: *const RGNDATA,
-) -> HRESULT;
 
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut RENDERER: OnceLock<Mutex<Dcomp>> = OnceLock::new();
 static mut TRAMPOLINE_DX11: OnceLock<DXGISwapChainPresentType> = OnceLock::new();
 static mut TRAMPOLINE_DX9: OnceLock<Dx9PresentFn> = OnceLock::new();
+static mut TRAMPOLINE_OPENGL: OnceLock<OpenGl32wglSwapBuffers> = OnceLock::new();
+
+////////////////////////////////////////////////////////////////////////////////
+// DX11
+////////////////////////////////////////////////////////////////////////////////
+
+type DXGISwapChainPresentType =
+    unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
@@ -220,6 +218,35 @@ fn get_present_addr() -> DXGISwapChainPresentType {
     unsafe { std::mem::transmute(present_ptr) }
 }
 
+unsafe fn hook_dx11() {
+    match unsafe { MH_Initialize() } {
+        MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+        status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
+        _ => unreachable!(),
+    }
+
+    let present_addr = get_present_addr();
+    let hook_present =
+        MhHook::new(present_addr as *mut _, dxgi_swap_chain_present_impl as _).unwrap();
+    TRAMPOLINE_DX11.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+
+    hook_present.queue_enable().unwrap();
+
+    MH_ApplyQueued().ok_context("").unwrap();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// DX9
+////////////////////////////////////////////////////////////////////////////////
+
+type Dx9PresentFn = unsafe extern "system" fn(
+    this: IDirect3DDevice9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+) -> HRESULT;
+
 unsafe extern "system" fn imgui_dx9_present_impl(
     this: IDirect3DDevice9,
     psourcerect: *const RECT,
@@ -281,23 +308,6 @@ unsafe fn get_dx9_present_addr() -> Dx9PresentFn {
     std::mem::transmute(present_ptr)
 }
 
-unsafe fn hook_dx11() {
-    match unsafe { MH_Initialize() } {
-        MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
-        status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
-        _ => unreachable!(),
-    }
-
-    let present_addr = get_present_addr();
-    let hook_present =
-        MhHook::new(present_addr as *mut _, dxgi_swap_chain_present_impl as _).unwrap();
-    TRAMPOLINE_DX11.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
-
-    hook_present.queue_enable().unwrap();
-
-    MH_ApplyQueued().ok_context("").unwrap();
-}
-
 unsafe fn hook_dx9() {
     match unsafe { MH_Initialize() } {
         MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
@@ -313,6 +323,68 @@ unsafe fn hook_dx9() {
 
     MH_ApplyQueued().ok_context("").unwrap();
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// OpenGL
+////////////////////////////////////////////////////////////////////////////////
+
+type OpenGl32wglSwapBuffers = unsafe extern "system" fn(HDC) -> ();
+
+unsafe extern "system" fn imgui_opengl_impl(dc: HDC) {
+    trace!("opengl32.wglSwapBuffers invoked");
+
+    GAME_HWND.get_or_init(|| WindowFromDC(dc));
+
+    if let Some(renderer) = RENDERER.get() {
+        if let Ok(mut renderer) = renderer.try_lock() {
+            if let Err(e) = renderer.render() {
+                error!("Render: {e:?}");
+            }
+        }
+    }
+
+    // Get the trampoline
+    let trampoline_wglswapbuffers =
+        TRAMPOLINE_OPENGL.get().expect("opengl32.wglSwapBuffers trampoline uninitialized");
+
+    // Call the original function
+    trampoline_wglswapbuffers(dc)
+}
+
+// Get the address of wglSwapBuffers in opengl32.dll
+unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffers {
+    // Grab a handle to opengl32.dll
+    let opengl32dll = CString::new("opengl32.dll").unwrap();
+    let opengl32module = GetModuleHandleA(PCSTR(opengl32dll.as_ptr() as *mut _))
+        .expect("failed finding opengl32.dll");
+
+    // Grab the address of wglSwapBuffers
+    let wglswapbuffers = CString::new("wglSwapBuffers").unwrap();
+    let wglswapbuffers_func =
+        GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
+
+    std::mem::transmute(wglswapbuffers_func)
+}
+
+unsafe fn hook_opengl() {
+    match unsafe { MH_Initialize() } {
+        MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+        status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
+        _ => unreachable!(),
+    }
+
+    let present_addr = get_opengl_wglswapbuffers_addr();
+    let hook_present = MhHook::new(present_addr as *mut _, imgui_opengl_impl as _).unwrap();
+    TRAMPOLINE_OPENGL.get_or_init(|| std::mem::transmute(hook_present.trampoline()));
+
+    hook_present.queue_enable().unwrap();
+
+    MH_ApplyQueued().ok_context("").unwrap();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Entry point
+////////////////////////////////////////////////////////////////////////////////
 
 fn handle_message(window: HWND) -> bool {
     unsafe {
@@ -342,17 +414,6 @@ unsafe fn run_dcomp() -> Result<()> {
     info!("Built dcomp");
 
     RENDERER.get_or_init(move || Mutex::new(renderer));
-
-    // loop {
-    // if let Err(e) = renderer.render() {
-    //     error!("Render error: {e:?}");
-    //     break;
-    // }
-
-    // if !handle_message(hwnd) {
-    //     break;
-    // }
-    // }
 
     Ok(())
 }
@@ -407,7 +468,7 @@ pub unsafe extern "stdcall" fn DllMain(
 
             tracing_subscriber::registry().with(LevelFilter::TRACE).with(file_layer).init();
             info!("Hooking...");
-            hook_dx11();
+            hook_opengl();
 
             info!("Doing thing...");
             if let Err(e) = run_dcomp() {

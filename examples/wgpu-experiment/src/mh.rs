@@ -111,4 +111,3 @@ impl MhHook {
         MH_QueueDisableHook(self.addr).ok_context("MH_QueueDisableHook")
     }
 }
-

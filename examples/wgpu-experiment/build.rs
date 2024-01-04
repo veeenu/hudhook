@@ -32,4 +32,3 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/minhook/src");
     println!("cargo:rustc-link-search=native={}", env::var("OUT_DIR").unwrap());
 }
-
