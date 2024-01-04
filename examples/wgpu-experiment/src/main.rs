@@ -22,14 +22,14 @@ fn main() -> Result<()> {
     println!("{:?}", project_root());
     let dll_path = project_root()
         .join("target")
-        //.join("i686-pc-windows-msvc")
+        // .join("i686-pc-windows-msvc")
         .join("release")
         .join("wgpu_experiment.dll")
         .canonicalize()?;
 
     // let process = OwnedProcess::find_first_by_name("DarkSoulsIII.exe")
     // let process = OwnedProcess::find_first_by_name("DARKSOULS.exe")
-    let process = OwnedProcess::find_first_by_name("eldenring.exe")
+    let process = OwnedProcess::find_first_by_name("Baldur.exe")
         .ok_or_else(|| anyhow!("Could not find process"))?;
     let syringe = Syringe::for_process(process);
     syringe.inject(dll_path)?;
