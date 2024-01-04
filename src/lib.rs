@@ -127,15 +127,15 @@ pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS
 pub use {imgui, tracing};
 
 use crate::hooks::Hooks;
-pub use crate::hooks::ImguiRenderLoop;
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
+pub use crate::render_loop::ImguiRenderLoop;
 
 pub mod hooks;
-pub mod mh;
-pub mod renderers;
-
 #[cfg(feature = "inject")]
 pub mod inject;
+pub mod mh;
+pub mod render_loop;
+pub mod renderer;
 
 mod util;
 

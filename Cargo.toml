@@ -1,6 +1,6 @@
 [package]
 name = "hudhook"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "A graphics API hook with dear imgui render loop. Supports DirectX 9, 11, 12, and OpenGL 3."
 homepage = "https://github.com/veeenu/hudhook"
@@ -11,7 +11,7 @@ authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
-targets = ["x86_64-pc-windows-msvc"]
+targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
 
 [features]
 default = ["dx9", "dx11", "dx12", "opengl3", "inject"]
