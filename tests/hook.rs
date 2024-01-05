@@ -1,4 +1,4 @@
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::ImguiRenderLoop;
 use imgui::{Condition, StyleColor};
 
 pub struct HookExample;

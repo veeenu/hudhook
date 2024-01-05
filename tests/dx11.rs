@@ -23,12 +23,10 @@ fn test_imgui_dx11() {
     let dx11_harness = Dx11Harness::new("DX11 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    if let Err(e) =
-        Hudhook::builder().with(HookExample::new().into_hook::<ImguiDx11Hooks>()).build().apply()
-    {
+    if let Err(e) = Hudhook::builder().with::<ImguiDx11Hooks>(HookExample::new()).build().apply() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
-    thread::sleep(Duration::from_millis(5000));
+    thread::sleep(Duration::from_millis(25000));
     drop(dx11_harness);
 }

@@ -114,10 +114,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
+use imgui::{Context, Io, Ui};
 use once_cell::sync::OnceCell;
 use tracing::error;
 use windows::core::Error;
 pub use windows::Win32::Foundation::HINSTANCE;
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
     AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
@@ -126,15 +128,12 @@ use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 pub use {imgui, tracing};
 
-use crate::hooks::Hooks;
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
-pub use crate::render_loop::ImguiRenderLoop;
 
 pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
 pub mod mh;
-pub mod render_loop;
 pub mod renderer;
 
 mod util;
@@ -209,6 +208,49 @@ pub fn eject() {
             FreeLibraryAndExitThread(module, 0);
         }
     });
+}
+
+/// Implement your `imgui` rendering logic via this trait.
+pub trait ImguiRenderLoop {
+    /// Called once at the first occurrence of the hook. Implement this to
+    /// initialize your data.
+    fn initialize(&mut self, _ctx: &mut Context) {}
+
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui);
+
+    /// Called during the window procedure.
+    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
+
+    /// If this function returns true, the WndProc function will not call the
+    /// procedure of the parent window.
+    fn should_block_messages(&self, _io: &Io) -> bool {
+        false
+    }
+}
+
+/// Generic trait for platform-specific hooks.
+///
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static;
+
+    /// Return the list of hooks to be enabled, in order.
+    fn hooks(&self) -> &[MhHook];
+
+    /// Cleanup global data and disable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn unhook(&mut self);
 }
 
 /// Holds all the activated hooks and manages their lifetime.

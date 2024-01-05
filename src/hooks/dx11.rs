@@ -22,7 +22,8 @@ use windows::{
                     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
                     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
                 },
-                IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+                DXGIGetDebugInterface1, IDXGIInfoQueue, IDXGISwapChain, DXGI_DEBUG_ALL,
+                DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
                 DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
@@ -30,9 +31,9 @@ use windows::{
     },
 };
 
-use crate::hooks::Hooks;
 use crate::mh::MhHook;
 use crate::renderer::dx12::RenderEngine;
+use crate::Hooks;
 use crate::ImguiRenderLoop;
 
 type DXGISwapChainPresentType =

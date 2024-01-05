@@ -10,7 +10,7 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId, Ui};
 use memoffset::offset_of;
 use tracing::{error, trace};
-use windows::core::{s, w, ComInterface, Result, PCSTR};
+use windows::core::{s, w, ComInterface, Result, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -34,10 +34,22 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow,
 
 use crate::util::{try_out_param, try_out_ptr};
 
+const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
+    w!("hudhook Command allocator #0"),
+    w!("hudhook Command allocator #1"),
+    w!("hudhook Command allocator #2"),
+    w!("hudhook Command allocator #3"),
+    w!("hudhook Command allocator #4"),
+    w!("hudhook Command allocator #5"),
+    w!("hudhook Command allocator #6"),
+    w!("hudhook Command allocator #7"),
+];
+
 #[derive(Debug)]
 struct FrameContext {
     desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
     back_buffer: ID3D12Resource,
+    command_allocator: ID3D12CommandAllocator,
     fence: ID3D12Fence,
     fence_val: u64,
     fence_event: HANDLE,
@@ -58,9 +70,14 @@ impl FrameContext {
         let back_buffer: ID3D12Resource = swap_chain.GetBuffer(index)?;
         device.CreateRenderTargetView(&back_buffer, None, desc_handle);
 
+        let command_allocator: ID3D12CommandAllocator =
+            device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+        command_allocator.SetName(COMMAND_ALLOCATOR_NAMES[index as usize % 8])?;
+
         Ok(FrameContext {
             desc_handle,
             back_buffer,
+            command_allocator,
             fence: device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
             fence_val: 0,
             fence_event: CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003).unwrap(),
@@ -87,6 +104,8 @@ struct FrameResources {
     vertex_buffer: Option<ID3D12Resource>,
     index_buffer_size: usize,
     vertex_buffer_size: usize,
+    vertices: Vec<DrawVert>,
+    indices: Vec<DrawIdx>,
 }
 
 impl FrameResources {
@@ -187,6 +206,8 @@ impl Default for FrameResources {
             vertex_buffer: None,
             index_buffer_size: 10000,
             vertex_buffer_size: 5000,
+            vertices: Default::default(),
+            indices: Default::default(),
         }
     }
 }
@@ -259,7 +280,6 @@ pub struct RenderEngine {
     swap_chain: IDXGISwapChain3,
 
     command_queue: ID3D12CommandQueue,
-    command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
 
     renderer_heap: ID3D12DescriptorHeap,
@@ -283,7 +303,6 @@ pub struct RenderEngine {
 impl RenderEngine {
     pub fn new(target_hwnd: HWND) -> Result<Self> {
         // Build device and swap chain.
-
         let dxgi_factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }?;
 
         let dxgi_adapter = unsafe { dxgi_factory.EnumAdapters(0) }?;
@@ -344,7 +363,7 @@ impl RenderEngine {
         let rtv_heap_inc_size =
             unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
 
-        let handle_start = unsafe { renderer_heap.GetCPUDescriptorHandleForHeapStart() };
+        let handle_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
         // Build frame contexts.
         let frame_contexts: Vec<FrameContext> = (0..sd.BufferCount)
@@ -368,10 +387,11 @@ impl RenderEngine {
             command_list.SetName(w!("hudhook Command List"))?;
         };
 
-        let cpu_desc = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
-        let gpu_desc = unsafe { rtv_heap.GetGPUDescriptorHandleForHeapStart() };
+        let cpu_desc = unsafe { renderer_heap.GetCPUDescriptorHandleForHeapStart() };
+        let gpu_desc = unsafe { renderer_heap.GetGPUDescriptorHandleForHeapStart() };
 
         let mut ctx = Context::create();
+        ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
 
@@ -385,7 +405,6 @@ impl RenderEngine {
             device,
             swap_chain,
             command_queue,
-            command_allocator,
             command_list,
             renderer_heap,
             _rtv_heap: rtv_heap,
@@ -414,10 +433,12 @@ impl RenderEngine {
         self.frame_contexts[idx].wait_fence();
         self.frame_contexts[idx].incr();
 
+        let command_allocator = &self.frame_contexts[idx].command_allocator;
+
         // Reset command allocator and list state.
         unsafe {
-            self.command_allocator.Reset().unwrap();
-            self.command_list.Reset(&self.command_allocator, None).unwrap();
+            command_allocator.Reset().unwrap();
+            self.command_list.Reset(command_allocator, None).unwrap();
         }
 
         // Setup a barrier that waits for the back buffer to transition to a render target.
@@ -1048,15 +1069,17 @@ impl RenderEngine {
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
         let mut idx_resource: *mut imgui::DrawIdx = null_mut();
 
-        // I allocate vectors every single frame SwoleDoge
-        let (vertices, indices): (Vec<DrawVert>, Vec<DrawIdx>) = draw_data
-            .draw_lists()
-            .map(|m| (m.vtx_buffer().iter(), m.idx_buffer().iter()))
-            .fold((Vec::new(), Vec::new()), |(mut ov, mut oi), (v, i)| {
-                ov.extend(v);
-                oi.extend(i);
-                (ov, oi)
-            });
+        self.frame_resources[idx].vertices.clear();
+        self.frame_resources[idx].indices.clear();
+        draw_data.draw_lists().map(|m| (m.vtx_buffer().iter(), m.idx_buffer().iter())).for_each(
+            |(v, i)| {
+                self.frame_resources[idx].vertices.extend(v);
+                self.frame_resources[idx].indices.extend(i);
+            },
+        );
+
+        let vertices = &self.frame_resources[idx].vertices;
+        let indices = &self.frame_resources[idx].indices;
 
         {
             let frame_resources = &self.frame_resources[idx];
