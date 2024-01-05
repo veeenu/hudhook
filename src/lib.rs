@@ -311,8 +311,11 @@ pub struct HudhookBuilder(Hudhook);
 
 impl HudhookBuilder {
     /// Add a hook object.
-    pub fn with(mut self, hook: Box<dyn Hooks>) -> Self {
-        self.0 .0.push(hook);
+    pub fn with<T: Hooks + 'static>(
+        mut self,
+        render_loop: impl ImguiRenderLoop + Send + Sync + 'static,
+    ) -> Self {
+        self.0 .0.push(T::from_render_loop(render_loop));
         self
     }
 

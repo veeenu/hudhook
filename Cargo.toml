@@ -25,54 +25,54 @@ inject = []
 #
 # These are minimal examples of how to use the library.
 
-[[example]]
-name = "dx9_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "dx11_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "dx12_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "opengl3_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "dummy_hook"
-crate-type = ["cdylib"]
+# [[example]]
+# name = "dx9_hook"
+# crate-type = ["cdylib"]
+#
+# [[example]]
+# name = "dx11_hook"
+# crate-type = ["cdylib"]
+#
+# [[example]]
+# name = "dx12_hook"
+# crate-type = ["cdylib"]
+#
+# [[example]]
+# name = "opengl3_hook"
+# crate-type = ["cdylib"]
+#
+# [[example]]
+# name = "dummy_hook"
+# crate-type = ["cdylib"]
 
 # Hosts examples
 #
 # These examples contain code that creates an empty window with a rendering
 # surface for the appropriate engine. Hook examples should be attached to these.
 
-[[example]]
-name = "dx11_host"
-crate-type = ["bin"]
+# [[example]]
+# name = "dx11_host"
+# crate-type = ["bin"]
 
 # Renderers examples
 #
 # These examples contain code that creates a window and a rendering surface and
 # plainly renders some imgui code with the appropriate renderer.
 
-[[example]]
-name = "renderer-dx9"
-path = "examples/renderers/dx9.rs"
-crate-type = ["bin"]
-
-[[example]]
-name = "renderer-dx11"
-path = "examples/renderers/dx11.rs"
-crate-type = ["bin"]
-
-[[example]]
-name = "renderer-dx12"
-path = "examples/renderers/dx12.rs"
-crate-type = ["bin"]
+# [[example]]
+# name = "renderer-dx9"
+# path = "examples/renderers/dx9.rs"
+# crate-type = ["bin"]
+#
+# [[example]]
+# name = "renderer-dx11"
+# path = "examples/renderers/dx11.rs"
+# crate-type = ["bin"]
+#
+# [[example]]
+# name = "renderer-dx12"
+# path = "examples/renderers/dx12.rs"
+# crate-type = ["bin"]
 
 [dependencies]
 imgui = "0.11"
@@ -99,6 +99,7 @@ windows = { version = "0.51.0", features = [
   "Win32_Graphics_Direct3D12",
   "Win32_Graphics_Direct3D_Fxc",
   "Win32_Graphics_Direct3D",
+  "Win32_Graphics_DirectComposition",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_OpenGL",
   "Win32_UI_Input",

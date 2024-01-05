@@ -1,3 +1,8 @@
+use windows::Win32::{
+    Foundation::{HWND, RECT},
+    UI::WindowsAndMessaging::GetClientRect,
+};
+
 pub fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
 where
     T: Default,
@@ -19,4 +24,10 @@ where
         Ok(_) => Ok(t.unwrap()),
         Err(e) => Err(e),
     }
+}
+
+pub fn win_size(hwnd: HWND) -> (i32, i32) {
+    let mut rect = RECT::default();
+    unsafe { GetClientRect(hwnd, &mut rect).unwrap() };
+    (rect.right - rect.left, rect.bottom - rect.top)
 }
