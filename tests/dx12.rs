@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use harness::dx12::Dx12Harness;
 use hook::HookExample;
-use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::*;
 use tracing::metadata::LevelFilter;
 
@@ -23,9 +22,7 @@ fn test_imgui_dx12() {
     let dx12_harness = Dx12Harness::new("DX12 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    if let Err(e) =
-        Hudhook::builder().with(HookExample::new().into_hook::<ImguiDx12Hooks>()).build().apply()
-    {
+    if let Err(e) = Hudhook::builder().with::<ImguiDx12Hooks>(HookExample::new()).build().apply() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 

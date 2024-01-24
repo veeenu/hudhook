@@ -6,9 +6,7 @@ use std::time::Duration;
 
 use harness::dx9::Dx9Harness;
 use hook::HookExample;
-use hudhook::hooks::dx9::ImguiDx9Hooks;
-use hudhook::Hudhook;
-use hudhook::ImguiRenderLoop;
+use hudhook::*;
 use tracing::metadata::LevelFilter;
 
 #[test]
@@ -24,9 +22,7 @@ fn test_imgui_dx9() {
     let dx9_harness = Dx9Harness::new("DX9 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    if let Err(e) =
-        Hudhook::builder().with(HookExample::new().into_hook::<ImguiDx9Hooks>()).build().apply()
-    {
+    if let Err(e) = Hudhook::builder().with::<ImguiDx9Hooks>(HookExample::new()).build().apply() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
