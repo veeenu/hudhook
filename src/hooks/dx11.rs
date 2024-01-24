@@ -2,8 +2,6 @@ use std::{
     ffi::c_void,
     mem,
     sync::{Mutex, OnceLock},
-    thread,
-    time::Duration,
 };
 
 use tracing::{error, info, trace};
@@ -19,11 +17,11 @@ use windows::{
             },
             Dxgi::{
                 Common::{
-                    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-                    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
+                    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC,
+                    DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+                    DXGI_SAMPLE_DESC,
                 },
-                DXGIGetDebugInterface1, IDXGIInfoQueue, IDXGISwapChain, DXGI_DEBUG_ALL,
-                DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+                IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
                 DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
@@ -39,17 +37,32 @@ use crate::ImguiRenderLoop;
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
 
+type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
+    This: IDXGISwapChain,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT;
+
+struct Trampolines {
+    dxgi_swap_chain_present: DXGISwapChainPresentType,
+    dxgi_swap_chain_resize_buffers: DXGISwapChainResizeBuffersType,
+}
+
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
-static mut TRAMPOLINE: OnceLock<DXGISwapChainPresentType> = OnceLock::new();
+static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
-    let trampoline = TRAMPOLINE.get().expect("IDXGISwapChain::Present trampoline uninitialized");
+    let Trampolines { dxgi_swap_chain_present, .. } =
+        TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
     let hwnd = GAME_HWND.get_or_init(|| {
         let mut desc = Default::default();
         p_this.GetDesc(&mut desc).unwrap();
@@ -60,8 +73,23 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 
     render(*hwnd);
 
-    trace!("Call trampoline");
-    trampoline(p_this, sync_interval, flags)
+    trace!("Call IDXGISwapChain::Present trampoline");
+    dxgi_swap_chain_present(p_this, sync_interval, flags)
+}
+
+unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
+    p_this: IDXGISwapChain,
+    buffer_count: u32,
+    width: u32,
+    height: u32,
+    new_format: DXGI_FORMAT,
+    flags: u32,
+) -> HRESULT {
+    let Trampolines { dxgi_swap_chain_resize_buffers, .. } =
+        TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
+
+    trace!("Call IDXGISwapChain::ResizeBuffers trampoline");
+    dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
 }
 
 unsafe fn render(hwnd: HWND) {
@@ -76,7 +104,7 @@ unsafe fn render(hwnd: HWND) {
     }
 }
 
-fn get_present_addr() -> DXGISwapChainPresentType {
+fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
     let mut p_device: Option<ID3D11Device> = None;
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -115,12 +143,15 @@ fn get_present_addr() -> DXGISwapChainPresentType {
 
     let swap_chain = p_swap_chain.unwrap();
 
-    let present_ptr = swap_chain.vtable().Present;
+    let present_ptr: DXGISwapChainPresentType =
+        unsafe { mem::transmute(swap_chain.vtable().Present) };
+    let resize_buffers_ptr: DXGISwapChainResizeBuffersType =
+        unsafe { mem::transmute(swap_chain.vtable().ResizeBuffers) };
 
-    unsafe { std::mem::transmute(present_ptr) }
+    (present_ptr, resize_buffers_ptr)
 }
 
-pub struct ImguiDx11Hooks([MhHook; 1]);
+pub struct ImguiDx11Hooks([MhHook; 2]);
 
 impl ImguiDx11Hooks {
     /// Construct a set of [`RawDetour`]s that will render UI via the provided
@@ -129,7 +160,6 @@ impl ImguiDx11Hooks {
     /// The following functions are hooked:
     /// - `IDXGISwapChain::Present`
     /// - `IDXGISwapChain::ResizeBuffers`
-    /// - `ID3D12CommandQueue::ExecuteCommandLists`
     ///
     /// # Safety
     ///
@@ -138,19 +168,28 @@ impl ImguiDx11Hooks {
     where
         T: ImguiRenderLoop + Send + Sync,
     {
-        let dxgi_swap_chain_present_addr = get_present_addr();
+        let (dxgi_swap_chain_present_addr, dxgi_swap_chain_resize_buffers_addr) =
+            get_target_addrs();
 
         trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
-        let hook_dscp = MhHook::new(
+        let hook_present = MhHook::new(
             dxgi_swap_chain_present_addr as *mut _,
             dxgi_swap_chain_present_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::Present hook");
+        let hook_resize_buffers = MhHook::new(
+            dxgi_swap_chain_resize_buffers_addr as *mut _,
+            dxgi_swap_chain_resize_buffers_impl as *mut _,
+        )
+        .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
 
         RENDER_LOOP.get_or_init(|| Box::new(t));
-        TRAMPOLINE.get_or_init(|| mem::transmute(hook_dscp.trampoline()));
+        TRAMPOLINES.get_or_init(|| Trampolines {
+            dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
+            dxgi_swap_chain_resize_buffers: mem::transmute(hook_resize_buffers.trampoline()),
+        });
 
-        Self([hook_dscp])
+        Self([hook_present, hook_resize_buffers])
     }
 }
 
@@ -168,31 +207,8 @@ impl Hooks for ImguiDx11Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        trace!("Disabling hooks...");
-
-        // CQECL_RUNNING.wait();
-        // PRESENT_RUNNING.wait();
-        // RBUF_RUNNING.wait();
-
-        trace!("Cleaning up renderer...");
-        if let Some(_renderer) = RENDER_ENGINE.take() {
-            // let renderer = renderer.lock().unwrap();
-            // XXX
-            // This is a hack for solving this concurrency issue:
-            // https://github.com/veeenu/hudhook/issues/34
-            // We should investigate deeper into this and find a way of synchronizing with
-            // the moment the actual resources involved in the rendering are
-            // dropped. Using a condvar like above does not work, and still
-            // leads clients to crash.
-            //
-            // The 34ms value was chosen because it's a bit more than 1 frame @ 30fps.
-            thread::sleep(Duration::from_millis(34));
-            // renderer.cleanup(None);
-        }
-
-        drop(RENDER_LOOP.take());
-        // COMMAND_QUEUE_GUARD.take();
-        //
-        // DXGI_DEBUG_ENABLED.store(false, Ordering::SeqCst);
+        RENDER_ENGINE.take();
+        RENDER_LOOP.take();
+        TRAMPOLINES.take();
     }
 }

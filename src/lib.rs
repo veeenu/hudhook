@@ -397,7 +397,7 @@ impl HudhookBuilder {
 /// ```
 #[macro_export]
 macro_rules! hudhook {
-    ($hooks:expr) => {
+    ($t:ty, $hooks:expr) => {
         use hudhook::tracing::*;
         use hudhook::*;
 
@@ -409,13 +409,16 @@ macro_rules! hudhook {
             _: *mut ::std::ffi::c_void,
         ) {
             if reason == DLL_PROCESS_ATTACH {
-                trace!("DllMain()");
+                ::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {
-                    if let Err(e) =
-                        Hudhook::builder().with({ $hooks }).with_hmodule(hmodule).build().apply()
+                    if let Err(e) = ::hudhook::Hudhook::builder()
+                        .with::<$t>({ $hooks })
+                        .with_hmodule(hmodule)
+                        .build()
+                        .apply()
                     {
-                        error!("Couldn't apply hooks: {e:?}");
-                        eject();
+                        ::tracing::error!("Couldn't apply hooks: {e:?}");
+                        ::hudhook::eject();
                     }
                 });
             }
