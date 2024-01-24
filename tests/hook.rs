@@ -1,14 +1,19 @@
+use std::time::{Duration, Instant};
+
 use hudhook::ImguiRenderLoop;
 use imgui::{Condition, StyleColor};
 
-pub struct HookExample;
+pub struct HookExample {
+    frame_times: Vec<Duration>,
+    last_time: Instant,
+}
 
 impl HookExample {
     pub fn new() -> Self {
         println!("Initializing");
         hudhook::alloc_console().ok();
 
-        HookExample
+        HookExample { frame_times: Vec::new(), last_time: Instant::now() }
     }
 }
 
@@ -20,6 +25,14 @@ impl Default for HookExample {
 
 impl ImguiRenderLoop for HookExample {
     fn render(&mut self, ui: &mut imgui::Ui) {
+        let duration = self.last_time.elapsed();
+        self.frame_times.push(duration);
+        self.last_time = Instant::now();
+
+        let avg: Duration =
+            self.frame_times.iter().sum::<Duration>() / self.frame_times.len() as u32;
+        let last = self.frame_times.last().unwrap();
+
         ui.window("Hello world").size([400.0, 500.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
             ui.text("こんにちは世界！");
@@ -46,6 +59,10 @@ impl ImguiRenderLoop for HookExample {
             ui.separator();
             let mouse_pos = ui.io().mouse_pos;
             ui.text(format!("Mouse Position: ({:.1},{:.1})", mouse_pos[0], mouse_pos[1]));
+            ui.text(format!("Frame time: {:8.2}", last.as_secs_f64() * 1000.));
+            ui.text(format!("Avg:        {:8.2}", avg.as_secs_f64() * 1000.));
+            ui.text(format!("FPS:        {:8.2}", 1. / last.as_secs_f64()));
+            ui.text(format!("Avg:        {:8.2}", 1. / avg.as_secs_f64()));
         });
     }
 }

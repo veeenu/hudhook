@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
@@ -507,6 +507,14 @@ impl RenderEngine {
         unsafe { self.compositor.render(&self.swap_chain) }?;
 
         Ok(())
+    }
+
+    pub fn hwnd(&self) -> HWND {
+        self.target_hwnd
+    }
+
+    pub fn ctx(&mut self) -> RefMut<Context> {
+        self.ctx.borrow_mut()
     }
 
     unsafe fn setup_io(&mut self) -> Result<()> {

@@ -1,14 +1,11 @@
-use std::{
-    ffi::c_void,
-    mem,
-    sync::{Mutex, OnceLock},
-};
+use std::{ffi::c_void, mem, sync::OnceLock};
 
-use tracing::{error, info, trace};
+use parking_lot::Mutex;
+use tracing::{debug, error, info, trace};
 use windows::{
     core::{Interface, HRESULT},
     Win32::{
-        Foundation::{BOOL, HWND},
+        Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM},
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0},
             Direct3D11::{
@@ -25,7 +22,7 @@ use windows::{
                 DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
-        UI::WindowsAndMessaging::GetDesktopWindow,
+        UI::WindowsAndMessaging::{DefWindowProcW, GetDesktopWindow, GWLP_WNDPROC},
     },
 };
 
@@ -33,6 +30,8 @@ use crate::mh::MhHook;
 use crate::renderer::dx12::RenderEngine;
 use crate::Hooks;
 use crate::ImguiRenderLoop;
+
+use super::input::{imgui_wnd_proc_impl, WndProcType};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -52,6 +51,7 @@ struct Trampolines {
 }
 
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
+static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();
 static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
@@ -63,7 +63,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 ) -> HRESULT {
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
-    let hwnd = GAME_HWND.get_or_init(|| {
+    let hwnd = *GAME_HWND.get_or_init(|| {
         let mut desc = Default::default();
         p_this.GetDesc(&mut desc).unwrap();
         info!("Output window: {:?}", p_this);
@@ -71,7 +71,29 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    render(*hwnd);
+    WND_PROC.get_or_init(|| {
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        let wnd_proc = unsafe {
+            mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA(
+                hwnd,
+                GWLP_WNDPROC,
+                imgui_wnd_proc as usize as isize,
+            ))
+        };
+
+        #[cfg(target_arch = "x86")]
+        let wnd_proc = unsafe {
+            mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongA(
+                hwnd,
+                GWLP_WNDPROC,
+                imgui_wnd_proc as usize as i32,
+            ))
+        };
+
+        wnd_proc
+    });
+
+    render(hwnd);
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(p_this, sync_interval, flags)
@@ -92,12 +114,57 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
 }
 
+unsafe extern "system" fn imgui_wnd_proc(
+    hwnd: HWND,
+    umsg: u32,
+    WPARAM(wparam): WPARAM,
+    LPARAM(lparam): LPARAM,
+) -> LRESULT {
+    let render_engine = match RENDER_ENGINE.get().map(Mutex::try_lock) {
+        Some(Some(render_engine)) => render_engine,
+        Some(None) => {
+            debug!("Could not lock in WndProc");
+            return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+        },
+        None => {
+            debug!("WndProc called before hook was set");
+            return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+        },
+    };
+
+    let Some(render_loop) = RENDER_LOOP.get() else {
+        debug!("Could not get render loop");
+        return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+    };
+
+    let Some(&wnd_proc) = WND_PROC.get() else {
+        debug!("Could not get original WndProc");
+        return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+    };
+
+    imgui_wnd_proc_impl(
+        hwnd,
+        umsg,
+        WPARAM(wparam),
+        LPARAM(lparam),
+        wnd_proc,
+        render_engine,
+        render_loop,
+    )
+}
+
 unsafe fn render(hwnd: HWND) {
     let render_engine =
         RENDER_ENGINE.get_or_init(move || Mutex::new(RenderEngine::new(hwnd).unwrap()));
 
-    let Ok(mut render_engine) = render_engine.try_lock() else { return };
-    let Some(render_loop) = RENDER_LOOP.get_mut() else { return };
+    let Some(mut render_engine) = render_engine.try_lock() else {
+        error!("Could not lock render engine");
+        return;
+    };
+    let Some(render_loop) = RENDER_LOOP.get_mut() else {
+        error!("Could not obtain render loop");
+        return;
+    };
 
     if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
         error!("Render: {e:?}");
