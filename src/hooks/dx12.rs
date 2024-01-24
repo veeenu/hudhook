@@ -14,29 +14,32 @@ use windows::{
     Win32::{
         Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM},
         Graphics::{
-            Direct3D::{D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0},
-            Direct3D11::{
-                D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext,
-                D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
+            Direct3D::D3D_FEATURE_LEVEL_11_0,
+            Direct3D12::{
+                D3D12CreateDevice, ID3D12CommandQueue, ID3D12Device,
+                D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
+                D3D12_COMMAND_QUEUE_FLAG_NONE,
             },
             Dxgi::{
                 Common::{
                     DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC,
                     DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-                    DXGI_SAMPLE_DESC,
+                    DXGI_RATIONAL, DXGI_SAMPLE_DESC,
                 },
-                IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-                DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue,
+                IDXGISwapChain, IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
+                DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,
+                DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
         UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC},
     },
 };
 
-use crate::mh::MhHook;
 use crate::renderer::dx12::RenderEngine;
 use crate::Hooks;
 use crate::ImguiRenderLoop;
+use crate::{mh::MhHook, util::try_out_ptr};
 
 use super::{
     input::{imgui_wnd_proc_impl, WndProcType},
@@ -44,10 +47,10 @@ use super::{
 };
 
 type DXGISwapChainPresentType =
-    unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
+    unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
 
 type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
-    This: IDXGISwapChain,
+    This: IDXGISwapChain3,
     buffer_count: u32,
     width: u32,
     height: u32,
@@ -55,9 +58,16 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
     flags: u32,
 ) -> HRESULT;
 
+// type DXGICommandQueueExecuteCommandListsType = unsafe extern "system" fn(
+//     This: ID3D12CommandQueue,
+//     num_command_lists: u32,
+//     command_lists: *mut ID3D12CommandList,
+// );
+
 struct Trampolines {
     dxgi_swap_chain_present: DXGISwapChainPresentType,
     dxgi_swap_chain_resize_buffers: DXGISwapChainResizeBuffersType,
+    // dxgi_command_queue_execute_command_lists: DXGICommandQueueExecuteCommandListsType,
 }
 
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
@@ -68,12 +78,12 @@ static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
-    p_this: IDXGISwapChain,
+    p_this: IDXGISwapChain3,
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
     let Trampolines { dxgi_swap_chain_present, .. } =
-        TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
+        TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
     // Don't attempt a render if one is already underway: it might be that the renderer itself
     // is currently invoking `Present`.
@@ -118,7 +128,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 }
 
 unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
-    p_this: IDXGISwapChain,
+    p_this: IDXGISwapChain3,
     buffer_count: u32,
     width: u32,
     height: u32,
@@ -126,7 +136,7 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     flags: u32,
 ) -> HRESULT {
     let Trampolines { dxgi_swap_chain_resize_buffers, .. } =
-        TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
+        TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
     trace!("Call IDXGISwapChain::ResizeBuffers trampoline");
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
@@ -171,6 +181,27 @@ unsafe extern "system" fn imgui_wnd_proc(
     )
 }
 
+unsafe fn print_dxgi_debug_messages() {
+    let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
+
+    for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
+        let mut msg_len: usize = 0;
+        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
+        let diqm = vec![0u8; msg_len];
+        let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
+        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
+        let diqm = pdiqm.as_ref().unwrap();
+        debug!(
+            "[DIQ] {}",
+            String::from_utf8_lossy(std::slice::from_raw_parts(
+                diqm.pDescription,
+                diqm.DescriptionByteLength - 1
+            ))
+        );
+    }
+    diq.ClearStoredMessages(DXGI_DEBUG_ALL);
+}
+
 unsafe fn render(hwnd: HWND) {
     RENDER_LOCK.store(true, Ordering::SeqCst);
 
@@ -194,43 +225,58 @@ unsafe fn render(hwnd: HWND) {
 }
 
 fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
-    let mut p_device: Option<ID3D11Device> = None;
-    let mut p_context: Option<ID3D11DeviceContext> = None;
-    let mut p_swap_chain: Option<IDXGISwapChain> = None;
+    // let dummy_hwnd = find_process_hwnd().expect("Could not find process hwnd"); // unsafe { GetDesktopWindow() };
 
     let dummy_hwnd = DummyHwnd::new();
-    unsafe {
-        D3D11CreateDeviceAndSwapChain(
-            None,
-            D3D_DRIVER_TYPE_NULL,
-            None,
-            D3D11_CREATE_DEVICE_FLAG(0),
-            Some(&[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0]),
-            D3D11_SDK_VERSION,
-            Some(&DXGI_SWAP_CHAIN_DESC {
-                BufferDesc: DXGI_MODE_DESC {
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-                    Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
-                    ..Default::default()
-                },
-                BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                BufferCount: 1,
-                OutputWindow: dummy_hwnd.hwnd(),
-                Windowed: BOOL(1),
-                SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, ..Default::default() },
-                ..Default::default()
-            }),
-            Some(&mut p_swap_chain),
-            Some(&mut p_device),
-            None,
-            Some(&mut p_context),
-        )
-        .expect("D3D11CreateDeviceAndSwapChain failed");
-    }
 
-    let swap_chain = p_swap_chain.unwrap();
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
+    let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
+
+    let dev: ID3D12Device =
+        try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
+            .expect("D3D12CreateDevice failed");
+
+    let command_queue: ID3D12CommandQueue = unsafe {
+        dev.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
+            Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+            Priority: 0,
+            Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
+            NodeMask: 0,
+        })
+    }
+    .unwrap();
+
+    let swap_chain: IDXGISwapChain = match try_out_ptr(|v| unsafe {
+        factory
+            .CreateSwapChain(
+                &command_queue,
+                &DXGI_SWAP_CHAIN_DESC {
+                    BufferDesc: DXGI_MODE_DESC {
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+                        Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
+                        Width: 640,
+                        Height: 480,
+                        RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
+                    },
+                    BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                    BufferCount: 2,
+                    OutputWindow: dummy_hwnd.hwnd(),
+                    Windowed: BOOL(1),
+                    SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as _,
+                },
+                v,
+            )
+            .ok()
+    }) {
+        Ok(swap_chain) => swap_chain,
+        Err(e) => {
+            unsafe { print_dxgi_debug_messages() };
+            panic!("{e:?}");
+        },
+    };
 
     let present_ptr: DXGISwapChainPresentType =
         unsafe { mem::transmute(swap_chain.vtable().Present) };
@@ -240,15 +286,15 @@ fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     (present_ptr, resize_buffers_ptr)
 }
 
-pub struct ImguiDx11Hooks([MhHook; 2]);
+pub struct ImguiDx12Hooks([MhHook; 2]);
 
-impl ImguiDx11Hooks {
+impl ImguiDx12Hooks {
     /// Construct a set of [`RawDetour`]s that will render UI via the provided
     /// [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:
-    /// - `IDXGISwapChain::Present`
-    /// - `IDXGISwapChain::ResizeBuffers`
+    /// - `IDXGISwapChain3::Present`
+    /// - `IDXGISwapChain3::ResizeBuffers`
     ///
     /// # Safety
     ///
@@ -282,7 +328,7 @@ impl ImguiDx11Hooks {
     }
 }
 
-impl Hooks for ImguiDx11Hooks {
+impl Hooks for ImguiDx12Hooks {
     fn from_render_loop<T>(t: T) -> Box<Self>
     where
         Self: Sized,

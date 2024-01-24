@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use harness::dx12::Dx12Harness;
 use hook::HookExample;
+use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::*;
 use tracing::metadata::LevelFilter;
 
