@@ -45,11 +45,10 @@
 //!
 //! ##### Example
 //!
-//! Implement the [`hooks::ImguiRenderLoop`] trait:
+//! Implement the [`ImguiRenderLoop`] trait:
 //!
 //! ```no_run
 //! // lib.rs
-//! use hudhook::hooks::ImguiRenderLoop;
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
@@ -68,25 +67,25 @@
 //! {
 //!     // Use this if hooking into a DirectX 9 application.
 //!     use hudhook::hooks::dx9::ImguiDx9Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx9Hooks>());
+//!     hudhook!(ImguiDx9Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 11 application.
 //!     use hudhook::hooks::dx11::ImguiDx11Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx11Hooks>());
+//!     hudhook!(ImguiDx11Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 12 application.
 //!     use hudhook::hooks::dx12::ImguiDx12Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
+//!     hudhook!(ImguiDx12Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a OpenGL 3 application.
 //!     use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiOpenGl3Hooks>());
+//!     hudhook!(ImguiOpenGl3Hooks, MyRenderLoop);
 //! }
 //! ```
 //!

@@ -97,12 +97,11 @@ fn get_target_addrs() -> Dx9PresentType {
 pub struct ImguiDx9Hooks([MhHook; 1]);
 
 impl ImguiDx9Hooks {
-    /// Construct a set of [`RawDetour`]s that will render UI via the provided
+    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the provided
     /// [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:
-    /// - `IDXGISwapChain3::Present`
-    /// - `IDXGISwapChain3::ResizeBuffers`
+    /// - `IDirect3DDevice9::Present`
     ///
     /// # Safety
     ///

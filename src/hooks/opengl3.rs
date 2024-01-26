@@ -56,20 +56,25 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffersType {
 pub struct ImguiOpenGl3Hooks([MhHook; 1]);
 
 impl ImguiOpenGl3Hooks {
+    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the provided
+    /// [`ImguiRenderLoop`].
+    ///
+    /// The following functions are hooked:
+    /// - `opengl32::wglSwapBuffers`
+    ///
     /// # Safety
     ///
-    /// Is most likely undefined behavior, as it modifies function pointers at
-    /// runtime.
+    /// yolo
     pub unsafe fn new<T: 'static>(t: T) -> Self
     where
         T: ImguiRenderLoop + Send + Sync,
     {
         // Grab the addresses
-        let hook_opengl_swapbuffers_address = get_opengl_wglswapbuffers_addr();
+        let hook_opengl_swap_buffers_address = get_opengl_wglswapbuffers_addr();
 
         // Create detours
         let hook_opengl_wgl_swap_buffers = MhHook::new(
-            hook_opengl_swapbuffers_address as *mut _,
+            hook_opengl_swap_buffers_address as *mut _,
             opengl32_wgl_swap_buffers_impl as *mut _,
         )
         .expect("couldn't create opengl32.wglSwapBuffers hook");
