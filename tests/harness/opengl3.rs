@@ -152,7 +152,7 @@ fn handle_message(window: HWND) -> bool {
             DispatchMessageA(msg.as_ptr());
             msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
         } else {
-            false
+            true
         }
     }
 }

@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use harness::opengl3::Opengl3Harness;
 use hook::HookExample;
+use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
 use hudhook::*;
 use tracing::metadata::LevelFilter;
 
