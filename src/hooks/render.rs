@@ -64,16 +64,21 @@ impl RenderState {
     pub(super) fn render(hwnd: HWND) {
         RENDER_LOCK.store(true, Ordering::SeqCst);
 
+        let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
+            error!("Could not obtain render loop");
+            return;
+        };
+
         let render_engine = unsafe {
-            RENDER_ENGINE.get_or_init(move || Mutex::new(RenderEngine::new(hwnd).unwrap()))
+            RENDER_ENGINE.get_or_init(|| {
+                let mut render_engine = RenderEngine::new(hwnd).unwrap();
+                render_loop.initialize(&mut render_engine.ctx());
+                Mutex::new(render_engine)
+            })
         };
 
         let Some(mut render_engine) = render_engine.try_lock() else {
             error!("Could not lock render engine");
-            return;
-        };
-        let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
-            error!("Could not obtain render loop");
             return;
         };
 

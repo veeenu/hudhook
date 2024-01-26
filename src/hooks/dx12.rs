@@ -1,18 +1,10 @@
-use std::{
-    ffi::c_void,
-    mem,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        OnceLock,
-    },
-};
+use std::{ffi::c_void, mem, sync::OnceLock};
 
-use parking_lot::Mutex;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 use windows::{
     core::{Interface, HRESULT},
     Win32::{
-        Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM},
+        Foundation::BOOL,
         Graphics::{
             Direct3D::D3D_FEATURE_LEVEL_11_0,
             Direct3D12::{
@@ -32,19 +24,15 @@ use windows::{
                 DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
-        UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC},
     },
 };
 
-use crate::renderer::dx12::RenderEngine;
+use crate::hooks::render::RenderState;
 use crate::Hooks;
 use crate::ImguiRenderLoop;
 use crate::{mh::MhHook, util::try_out_ptr};
 
-use super::{
-    input::{imgui_wnd_proc_impl, WndProcType},
-    DummyHwnd,
-};
+use super::DummyHwnd;
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -58,24 +46,12 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
     flags: u32,
 ) -> HRESULT;
 
-// type DXGICommandQueueExecuteCommandListsType = unsafe extern "system" fn(
-//     This: ID3D12CommandQueue,
-//     num_command_lists: u32,
-//     command_lists: *mut ID3D12CommandList,
-// );
-
 struct Trampolines {
     dxgi_swap_chain_present: DXGISwapChainPresentType,
     dxgi_swap_chain_resize_buffers: DXGISwapChainResizeBuffersType,
-    // dxgi_command_queue_execute_command_lists: DXGICommandQueueExecuteCommandListsType,
 }
 
-static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
-static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();
-static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
-static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain3,
@@ -87,11 +63,11 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 
     // Don't attempt a render if one is already underway: it might be that the renderer itself
     // is currently invoking `Present`.
-    if RENDER_LOCK.load(Ordering::SeqCst) {
+    if RenderState::is_locked() {
         return dxgi_swap_chain_present(p_this, sync_interval, flags);
     }
 
-    let hwnd = *GAME_HWND.get_or_init(|| {
+    let hwnd = RenderState::setup(|| {
         let mut desc = Default::default();
         p_this.GetDesc(&mut desc).unwrap();
         info!("Output window: {:?}", p_this);
@@ -99,29 +75,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    WND_PROC.get_or_init(|| {
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-        let wnd_proc = unsafe {
-            mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA(
-                hwnd,
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as isize,
-            ))
-        };
-
-        #[cfg(target_arch = "x86")]
-        let wnd_proc = unsafe {
-            mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongA(
-                hwnd,
-                GWLP_WNDPROC,
-                imgui_wnd_proc as usize as i32,
-            ))
-        };
-
-        wnd_proc
-    });
-
-    render(hwnd);
+    RenderState::render(hwnd);
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(p_this, sync_interval, flags)
@@ -140,45 +94,6 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
 
     trace!("Call IDXGISwapChain::ResizeBuffers trampoline");
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
-}
-
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    umsg: u32,
-    WPARAM(wparam): WPARAM,
-    LPARAM(lparam): LPARAM,
-) -> LRESULT {
-    let render_engine = match RENDER_ENGINE.get().map(Mutex::try_lock) {
-        Some(Some(render_engine)) => render_engine,
-        Some(None) => {
-            debug!("Could not lock in WndProc");
-            return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
-        },
-        None => {
-            debug!("WndProc called before hook was set");
-            return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
-        },
-    };
-
-    let Some(render_loop) = RENDER_LOOP.get() else {
-        debug!("Could not get render loop");
-        return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
-    };
-
-    let Some(&wnd_proc) = WND_PROC.get() else {
-        debug!("Could not get original WndProc");
-        return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
-    };
-
-    imgui_wnd_proc_impl(
-        hwnd,
-        umsg,
-        WPARAM(wparam),
-        LPARAM(lparam),
-        wnd_proc,
-        render_engine,
-        render_loop,
-    )
 }
 
 unsafe fn print_dxgi_debug_messages() {
@@ -202,31 +117,7 @@ unsafe fn print_dxgi_debug_messages() {
     diq.ClearStoredMessages(DXGI_DEBUG_ALL);
 }
 
-unsafe fn render(hwnd: HWND) {
-    RENDER_LOCK.store(true, Ordering::SeqCst);
-
-    let render_engine =
-        RENDER_ENGINE.get_or_init(move || Mutex::new(RenderEngine::new(hwnd).unwrap()));
-
-    let Some(mut render_engine) = render_engine.try_lock() else {
-        error!("Could not lock render engine");
-        return;
-    };
-    let Some(render_loop) = RENDER_LOOP.get_mut() else {
-        error!("Could not obtain render loop");
-        return;
-    };
-
-    if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
-        error!("Render: {e:?}");
-    }
-
-    RENDER_LOCK.store(false, Ordering::SeqCst);
-}
-
 fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
-    // let dummy_hwnd = find_process_hwnd().expect("Could not find process hwnd"); // unsafe { GetDesktopWindow() };
-
     let dummy_hwnd = DummyHwnd::new();
 
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
@@ -318,7 +209,7 @@ impl ImguiDx12Hooks {
         )
         .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
 
-        RENDER_LOOP.get_or_init(|| Box::new(t));
+        RenderState::set_render_loop(t);
         TRAMPOLINES.get_or_init(|| Trampolines {
             dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
             dxgi_swap_chain_resize_buffers: mem::transmute(hook_resize_buffers.trampoline()),
@@ -342,9 +233,7 @@ impl Hooks for ImguiDx12Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        RENDER_ENGINE.take();
-        RENDER_LOOP.take();
+        RenderState::cleanup();
         TRAMPOLINES.take();
-        RENDER_LOCK.store(false, Ordering::SeqCst);
     }
 }
