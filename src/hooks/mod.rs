@@ -10,27 +10,25 @@
 //! 5. Hook function implementations, one for each trampoline
 //! 6. An `imgui_wnd_proc` implementation
 //! 7. A `render` function that locks the render engine and uses it to draw and
-//!    swap. Possibly implement a critical section with an `AtomicBool` to prevent
-//!    double invocations
+//!    swap. Possibly implement a critical section with an `AtomicBool` to
+//!    prevent double invocations
 //! 8. A `get_target_addrs` function that retrieves hooked function addresses
 //! 9. A `Imgui<something>Hooks` type that holds necessary hook state (generally
-//!    just a static array of `MhHook` objects); implement a `new` function and all
-//!    necessary methods/associated functions, then implement the `Hooks` trait
-//!    below it
-use std::{mem, sync::OnceLock};
+//!    just a static array of `MhHook` objects); implement a `new` function and
+//!    all necessary methods/associated functions, then implement the `Hooks`
+//!    trait below it
+use std::mem;
+use std::sync::OnceLock;
 
 use tracing::{debug, error};
-use windows::{
-    core::w,
-    Win32::{
-        Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM},
-        System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentProcessId},
-        UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, EnumWindows, GetWindowThreadProcessId,
-            RegisterClassExW, UnregisterClassW, CS_HREDRAW, CS_VREDRAW, WNDCLASSEXW,
-            WS_EX_OVERLAPPEDWINDOW, WS_OVERLAPPEDWINDOW,
-        },
-    },
+use windows::core::w;
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DestroyWindow, EnumWindows, GetWindowThreadProcessId,
+    RegisterClassExW, UnregisterClassW, CS_HREDRAW, CS_VREDRAW, WNDCLASSEXW,
+    WS_EX_OVERLAPPEDWINDOW, WS_OVERLAPPEDWINDOW,
 };
 
 pub mod dx11;

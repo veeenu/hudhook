@@ -2,7 +2,8 @@ use std::time::{Duration, Instant};
 
 use hudhook::ImguiRenderLoop;
 use imgui::{Condition, StyleColor};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn setup_tracing() {
     tracing_subscriber::registry()

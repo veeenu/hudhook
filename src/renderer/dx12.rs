@@ -20,10 +20,10 @@ use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
+use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
-    Common::*, CreateDXGIFactory2, IDXGIAdapter, IDXGIFactory2, IDXGISwapChain3,
-    DXGI_CREATE_FACTORY_DEBUG, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    CreateDXGIFactory2, IDXGIAdapter, IDXGIFactory2, IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG,
+    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::{
@@ -482,7 +482,8 @@ impl RenderEngine {
             self.command_list.Reset(command_allocator, None).unwrap();
         }
 
-        // Setup a barrier that waits for the back buffer to transition to a render target.
+        // Setup a barrier that waits for the back buffer to transition to a render
+        // target.
         let back_buffer_to_rt_barrier = Barrier::create(
             self.frame_contexts[idx].back_buffer.clone(),
             D3D12_RESOURCE_STATE_PRESENT,
@@ -518,7 +519,8 @@ impl RenderEngine {
             eprintln!("{}", e);
         };
 
-        // Setup a barrier to wait for the back buffer to transition to presentable state.
+        // Setup a barrier to wait for the back buffer to transition to presentable
+        // state.
         let back_buffer_to_present_barrier = Barrier::create(
             self.frame_contexts[idx].back_buffer.clone(),
             D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -1039,12 +1041,12 @@ impl RenderEngine {
                 display_pos[1] + display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);

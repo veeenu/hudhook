@@ -1,34 +1,29 @@
-use std::{ffi::c_void, mem, sync::OnceLock};
+use std::ffi::c_void;
+use std::mem;
+use std::sync::OnceLock;
 
 use tracing::{info, trace};
-use windows::{
-    core::{Interface, HRESULT},
-    Win32::{
-        Foundation::BOOL,
-        Graphics::{
-            Direct3D::{D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0},
-            Direct3D11::{
-                D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext,
-                D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
-            },
-            Dxgi::{
-                Common::{
-                    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC,
-                    DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-                    DXGI_SAMPLE_DESC,
-                },
-                IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-                DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            },
-        },
-    },
+use windows::core::{Interface, HRESULT};
+use windows::Win32::Foundation::BOOL;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
+};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
-use crate::Hooks;
-use crate::ImguiRenderLoop;
-use crate::{hooks::render::RenderState, mh::MhHook};
-
 use super::DummyHwnd;
+use crate::hooks::render::RenderState;
+use crate::mh::MhHook;
+use crate::{Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -57,8 +52,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the renderer itself
-    // is currently invoking `Present`.
+    // Don't attempt a render if one is already underway: it might be that the
+    // renderer itself is currently invoking `Present`.
     if RenderState::is_locked() {
         return dxgi_swap_chain_present(p_this, sync_interval, flags);
     }

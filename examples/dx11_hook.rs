@@ -1,6 +1,7 @@
 // Please ignore these examples; they are broken.
 
-use hudhook::{hooks::dx11::ImguiDx11Hooks, *};
+use hudhook::hooks::dx11::ImguiDx11Hooks;
+use hudhook::*;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 struct Dx11HookExample;

@@ -1,24 +1,19 @@
-use std::{
-    mem,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        OnceLock,
-    },
-};
+use std::mem;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
-use windows::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
-    UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC},
-};
+use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC};
 
 use crate::hooks::input::{imgui_wnd_proc_impl, WndProcType};
-use crate::{renderer::dx12::RenderEngine, ImguiRenderLoop};
+use crate::renderer::dx12::RenderEngine;
+use crate::ImguiRenderLoop;
 
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();

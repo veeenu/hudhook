@@ -1,18 +1,15 @@
-use std::{ffi::CString, mem, sync::OnceLock};
+use std::ffi::CString;
+use std::mem;
+use std::sync::OnceLock;
 
 use tracing::trace;
-use windows::{
-    core::PCSTR,
-    Win32::{
-        Graphics::Gdi::{WindowFromDC, HDC},
-        System::LibraryLoader::{GetModuleHandleA, GetProcAddress},
-    },
-};
+use windows::core::PCSTR;
+use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::hooks::render::RenderState;
 use crate::mh::MhHook;
-use crate::Hooks;
-use crate::ImguiRenderLoop;
+use crate::{Hooks, ImguiRenderLoop};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();
 
@@ -26,8 +23,8 @@ unsafe extern "system" fn opengl32_wgl_swap_buffers_impl(dc: HDC) {
     let Trampolines { opengl32_wgl_swap_buffers } =
         TRAMPOLINES.get().expect("OpenGL3 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the renderer itself
-    // is currently invoking `Present`.
+    // Don't attempt a render if one is already underway: it might be that the
+    // renderer itself is currently invoking `Present`.
     if RenderState::is_locked() {
         return opengl32_wgl_swap_buffers(dc);
     }

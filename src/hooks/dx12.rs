@@ -1,38 +1,31 @@
-use std::{ffi::c_void, mem, sync::OnceLock};
+use std::ffi::c_void;
+use std::mem;
+use std::sync::OnceLock;
 
 use tracing::{debug, info, trace};
-use windows::{
-    core::{Interface, HRESULT},
-    Win32::{
-        Foundation::BOOL,
-        Graphics::{
-            Direct3D::D3D_FEATURE_LEVEL_11_0,
-            Direct3D12::{
-                D3D12CreateDevice, ID3D12CommandQueue, ID3D12Device,
-                D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
-                D3D12_COMMAND_QUEUE_FLAG_NONE,
-            },
-            Dxgi::{
-                Common::{
-                    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC,
-                    DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-                    DXGI_RATIONAL, DXGI_SAMPLE_DESC,
-                },
-                CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue,
-                IDXGISwapChain, IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
-                DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,
-                DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            },
-        },
-    },
+use windows::core::{Interface, HRESULT};
+use windows::Win32::Foundation::BOOL;
+use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
+use windows::Win32::Graphics::Direct3D12::{
+    D3D12CreateDevice, ID3D12CommandQueue, ID3D12Device, D3D12_COMMAND_LIST_TYPE_DIRECT,
+    D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue, IDXGISwapChain,
+    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
-use crate::hooks::render::RenderState;
-use crate::Hooks;
-use crate::ImguiRenderLoop;
-use crate::{mh::MhHook, util::try_out_ptr};
-
 use super::DummyHwnd;
+use crate::hooks::render::RenderState;
+use crate::mh::MhHook;
+use crate::util::try_out_ptr;
+use crate::{Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -61,8 +54,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the renderer itself
-    // is currently invoking `Present`.
+    // Don't attempt a render if one is already underway: it might be that the
+    // renderer itself is currently invoking `Present`.
     if RenderState::is_locked() {
         return dxgi_swap_chain_present(p_this, sync_interval, flags);
     }

@@ -1,7 +1,5 @@
-use windows::Win32::{
-    Foundation::{HWND, RECT},
-    UI::WindowsAndMessaging::GetClientRect,
-};
+use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 pub fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
 where

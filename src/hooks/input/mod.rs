@@ -13,10 +13,9 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use super::render::RenderState;
 use crate::renderer::dx12::RenderEngine;
 use crate::ImguiRenderLoop;
-
-use super::render::RenderState;
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;

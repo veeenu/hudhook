@@ -1,27 +1,22 @@
-use std::{ffi::c_void, mem, sync::OnceLock};
+use std::ffi::c_void;
+use std::mem;
+use std::sync::OnceLock;
 
 use tracing::trace;
-use windows::{
-    core::{Interface, HRESULT},
-    Win32::{
-        Foundation::{BOOL, HWND, RECT},
-        Graphics::{
-            Direct3D9::{
-                Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT,
-                D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
-                D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
-            },
-            Gdi::RGNDATA,
-        },
-    },
+use windows::core::{Interface, HRESULT};
+use windows::Win32::Foundation::{BOOL, HWND, RECT};
+use windows::Win32::Graphics::Direct3D9::{
+    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+    D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD,
+    D3D_SDK_VERSION,
 };
-
-use crate::hooks::render::RenderState;
-use crate::Hooks;
-use crate::ImguiRenderLoop;
-use crate::{mh::MhHook, util::try_out_ptr};
+use windows::Win32::Graphics::Gdi::RGNDATA;
 
 use super::DummyHwnd;
+use crate::hooks::render::RenderState;
+use crate::mh::MhHook;
+use crate::util::try_out_ptr;
+use crate::{Hooks, ImguiRenderLoop};
 
 type Dx9PresentType = unsafe extern "system" fn(
     this: IDirect3DDevice9,
@@ -47,8 +42,8 @@ unsafe extern "system" fn dx9_present_impl(
     let Trampolines { dx9_present } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the renderer itself
-    // is currently invoking `Present`.
+    // Don't attempt a render if one is already underway: it might be that the
+    // renderer itself is currently invoking `Present`.
     if RenderState::is_locked() {
         return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
     }
