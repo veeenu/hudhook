@@ -35,6 +35,7 @@ use windows::{
 
 pub mod dx11;
 pub mod dx12;
+pub mod dx9;
 mod input;
 pub mod opengl3;
 mod render;

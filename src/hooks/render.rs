@@ -8,6 +8,10 @@ use std::{
 
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
+#[cfg(target_arch = "x86")]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC},
@@ -31,20 +35,18 @@ impl RenderState {
         unsafe {
             WND_PROC.get_or_init(|| {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-                let wnd_proc =
-                    mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA(
-                        hwnd,
-                        GWLP_WNDPROC,
-                        imgui_wnd_proc as usize as isize,
-                    ));
+                let wnd_proc = mem::transmute(SetWindowLongPtrA(
+                    hwnd,
+                    GWLP_WNDPROC,
+                    imgui_wnd_proc as usize as isize,
+                ));
 
                 #[cfg(target_arch = "x86")]
-                let wnd_proc =
-                    mem::transmute(windows::Win32::UI::WindowsAndMessaging::SetWindowLongA(
-                        hwnd,
-                        GWLP_WNDPROC,
-                        imgui_wnd_proc as usize as i32,
-                    ));
+                let wnd_proc = mem::transmute(SetWindowLongA(
+                    hwnd,
+                    GWLP_WNDPROC,
+                    imgui_wnd_proc as usize as i32,
+                ));
 
                 wnd_proc
             })
@@ -103,18 +105,10 @@ impl RenderState {
         unsafe {
             if let (Some(wnd_proc), Some(hwnd)) = (WND_PROC.take(), GAME_HWND.take()) {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-                windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA(
-                    hwnd,
-                    GWLP_WNDPROC,
-                    wnd_proc as usize as isize,
-                );
+                SetWindowLongPtrA(hwnd, GWLP_WNDPROC, wnd_proc as usize as isize);
 
                 #[cfg(target_arch = "x86")]
-                windows::Win32::UI::WindowsAndMessaging::SetWindowLongA(
-                    hwnd,
-                    GWLP_WNDPROC,
-                    wnd_proc as usize as i32,
-                );
+                SetWindowLongA(hwnd, GWLP_WNDPROC, wnd_proc as usize as i32);
             }
 
             RENDER_ENGINE.take();
