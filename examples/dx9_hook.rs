@@ -1,5 +1,5 @@
 use hudhook::hooks::dx9::ImguiDx9Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::*;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 struct Dx9HookExample;
@@ -35,4 +35,4 @@ impl ImguiRenderLoop for Dx9HookExample {
     }
 }
 
-hudhook::hudhook!(Dx9HookExample::new().into_hook::<ImguiDx9Hooks>());
+hudhook::hudhook!(ImguiDx9Hooks, Dx9HookExample::new());

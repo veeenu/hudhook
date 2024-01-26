@@ -1,10 +1,10 @@
-use hudhook::hooks::dx11::ImguiDx11Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
+use hudhook::*;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
-struct Dx11HookExample;
+struct HookYou;
 
-impl Dx11HookExample {
+impl HookYou {
     fn new() -> Self {
         println!("Initializing");
         hudhook::alloc_console().expect("AllocConsole");
@@ -18,11 +18,11 @@ impl Dx11HookExample {
             .with_thread_names(true)
             .init();
 
-        Dx11HookExample
+        HookYou
     }
 }
 
-impl ImguiRenderLoop for Dx11HookExample {
+impl ImguiRenderLoop for HookYou {
     fn render(&mut self, ui: &mut imgui::Ui) {
         ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
@@ -35,4 +35,4 @@ impl ImguiRenderLoop for Dx11HookExample {
     }
 }
 
-hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDx11Hooks>());
+hudhook::hudhook!(ImguiOpenGl3Hooks, HookYou::new());

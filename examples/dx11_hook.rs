@@ -1,10 +1,9 @@
-use hudhook::hooks::dx12::ImguiDx12Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::{hooks::dx11::ImguiDx11Hooks, *};
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
-struct Dx12HookExample;
+struct Dx11HookExample;
 
-impl Dx12HookExample {
+impl Dx11HookExample {
     fn new() -> Self {
         println!("Initializing");
         hudhook::alloc_console().expect("AllocConsole");
@@ -18,11 +17,11 @@ impl Dx12HookExample {
             .with_thread_names(true)
             .init();
 
-        Dx12HookExample
+        Dx11HookExample
     }
 }
 
-impl ImguiRenderLoop for Dx12HookExample {
+impl ImguiRenderLoop for Dx11HookExample {
     fn render(&mut self, ui: &mut imgui::Ui) {
         ui.window("Hello world").size([300.0, 110.0], Condition::FirstUseEver).build(|| {
             ui.text("Hello world!");
@@ -35,4 +34,4 @@ impl ImguiRenderLoop for Dx12HookExample {
     }
 }
 
-hudhook::hudhook!(Dx12HookExample::new().into_hook::<ImguiDx12Hooks>());
+hudhook::hudhook!(ImguiDx11Hooks, Dx11HookExample::new());
