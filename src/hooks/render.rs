@@ -7,7 +7,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC},
@@ -84,8 +84,34 @@ impl RenderState {
         RENDER_LOCK.store(false, Ordering::SeqCst);
     }
 
+    pub(super) fn resize() {
+        // TODO sometimes it doesn't lock.
+        if let Some(Some(mut render_engine)) = unsafe { RENDER_ENGINE.get().map(Mutex::try_lock) } {
+            trace!("Resizing");
+            if let Err(e) = render_engine.resize() {
+                error!("Couldn't resize: {e:?}");
+            }
+        }
+    }
+
     pub(super) fn cleanup() {
         unsafe {
+            if let (Some(wnd_proc), Some(hwnd)) = (WND_PROC.take(), GAME_HWND.take()) {
+                #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+                windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA(
+                    hwnd,
+                    GWLP_WNDPROC,
+                    wnd_proc as usize as isize,
+                );
+
+                #[cfg(target_arch = "x86")]
+                windows::Win32::UI::WindowsAndMessaging::SetWindowLongA(
+                    hwnd,
+                    GWLP_WNDPROC,
+                    wnd_proc as usize as i32,
+                );
+            }
+
             RENDER_ENGINE.take();
             RENDER_LOOP.take();
             RENDER_LOCK.store(false, Ordering::SeqCst);

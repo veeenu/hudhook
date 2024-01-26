@@ -2,6 +2,23 @@ use std::time::{Duration, Instant};
 
 use hudhook::ImguiRenderLoop;
 use imgui::{Condition, StyleColor};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+pub fn setup_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer().event_format(
+                fmt::format()
+                    .with_level(true)
+                    .with_thread_ids(true)
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_thread_names(true),
+            ),
+        )
+        .with(EnvFilter::from_default_env())
+        .init();
+}
 
 pub struct HookExample {
     frame_times: Vec<Duration>,

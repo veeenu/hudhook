@@ -16,6 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use crate::renderer::dx12::RenderEngine;
 use crate::ImguiRenderLoop;
 
+use super::render::RenderState;
+
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
@@ -338,6 +340,12 @@ where
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
+        WM_SIZE => {
+            drop(ctx);
+            drop(render_engine);
+            RenderState::resize();
+            return LRESULT(1);
+        },
         _ => {},
     };
 

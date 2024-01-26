@@ -283,7 +283,7 @@ pub struct RenderEngine {
     command_list: ID3D12GraphicsCommandList,
 
     renderer_heap: ID3D12DescriptorHeap,
-    _rtv_heap: ID3D12DescriptorHeap,
+    rtv_heap: ID3D12DescriptorHeap,
 
     cpu_desc: D3D12_CPU_DESCRIPTOR_HANDLE,
     gpu_desc: D3D12_GPU_DESCRIPTOR_HANDLE,
@@ -407,7 +407,7 @@ impl RenderEngine {
             command_queue,
             command_list,
             renderer_heap,
-            _rtv_heap: rtv_heap,
+            rtv_heap,
             cpu_desc,
             gpu_desc,
             frame_resources,
@@ -419,6 +419,47 @@ impl RenderEngine {
             root_signature: None,
             pipeline_state: None,
         })
+    }
+
+    pub fn resize(&mut self) -> Result<()> {
+        let (width, height) = crate::util::win_size(self.target_hwnd);
+
+        self.frame_contexts.drain(..).for_each(drop);
+        self.frame_resources.drain(..).for_each(drop);
+
+        let mut sd = Default::default();
+        unsafe { self.swap_chain.GetDesc(&mut sd)? };
+        unsafe {
+            self.swap_chain.ResizeBuffers(
+                sd.BufferCount,
+                width as _,
+                height as _,
+                sd.BufferDesc.Format,
+                sd.Flags,
+            )?
+        };
+
+        let rtv_heap_inc_size =
+            unsafe { self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
+
+        let handle_start = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
+
+        // Build frame contexts.
+        self.frame_contexts = (0..sd.BufferCount)
+            .map(|i| unsafe {
+                FrameContext::new(
+                    &self.device,
+                    &self.swap_chain,
+                    handle_start,
+                    rtv_heap_inc_size,
+                    i,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        self.frame_resources = (0..sd.BufferCount).map(|_| FrameResources::default()).collect();
+
+        Ok(())
     }
 
     pub fn render<F: FnMut(&mut Ui)>(&mut self, mut render_loop: F) -> Result<()> {
