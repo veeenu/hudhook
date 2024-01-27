@@ -97,8 +97,8 @@ fn get_target_addrs() -> Dx9PresentType {
 pub struct ImguiDx9Hooks([MhHook; 1]);
 
 impl ImguiDx9Hooks {
-    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the provided
-    /// [`ImguiRenderLoop`].
+    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the
+    /// provided [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:
     /// - `IDirect3DDevice9::Present`

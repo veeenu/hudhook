@@ -173,8 +173,8 @@ fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
 pub struct ImguiDx12Hooks([MhHook; 2]);
 
 impl ImguiDx12Hooks {
-    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the provided
-    /// [`ImguiRenderLoop`].
+    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the
+    /// provided [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:
     /// - `IDXGISwapChain3::Present`

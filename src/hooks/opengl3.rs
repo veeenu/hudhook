@@ -56,8 +56,8 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffersType {
 pub struct ImguiOpenGl3Hooks([MhHook; 1]);
 
 impl ImguiOpenGl3Hooks {
-    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the provided
-    /// [`ImguiRenderLoop`].
+    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the
+    /// provided [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:
     /// - `opengl32::wglSwapBuffers`
