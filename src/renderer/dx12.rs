@@ -283,7 +283,7 @@ pub struct RenderEngine {
     command_queue: ID3D12CommandQueue,
     command_list: ID3D12GraphicsCommandList,
 
-    renderer_heap: ID3D12DescriptorHeap,
+    textures_heap: ID3D12DescriptorHeap,
     rtv_heap: ID3D12DescriptorHeap,
 
     cpu_desc: D3D12_CPU_DESCRIPTOR_HANDLE,
@@ -297,6 +297,8 @@ pub struct RenderEngine {
     font_texture_resource: Option<ID3D12Resource>,
     root_signature: Option<ID3D12RootSignature>,
     pipeline_state: Option<ID3D12PipelineState>,
+
+    textures: Vec<(ID3D12Resource, TextureId)>,
 
     compositor: Compositor,
 }
@@ -340,11 +342,11 @@ impl RenderEngine {
             unsafe { dxgi_factory.CreateSwapChainForComposition(&command_queue, &sd, None) }?
                 .cast::<IDXGISwapChain3>()?;
 
-        // Build descriptor heaps.
-        let renderer_heap: ID3D12DescriptorHeap = unsafe {
+        // Descriptor heap for textures (font + user-defined)
+        let textures_heap: ID3D12DescriptorHeap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                NumDescriptors: sd.BufferCount,
+                NumDescriptors: 8,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                 NodeMask: 0,
             })
@@ -364,12 +366,12 @@ impl RenderEngine {
         let rtv_heap_inc_size =
             unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
 
-        let handle_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
+        let rtv_heap_handle_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
         // Build frame contexts.
         let frame_contexts: Vec<FrameContext> = (0..sd.BufferCount)
             .map(|i| unsafe {
-                FrameContext::new(&device, &swap_chain, handle_start, rtv_heap_inc_size, i)
+                FrameContext::new(&device, &swap_chain, rtv_heap_handle_start, rtv_heap_inc_size, i)
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -388,8 +390,8 @@ impl RenderEngine {
             command_list.SetName(w!("hudhook Command List"))?;
         };
 
-        let cpu_desc = unsafe { renderer_heap.GetCPUDescriptorHandleForHeapStart() };
-        let gpu_desc = unsafe { renderer_heap.GetGPUDescriptorHandleForHeapStart() };
+        let cpu_desc = unsafe { textures_heap.GetCPUDescriptorHandleForHeapStart() };
+        let gpu_desc = unsafe { textures_heap.GetGPUDescriptorHandleForHeapStart() };
 
         let mut ctx = Context::create();
         ctx.set_ini_filename(None);
@@ -407,7 +409,7 @@ impl RenderEngine {
             swap_chain,
             command_queue,
             command_list,
-            renderer_heap,
+            textures_heap,
             rtv_heap,
             cpu_desc,
             gpu_desc,
@@ -419,6 +421,7 @@ impl RenderEngine {
             font_texture_resource: None,
             root_signature: None,
             pipeline_state: None,
+            textures: Vec::new(),
         })
     }
 
@@ -443,7 +446,7 @@ impl RenderEngine {
         let rtv_heap_inc_size =
             unsafe { self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
 
-        let handle_start = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
+        let rtv_heap_handle_start = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
         // Build frame contexts.
         self.frame_contexts = (0..sd.BufferCount)
@@ -451,7 +454,7 @@ impl RenderEngine {
                 FrameContext::new(
                     &self.device,
                     &self.swap_chain,
-                    handle_start,
+                    rtv_heap_handle_start,
                     rtv_heap_inc_size,
                     i,
                 )
@@ -501,7 +504,7 @@ impl RenderEngine {
                 BOOL::from(false),
                 None,
             );
-            self.command_list.SetDescriptorHeaps(&[Some(self.renderer_heap.clone())]);
+            self.command_list.SetDescriptorHeaps(&[Some(self.textures_heap.clone())]);
             self.command_list.ClearRenderTargetView(
                 self.frame_contexts[idx].desc_handle,
                 &[0.0, 0.0, 0.0, 0.0],
@@ -853,11 +856,30 @@ impl RenderEngine {
         Ok(())
     }
 
-    unsafe fn create_font_texture(&mut self) -> Result<()> {
-        let mut ctx = self.ctx.borrow_mut();
-        let fonts = ctx.fonts();
-        let texture = fonts.build_rgba32_texture();
+    unsafe fn resize_texture_heap(&mut self) -> Result<()> {
+        let mut desc = self.textures_heap.GetDesc();
+        let old_num_descriptors = desc.NumDescriptors;
+        if (old_num_descriptors as usize) < self.textures.len() {
+            desc.NumDescriptors *= 2;
+            let new_texture_heap: ID3D12DescriptorHeap = self.device.CreateDescriptorHeap(&desc)?;
+            self.device.CopyDescriptorsSimple(
+                old_num_descriptors,
+                new_texture_heap.GetCPUDescriptorHandleForHeapStart(),
+                self.textures_heap.GetCPUDescriptorHandleForHeapStart(),
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+            );
+            self.textures_heap = new_texture_heap;
+        }
 
+        Ok(())
+    }
+
+    fn create_texture_inner(
+        &mut self,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(ID3D12Resource, TextureId)> {
         let p_texture: ManuallyDrop<Option<ID3D12Resource>> =
             ManuallyDrop::new(try_out_param(|v| unsafe {
                 self.device.CreateCommittedResource(
@@ -872,8 +894,8 @@ impl RenderEngine {
                     &D3D12_RESOURCE_DESC {
                         Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                         Alignment: 0,
-                        Width: texture.width as _,
-                        Height: texture.height as _,
+                        Width: width as _,
+                        Height: height as _,
                         DepthOrArraySize: 1,
                         MipLevels: 1,
                         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -888,33 +910,35 @@ impl RenderEngine {
             })?);
 
         let mut upload_buffer: Option<ID3D12Resource> = None;
-        let upload_pitch = texture.width * 4;
-        let upload_size = texture.height * upload_pitch;
-        self.device.CreateCommittedResource(
-            &D3D12_HEAP_PROPERTIES {
-                Type: D3D12_HEAP_TYPE_UPLOAD,
-                CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                CreationNodeMask: Default::default(),
-                VisibleNodeMask: Default::default(),
-            },
-            D3D12_HEAP_FLAG_NONE,
-            &D3D12_RESOURCE_DESC {
-                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                Alignment: 0,
-                Width: upload_size as _,
-                Height: 1,
-                DepthOrArraySize: 1,
-                MipLevels: 1,
-                Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                Flags: D3D12_RESOURCE_FLAG_NONE,
-            },
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            None,
-            &mut upload_buffer,
-        )?;
+        let upload_pitch = width * 4;
+        let upload_size = height * upload_pitch;
+        unsafe {
+            self.device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                    CreationNodeMask: Default::default(),
+                    VisibleNodeMask: Default::default(),
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 0,
+                    Width: upload_size as _,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                None,
+                &mut upload_buffer,
+            )
+        }?;
         let upload_buffer = ManuallyDrop::new(upload_buffer);
 
         let range = D3D12_RANGE { Begin: 0, End: upload_size as usize };
@@ -922,29 +946,26 @@ impl RenderEngine {
             unsafe {
                 let mut ptr: *mut u8 = null_mut();
                 ub.Map(0, Some(&range), Some(&mut ptr as *mut _ as *mut *mut c_void)).unwrap();
-                std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr, texture.data.len());
+                std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len());
                 ub.Unmap(0, Some(&range));
             }
         };
 
-        let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
+        let fence: ID3D12Fence = unsafe { self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
 
         let event =
             unsafe { CreateEventA(None, BOOL::from(false), BOOL::from(false), PCSTR(null())) }?;
 
         let cmd_allocator: ID3D12CommandAllocator =
-            self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+            unsafe { self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
 
-        cmd_allocator.SetName(w!("hudhook font texture Command Allocator"))?;
+        unsafe { cmd_allocator.SetName(w!("hudhook font texture Command Allocator")) }?;
 
-        let cmd_list: ID3D12GraphicsCommandList = self.device.CreateCommandList(
-            0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
-            &cmd_allocator,
-            None,
-        )?;
+        let cmd_list: ID3D12GraphicsCommandList = unsafe {
+            self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &cmd_allocator, None)
+        }?;
 
-        cmd_list.SetName(w!("hudhook font texture Command List"))?;
+        unsafe { cmd_list.SetName(w!("hudhook font texture Command List")) }?;
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: upload_buffer,
@@ -954,8 +975,8 @@ impl RenderEngine {
                     Offset: 0,
                     Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
                         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                        Width: texture.width,
-                        Height: texture.height,
+                        Width: width,
+                        Height: height,
                         Depth: 1,
                         RowPitch: upload_pitch,
                     },
@@ -1011,14 +1032,210 @@ impl RenderEngine {
         unsafe {
             self.device.CreateShaderResourceView(p_texture.as_ref(), Some(&srv_desc), self.cpu_desc)
         };
-        drop(self.font_texture_resource.take());
-        self.font_texture_resource = ManuallyDrop::into_inner(p_texture);
-        fonts.tex_id = TextureId::from(self.gpu_desc.ptr as usize);
+
+        let tex_id = TextureId::from(self.gpu_desc.ptr as usize);
 
         drop(ManuallyDrop::into_inner(src_location.pResource));
 
+        Ok((ManuallyDrop::into_inner(p_texture).unwrap(), tex_id))
+    }
+
+    pub fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        unsafe { self.resize_texture_heap()? };
+
+        let (p_texture, tex_id) = self.create_texture_inner(data, width, height)?;
+
+        self.textures.push((p_texture, tex_id));
+
+        Ok(tex_id)
+    }
+
+    unsafe fn create_font_texture(&mut self) -> Result<()> {
+        let ctx = Rc::clone(&self.ctx);
+        let mut ctx = ctx.borrow_mut();
+        let fonts = ctx.fonts();
+        let texture = fonts.build_rgba32_texture();
+
+        self.resize_texture_heap()?;
+        let (p_texture, tex_id) =
+            self.create_texture_inner(texture.data, texture.width, texture.height)?;
+
+        drop(self.font_texture_resource.take());
+        self.font_texture_resource = Some(p_texture);
+        fonts.tex_id = tex_id;
+
         Ok(())
     }
+
+    // unsafe fn create_font_texture2(&mut self) -> Result<()> {
+    //     let mut ctx = self.ctx.borrow_mut();
+    //     let fonts = ctx.fonts();
+    //     let texture = fonts.build_rgba32_texture();
+    //
+    //     let p_texture: ManuallyDrop<Option<ID3D12Resource>> =
+    //         ManuallyDrop::new(try_out_param(|v| unsafe {
+    //             self.device.CreateCommittedResource(
+    //                 &D3D12_HEAP_PROPERTIES {
+    //                     Type: D3D12_HEAP_TYPE_DEFAULT,
+    //                     CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    //                     MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+    //                     CreationNodeMask: Default::default(),
+    //                     VisibleNodeMask: Default::default(),
+    //                 },
+    //                 D3D12_HEAP_FLAG_NONE,
+    //                 &D3D12_RESOURCE_DESC {
+    //                     Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    //                     Alignment: 0,
+    //                     Width: texture.width as _,
+    //                     Height: texture.height as _,
+    //                     DepthOrArraySize: 1,
+    //                     MipLevels: 1,
+    //                     Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+    //                     SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+    //                     Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+    //                     Flags: D3D12_RESOURCE_FLAG_NONE,
+    //                 },
+    //                 D3D12_RESOURCE_STATE_COPY_DEST,
+    //                 None,
+    //                 v,
+    //             )
+    //         })?);
+    //
+    //     let mut upload_buffer: Option<ID3D12Resource> = None;
+    //     let upload_pitch = texture.width * 4;
+    //     let upload_size = texture.height * upload_pitch;
+    //     self.device.CreateCommittedResource(
+    //         &D3D12_HEAP_PROPERTIES {
+    //             Type: D3D12_HEAP_TYPE_UPLOAD,
+    //             CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    //             MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+    //             CreationNodeMask: Default::default(),
+    //             VisibleNodeMask: Default::default(),
+    //         },
+    //         D3D12_HEAP_FLAG_NONE,
+    //         &D3D12_RESOURCE_DESC {
+    //             Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+    //             Alignment: 0,
+    //             Width: upload_size as _,
+    //             Height: 1,
+    //             DepthOrArraySize: 1,
+    //             MipLevels: 1,
+    //             Format: DXGI_FORMAT_UNKNOWN,
+    //             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+    //             Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+    //             Flags: D3D12_RESOURCE_FLAG_NONE,
+    //         },
+    //         D3D12_RESOURCE_STATE_GENERIC_READ,
+    //         None,
+    //         &mut upload_buffer,
+    //     )?;
+    //     let upload_buffer = ManuallyDrop::new(upload_buffer);
+    //
+    //     let range = D3D12_RANGE { Begin: 0, End: upload_size as usize };
+    //     if let Some(ub) = upload_buffer.as_ref() {
+    //         unsafe {
+    //             let mut ptr: *mut u8 = null_mut();
+    //             ub.Map(0, Some(&range), Some(&mut ptr as *mut _ as *mut *mut
+    // c_void)).unwrap();             
+    // std::ptr::copy_nonoverlapping(texture.data.as_ptr(), ptr,
+    // texture.data.len());             ub.Unmap(0, Some(&range));
+    //         }
+    //     };
+    //
+    //     let fence: ID3D12Fence = self.device.CreateFence(0,
+    // D3D12_FENCE_FLAG_NONE)?;
+    //
+    //     let event =
+    //         unsafe { CreateEventA(None, BOOL::from(false), BOOL::from(false),
+    // PCSTR(null())) }?;
+    //
+    //     let cmd_allocator: ID3D12CommandAllocator =
+    //         self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
+    //
+    //     cmd_allocator.SetName(w!("hudhook font texture Command Allocator"))?;
+    //
+    //     let cmd_list: ID3D12GraphicsCommandList = self.device.CreateCommandList(
+    //         0,
+    //         D3D12_COMMAND_LIST_TYPE_DIRECT,
+    //         &cmd_allocator,
+    //         None,
+    //     )?;
+    //
+    //     cmd_list.SetName(w!("hudhook font texture Command List"))?;
+    //
+    //     let src_location = D3D12_TEXTURE_COPY_LOCATION {
+    //         pResource: upload_buffer,
+    //         Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+    //         Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+    //             PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+    //                 Offset: 0,
+    //                 Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+    //                     Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+    //                     Width: texture.width,
+    //                     Height: texture.height,
+    //                     Depth: 1,
+    //                     RowPitch: upload_pitch,
+    //                 },
+    //             },
+    //         },
+    //     };
+    //
+    //     let dst_location = D3D12_TEXTURE_COPY_LOCATION {
+    //         pResource: p_texture.clone(),
+    //         Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+    //         Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+    //     };
+    //
+    //     let barrier = D3D12_RESOURCE_BARRIER {
+    //         Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+    //         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    //         Anonymous: D3D12_RESOURCE_BARRIER_0 {
+    //             Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+    //                 pResource: p_texture.clone(),
+    //                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+    //                 StateBefore: D3D12_RESOURCE_STATE_COPY_DEST,
+    //                 StateAfter: D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+    //             }),
+    //         },
+    //     };
+    //
+    //     unsafe {
+    //         cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location,
+    // None);         cmd_list.ResourceBarrier(&[barrier]);
+    //         cmd_list.Close().unwrap();
+    //         self.command_queue.ExecuteCommandLists(&[Some(cmd_list.cast()?)]);
+    //         self.command_queue.Signal(&fence, 1)?;
+    //         fence.SetEventOnCompletion(1, event)?;
+    //         WaitForSingleObject(event, u32::MAX);
+    //     };
+    //
+    //     let srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
+    //         Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+    //         ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
+    //         Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+    //         Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+    //             Texture2D: D3D12_TEX2D_SRV {
+    //                 MostDetailedMip: 0,
+    //                 MipLevels: 1,
+    //                 PlaneSlice: Default::default(),
+    //                 ResourceMinLODClamp: Default::default(),
+    //             },
+    //         },
+    //     };
+    //
+    //     unsafe { CloseHandle(event)? };
+    //
+    //     unsafe {
+    //         self.device.CreateShaderResourceView(p_texture.as_ref(),
+    // Some(&srv_desc), self.cpu_desc)     };
+    //     drop(self.font_texture_resource.take());
+    //     self.font_texture_resource = ManuallyDrop::into_inner(p_texture);
+    //     fonts.tex_id = TextureId::from(self.gpu_desc.ptr as usize);
+    //
+    //     drop(ManuallyDrop::into_inner(src_location.pResource));
+    //
+    //     Ok(())
+    // }
 
     fn invalidate_device_objects(&mut self) {
         if let Some(root_signature) = self.root_signature.take() {
