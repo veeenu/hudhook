@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 use std::mem::size_of;
 
-use imgui::{Io, Key};
+use imgui::Io;
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -24,48 +24,6 @@ pub type WndProcType =
 #[inline]
 fn hiword(l: u32) -> u16 {
     ((l >> 16) & 0xffff) as u16
-}
-
-/// Implement this if you are building a custom renderer.
-///
-/// Check out first party implementations ([`crate::hooks::dx9`],
-/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
-/// for guidance on how to implement the methods.
-pub trait ImguiWindowsEventHandler {
-    fn io(&self) -> &imgui::Io;
-    fn io_mut(&mut self) -> &mut imgui::Io;
-
-    fn wnd_proc(&self) -> WndProcType;
-
-    fn setup_io(&mut self) {
-        let io = ImguiWindowsEventHandler::io_mut(self);
-
-        io.nav_active = true;
-        io.nav_visible = true;
-
-        // Initialize keys
-        io[Key::Tab] = VK_TAB.0 as _;
-        io[Key::LeftArrow] = VK_LEFT.0 as _;
-        io[Key::RightArrow] = VK_RIGHT.0 as _;
-        io[Key::UpArrow] = VK_UP.0 as _;
-        io[Key::DownArrow] = VK_DOWN.0 as _;
-        io[Key::PageUp] = VK_PRIOR.0 as _;
-        io[Key::PageDown] = VK_NEXT.0 as _;
-        io[Key::Home] = VK_HOME.0 as _;
-        io[Key::End] = VK_END.0 as _;
-        io[Key::Insert] = VK_INSERT.0 as _;
-        io[Key::Delete] = VK_DELETE.0 as _;
-        io[Key::Backspace] = VK_BACK.0 as _;
-        io[Key::Space] = VK_SPACE.0 as _;
-        io[Key::Enter] = VK_RETURN.0 as _;
-        io[Key::Escape] = VK_ESCAPE.0 as _;
-        io[Key::A] = VK_A.0 as _;
-        io[Key::C] = VK_C.0 as _;
-        io[Key::V] = VK_V.0 as _;
-        io[Key::X] = VK_X.0 as _;
-        io[Key::Y] = VK_Y.0 as _;
-        io[Key::Z] = VK_Z.0 as _;
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
