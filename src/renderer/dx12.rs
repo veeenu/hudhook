@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
-use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, Key, TextureId, Ui};
+use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId, Ui};
 use memoffset::offset_of;
 use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result, PCSTR, PCWSTR};
@@ -30,13 +30,12 @@ use windows::Win32::System::Threading::{
     CreateEventA, CreateEventExW, WaitForSingleObject, WaitForSingleObjectEx, CREATE_EVENT,
     INFINITE,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VK_A, VK_BACK, VK_C, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_INSERT, VK_LEFT,
-    VK_NEXT, VK_PRIOR, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP, VK_V, VK_X, VK_Y, VK_Z,
-};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
 use crate::util::{try_out_param, try_out_ptr};
+use crate::SHOW_CURSOR_KEY;
+
+use super::keys;
 
 const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #0"),
@@ -303,6 +302,8 @@ pub struct RenderEngine {
 
     compositor: Compositor,
 }
+
+static mut KEY_PRESS: [bool; 652] = [false; 652];
 
 impl RenderEngine {
     pub fn new(target_hwnd: HWND) -> Result<Self> {
@@ -592,28 +593,25 @@ impl RenderEngine {
         io.nav_active = true;
         io.nav_visible = true;
 
+        // Toggle show cursor on F4 key press
+        match SHOW_CURSOR_KEY {
+            Some(key) => {
+                if io.keys_down[key as usize]
+                    && io.keys_down[key as usize] != KEY_PRESS[key as usize]
+                {
+                    io.mouse_draw_cursor = !io.mouse_draw_cursor;
+                }
+            },
+            None => {},
+        }
+
         // Map key indices to the virtual key codes
-        io[Key::Tab] = VK_TAB.0 as _;
-        io[Key::LeftArrow] = VK_LEFT.0 as _;
-        io[Key::RightArrow] = VK_RIGHT.0 as _;
-        io[Key::UpArrow] = VK_UP.0 as _;
-        io[Key::DownArrow] = VK_DOWN.0 as _;
-        io[Key::PageUp] = VK_PRIOR.0 as _;
-        io[Key::PageDown] = VK_NEXT.0 as _;
-        io[Key::Home] = VK_HOME.0 as _;
-        io[Key::End] = VK_END.0 as _;
-        io[Key::Insert] = VK_INSERT.0 as _;
-        io[Key::Delete] = VK_DELETE.0 as _;
-        io[Key::Backspace] = VK_BACK.0 as _;
-        io[Key::Space] = VK_SPACE.0 as _;
-        io[Key::Enter] = VK_RETURN.0 as _;
-        io[Key::Escape] = VK_ESCAPE.0 as _;
-        io[Key::A] = VK_A.0 as _;
-        io[Key::C] = VK_C.0 as _;
-        io[Key::V] = VK_V.0 as _;
-        io[Key::X] = VK_X.0 as _;
-        io[Key::Y] = VK_Y.0 as _;
-        io[Key::Z] = VK_Z.0 as _;
+        for i in keys::KEYS {
+            io[i.0] = i.1 .0 as _;
+        }
+
+        // Add to key_press static variable to store the status for toggle
+        unsafe { KEY_PRESS = io.keys_down };
 
         Ok(())
     }
@@ -1071,12 +1069,12 @@ impl RenderEngine {
                 display_pos[1] + display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);

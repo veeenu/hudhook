@@ -142,6 +142,8 @@ static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
+pub static mut SHOW_CURSOR_KEY: Option<u16> = None;
+
 /// Allocate a Windows console.
 pub fn alloc_console() -> Result<(), Error> {
     if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
