@@ -129,6 +129,7 @@ pub use {imgui, tracing};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 
+pub mod config;
 pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
@@ -141,8 +142,6 @@ mod util;
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
-
-pub static mut SHOW_CURSOR_KEY: Option<u16> = None;
 
 /// Allocate a Windows console.
 pub fn alloc_console() -> Result<(), Error> {

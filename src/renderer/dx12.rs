@@ -32,8 +32,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
+use crate::config::{KEY_PRESS, SHOW_CURSOR_KEY, SHOW_UI, SHOW_UI_KEY};
 use crate::util::{try_out_param, try_out_ptr};
-use crate::SHOW_CURSOR_KEY;
 
 use super::keys;
 
@@ -303,7 +303,27 @@ pub struct RenderEngine {
     compositor: Compositor,
 }
 
-static mut KEY_PRESS: [bool; 652] = [false; 652];
+unsafe fn set_io_configs(io: &mut imgui::Io) {
+    // Toggle show cursor on F4 key press
+    match SHOW_CURSOR_KEY {
+        Some(key) => {
+            if io.keys_down[key as usize] && io.keys_down[key as usize] != KEY_PRESS[key as usize] {
+                io.mouse_draw_cursor = !io.mouse_draw_cursor;
+            }
+        },
+        None => {},
+    }
+
+    // Toggle show cursor on F4 key press
+    match SHOW_UI_KEY {
+        Some(key) => {
+            if io.keys_down[key as usize] && io.keys_down[key as usize] != KEY_PRESS[key as usize] {
+                SHOW_UI = !SHOW_UI;
+            }
+        },
+        None => {},
+    }
+}
 
 impl RenderEngine {
     pub fn new(target_hwnd: HWND) -> Result<Self> {
@@ -512,18 +532,18 @@ impl RenderEngine {
                 None,
             );
         }
+        if unsafe { SHOW_UI } {
+            // Draw data loop.
+            let ctx = Rc::clone(&self.ctx);
+            let mut ctx = ctx.borrow_mut();
+            let ui = ctx.frame();
+            render_loop(ui);
+            let draw_data = ctx.render();
 
-        // Draw data loop.
-        let ctx = Rc::clone(&self.ctx);
-        let mut ctx = ctx.borrow_mut();
-        let ui = ctx.frame();
-        render_loop(ui);
-        let draw_data = ctx.render();
-
-        if let Err(e) = unsafe { self.render_draw_data(draw_data, idx) } {
-            eprintln!("{}", e);
-        };
-
+            if let Err(e) = unsafe { self.render_draw_data(draw_data, idx) } {
+                eprintln!("{}", e);
+            };
+        }
         // Setup a barrier to wait for the back buffer to transition to presentable
         // state.
         let back_buffer_to_present_barrier = Barrier::create(
@@ -593,17 +613,7 @@ impl RenderEngine {
         io.nav_active = true;
         io.nav_visible = true;
 
-        // Toggle show cursor on F4 key press
-        match SHOW_CURSOR_KEY {
-            Some(key) => {
-                if io.keys_down[key as usize]
-                    && io.keys_down[key as usize] != KEY_PRESS[key as usize]
-                {
-                    io.mouse_draw_cursor = !io.mouse_draw_cursor;
-                }
-            },
-            None => {},
-        }
+        set_io_configs(io);
 
         // Map key indices to the virtual key codes
         for i in keys::KEYS {
