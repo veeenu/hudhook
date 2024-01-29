@@ -32,7 +32,9 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
-use crate::config::{KEY_PRESS, SHOW_CURSOR_KEY, SHOW_UI, SHOW_UI_KEY};
+use crate::config::{
+    FORCE_SHOW_CURSOR_ON_UI_SHOW, KEY_PRESS, SHOW_CURSOR_KEY, SHOW_UI, SHOW_UI_KEY,
+};
 use crate::util::{try_out_param, try_out_ptr};
 
 use super::keys;
@@ -314,11 +316,13 @@ unsafe fn set_io_configs(io: &mut imgui::Io) {
         None => {},
     }
 
-    // Toggle show cursor on F4 key press
     match SHOW_UI_KEY {
         Some(key) => {
             if io.keys_down[key as usize] && io.keys_down[key as usize] != KEY_PRESS[key as usize] {
                 SHOW_UI = !SHOW_UI;
+                if FORCE_SHOW_CURSOR_ON_UI_SHOW {
+                    io.mouse_draw_cursor = SHOW_UI;
+                }
             }
         },
         None => {},
