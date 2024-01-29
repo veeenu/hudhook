@@ -79,6 +79,8 @@ impl RenderState {
             return;
         };
 
+        render_loop.before_render(&mut render_engine.ctx());
+
         if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
             error!("Render: {e:?}");
         }
