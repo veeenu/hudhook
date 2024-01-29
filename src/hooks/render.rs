@@ -2,6 +2,7 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
+use imgui::TextureId;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -112,6 +113,21 @@ impl RenderState {
             RENDER_LOOP.take();
             RENDER_LOCK.store(false, Ordering::SeqCst);
         }
+    }
+}
+
+pub fn load_image(data: &[u8], width: usize, height: usize) -> Option<TextureId> {
+    let Some(mut render_engine) = (unsafe { RENDER_ENGINE.get().and_then(Mutex::try_lock) }) else {
+        error!("Could not lock render engine to load image");
+        return None;
+    };
+
+    match render_engine.load_image(data, width as u32, height as u32) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            error!("Could not load image: {e}");
+            None
+        },
     }
 }
 

@@ -1,7 +1,10 @@
+use std::io::Cursor;
 use std::time::{Duration, Instant};
 
 use hudhook::ImguiRenderLoop;
-use imgui::{Condition, StyleColor};
+use image::io::Reader as ImageReader;
+use image::{EncodableLayout, RgbaImage};
+use imgui::{Condition, StyleColor, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -24,6 +27,8 @@ pub fn setup_tracing() {
 pub struct HookExample {
     frame_times: Vec<Duration>,
     last_time: Instant,
+    image: RgbaImage,
+    image_id: TextureId,
 }
 
 impl HookExample {
@@ -31,7 +36,18 @@ impl HookExample {
         println!("Initializing");
         hudhook::alloc_console().ok();
 
-        HookExample { frame_times: Vec::new(), last_time: Instant::now() }
+        let image = ImageReader::new(Cursor::new(include_bytes!("thingken.webp")))
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap()
+            .into_rgba8();
+
+        let image_id =
+            hudhook::hooks::load_image(image.as_bytes(), image.width() as _, image.height() as _)
+                .unwrap();
+
+        HookExample { frame_times: Vec::new(), last_time: Instant::now(), image, image_id }
     }
 }
 
