@@ -32,9 +32,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
-use crate::util::{try_out_param, try_out_ptr};
-
 use super::keys;
+use crate::util::{try_out_param, try_out_ptr};
 
 const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #0"),

@@ -218,7 +218,8 @@ pub trait ImguiRenderLoop {
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
-    // Called before rendering frame. Use _ctx object to modify imgui settings before rendering ui. 
+    // Called before rendering frame. Use _ctx object to modify imgui settings
+    // before rendering ui.
     fn before_render(&mut self, _ctx: &mut Context) {}
 
     /// Called during the window procedure.
