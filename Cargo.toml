@@ -58,7 +58,7 @@ crate-type = ["bin"]
 imgui = "0.11"
 imgui-opengl = "0.1"
 parking_lot = "0.12"
-windows = { version = "0.52.0", features = [
+windows = { version = "0.51.0", features = [
   "Win32_Devices_HumanInterfaceDevice",
   "Win32_Foundation",
   "Foundation_Numerics",
@@ -88,14 +88,14 @@ windows = { version = "0.52.0", features = [
 ] }
 tracing = { version = "0.1", features = ["log"] }
 memoffset = "0.9.0"
-once_cell = "1.19.0"
+once_cell = "1.18.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
 
 [build-dependencies]
-cc = "1.0.83"
+cc = "1.0.72"
 
 [profile.test]
 opt-level = 3
