@@ -113,9 +113,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use imgui::{Context, Io, Ui};
+use imgui::{Io, Ui};
 use once_cell::sync::OnceCell;
-use renderer::dx12::RenderEngine;
+use renderer::RenderEngine;
 use tracing::error;
 use windows::core::Error;
 pub use windows::Win32::Foundation::HINSTANCE;

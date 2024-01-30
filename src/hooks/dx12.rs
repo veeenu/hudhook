@@ -22,8 +22,8 @@ use windows::Win32::Graphics::Dxgi::{
 };
 
 use super::DummyHwnd;
-use crate::hooks::render::RenderState;
 use crate::mh::MhHook;
+use crate::renderer::RenderState;
 use crate::util::try_out_ptr;
 use crate::{Hooks, ImguiRenderLoop};
 

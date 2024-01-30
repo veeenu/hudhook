@@ -2,7 +2,6 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
-use imgui::TextureId;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -12,8 +11,8 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC};
 
-use crate::hooks::input::{imgui_wnd_proc_impl, WndProcType};
-use crate::renderer::dx12::RenderEngine;
+use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
+use crate::renderer::RenderEngine;
 use crate::ImguiRenderLoop;
 
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
@@ -22,10 +21,10 @@ static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
-pub(super) struct RenderState;
+pub(crate) struct RenderState;
 
 impl RenderState {
-    pub(super) fn setup<F: Fn() -> HWND>(f: F) -> HWND {
+    pub(crate) fn setup<F: Fn() -> HWND>(f: F) -> HWND {
         let hwnd = unsafe { *GAME_HWND.get_or_init(f) };
 
         unsafe {
@@ -51,15 +50,15 @@ impl RenderState {
         hwnd
     }
 
-    pub(super) fn set_render_loop<T: ImguiRenderLoop + Send + Sync + 'static>(t: T) {
+    pub(crate) fn set_render_loop<T: ImguiRenderLoop + Send + Sync + 'static>(t: T) {
         unsafe { RENDER_LOOP.get_or_init(|| Box::new(t)) };
     }
 
-    pub(super) fn is_locked() -> bool {
+    pub(crate) fn is_locked() -> bool {
         RENDER_LOCK.load(Ordering::SeqCst)
     }
 
-    pub(super) fn render(hwnd: HWND) {
+    pub(crate) fn render(hwnd: HWND) {
         RENDER_LOCK.store(true, Ordering::SeqCst);
 
         let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
@@ -89,7 +88,7 @@ impl RenderState {
         RENDER_LOCK.store(false, Ordering::SeqCst);
     }
 
-    pub(super) fn resize() {
+    pub(crate) fn resize() {
         // TODO sometimes it doesn't lock.
         if let Some(Some(mut render_engine)) = unsafe { RENDER_ENGINE.get().map(Mutex::try_lock) } {
             trace!("Resizing");
@@ -99,7 +98,7 @@ impl RenderState {
         }
     }
 
-    pub(super) fn cleanup() {
+    pub(crate) fn cleanup() {
         unsafe {
             if let (Some(wnd_proc), Some(hwnd)) = (WND_PROC.take(), GAME_HWND.take()) {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]

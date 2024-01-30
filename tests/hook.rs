@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use hudhook::renderer::dx12::RenderEngine;
+use hudhook::renderer::RenderEngine;
 use hudhook::ImguiRenderLoop;
 use image::io::Reader as ImageReader;
 use image::{EncodableLayout, RgbaImage};

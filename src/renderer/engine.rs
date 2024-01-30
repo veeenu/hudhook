@@ -908,7 +908,7 @@ impl RenderEngine {
         };
 
         let gpu_desc = D3D12_GPU_DESCRIPTOR_HANDLE {
-            ptr: self.gpu_desc.ptr as u64 + (tex_index * heap_inc_size) as u64,
+            ptr: self.gpu_desc.ptr + (tex_index * heap_inc_size) as u64,
         };
 
         let p_texture: ManuallyDrop<Option<ID3D12Resource>> =
@@ -1118,12 +1118,12 @@ impl RenderEngine {
                 display_pos[1] + display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);
