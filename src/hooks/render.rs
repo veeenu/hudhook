@@ -70,7 +70,7 @@ impl RenderState {
         let render_engine = unsafe {
             RENDER_ENGINE.get_or_init(|| {
                 let mut render_engine = RenderEngine::new(hwnd).unwrap();
-                render_loop.initialize(&mut render_engine.ctx());
+                render_loop.initialize(&mut render_engine);
                 Mutex::new(render_engine)
             })
         };
@@ -80,7 +80,7 @@ impl RenderState {
             return;
         };
 
-        render_loop.before_render(&mut render_engine.ctx());
+        render_loop.before_render(&mut render_engine);
 
         if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
             error!("Render: {e:?}");
@@ -113,21 +113,6 @@ impl RenderState {
             RENDER_LOOP.take();
             RENDER_LOCK.store(false, Ordering::SeqCst);
         }
-    }
-}
-
-pub fn load_image(data: &[u8], width: usize, height: usize) -> Option<TextureId> {
-    let Some(mut render_engine) = (unsafe { RENDER_ENGINE.get().and_then(Mutex::try_lock) }) else {
-        error!("Could not lock render engine to load image");
-        return None;
-    };
-
-    match render_engine.load_image(data, width as u32, height as u32) {
-        Ok(id) => Some(id),
-        Err(e) => {
-            error!("Could not load image: {e}");
-            None
-        },
     }
 }
 

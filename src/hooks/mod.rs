@@ -38,8 +38,6 @@ mod input;
 pub mod opengl3;
 mod render;
 
-pub use render::load_image;
-
 pub fn find_process_hwnd() -> Option<HWND> {
     static mut FOUND_HWND: OnceLock<HWND> = OnceLock::new();
 

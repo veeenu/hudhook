@@ -251,7 +251,8 @@ pub fn imgui_wnd_proc_impl<T>(
 where
     T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
 {
-    let mut ctx = render_engine.ctx();
+    let ctx = render_engine.ctx();
+    let mut ctx = ctx.borrow_mut();
     let io = ctx.io_mut();
     match umsg {
         WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
