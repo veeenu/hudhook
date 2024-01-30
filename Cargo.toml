@@ -21,38 +21,13 @@ dx12 = []
 opengl3 = []
 inject = []
 
-# Hook examples
-#
-# These are minimal examples of how to use the library.
-
 [[example]]
-name = "dx9_hook"
+name = "simple_hook"
 crate-type = ["cdylib"]
 
 [[example]]
-name = "dx11_hook"
+name = "hook_with_image"
 crate-type = ["cdylib"]
-
-[[example]]
-name = "dx12_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "opengl3_hook"
-crate-type = ["cdylib"]
-
-[[example]]
-name = "dummy_hook"
-crate-type = ["cdylib"]
-
-# Hosts examples
-#
-# These examples contain code that creates an empty window with a rendering
-# surface for the appropriate engine. Hook examples should be attached to these.
-
-[[example]]
-name = "dx11_host"
-crate-type = ["bin"]
 
 [dependencies]
 imgui = "0.11"

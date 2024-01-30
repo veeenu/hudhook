@@ -234,9 +234,11 @@ pub trait ImguiRenderLoop {
 
 /// Generic trait for platform-specific hooks.
 ///
-/// Implement this if you are building a custom hook for a non-supported renderer.
+/// Implement this if you are building a custom hook for a non-supported
+/// renderer.
 ///
-/// Check out first party implementations for guidance on how to implement the methods:
+/// Check out first party implementations for guidance on how to implement the
+/// methods:
 /// - [`ImguiDx9Hooks`](crate::hooks::dx9::ImguiDx9Hooks)
 /// - [`ImguiDx11Hooks`](crate::hooks::dx11::ImguiDx11Hooks)
 /// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
