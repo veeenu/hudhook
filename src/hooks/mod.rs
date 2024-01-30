@@ -1,22 +1,5 @@
-//! # How to implement a hook
-//!
-//! The code structure of a hook should follow this scheme:
-//!
-//! 1. `use` statements
-//! 2. Type aliases for hooked functions
-//! 3. A `struct Trampolines` that should hold all needed trampolines
-//! 4. `static mut` objects, favoring `OnceLock`s and keeping heavy sync
-//!    primitives like mutexes to the minimum absolute necessary
-//! 5. Hook function implementations, one for each trampoline
-//! 6. An `imgui_wnd_proc` implementation
-//! 7. A `render` function that locks the render engine and uses it to draw and
-//!    swap. Possibly implement a critical section with an `AtomicBool` to
-//!    prevent double invocations
-//! 8. A `get_target_addrs` function that retrieves hooked function addresses
-//! 9. A `Imgui<something>Hooks` type that holds necessary hook state (generally
-//!    just a static array of `MhHook` objects); implement a `new` function and
-//!    all necessary methods/associated functions, then implement the `Hooks`
-//!    trait below it
+//! Implementations of render engine hooks.
+
 use std::mem;
 use std::sync::OnceLock;
 
@@ -36,6 +19,8 @@ pub mod dx12;
 pub mod dx9;
 pub mod opengl3;
 
+/// A utility function to retrieve the top level [`HWND`] belonging to this
+/// process.
 pub fn find_process_hwnd() -> Option<HWND> {
     static mut FOUND_HWND: OnceLock<HWND> = OnceLock::new();
 

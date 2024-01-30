@@ -1,6 +1,6 @@
-use hudhook::*;
 use windows::core::PCSTR;
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HINSTANCE, HWND};
+use windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxA, MB_OK};
 
 #[no_mangle]

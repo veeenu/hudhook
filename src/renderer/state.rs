@@ -21,10 +21,28 @@ static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
-pub(crate) struct RenderState;
+/// Global renderer state manager.
+///
+/// Clients should **never** use this. It is reserved for
+/// [`Hooks`](crate::Hooks) implementors.
+pub struct RenderState;
 
 impl RenderState {
-    pub(crate) fn setup<F: Fn() -> HWND>(f: F) -> HWND {
+    /// Call this when the [`HWND`] you want to render to is first available.
+    /// Pass a callback that returns the target [`HWND`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let hwnd = RenderState::setup(|| {
+    ///     let mut desc = Default::default();
+    ///     p_this.GetDesc(&mut desc).unwrap();
+    ///     info!("Output window: {:?}", p_this);
+    ///     info!("Desc: {:?}", desc);
+    ///     desc.OutputWindow
+    /// });
+    /// ```
+    pub fn setup<F: Fn() -> HWND>(f: F) -> HWND {
         let hwnd = unsafe { *GAME_HWND.get_or_init(f) };
 
         unsafe {
@@ -50,15 +68,31 @@ impl RenderState {
         hwnd
     }
 
-    pub(crate) fn set_render_loop<T: ImguiRenderLoop + Send + Sync + 'static>(t: T) {
+    /// Call this with the [`ImguiRenderLoop`] object that is passed to
+    /// your [`Hooks`](crate::Hooks) implementor via
+    /// [`Hooks::from_render_loop`](crate::Hooks::from_render_loop).
+    ///
+    /// # Example
+    ///
+    /// Check [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks).
+    pub fn set_render_loop<T: ImguiRenderLoop + Send + Sync + 'static>(t: T) {
         unsafe { RENDER_LOOP.get_or_init(|| Box::new(t)) };
     }
 
-    pub(crate) fn is_locked() -> bool {
+    /// Return whether a render operation is currently undergoing.
+    ///
+    /// If your hook goes through a DirectX `Present` call of some sorts, the
+    /// hooked function will probably be recursively called. Use this in
+    /// your `Present` hook to avoid double locking.
+    pub fn is_locked() -> bool {
         RENDER_LOCK.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn render(hwnd: HWND) {
+    /// Render the UI and composite it over the passed [`HWND`].
+    ///
+    /// Make sure that the passed [`HWND`] is the one returned by
+    /// [`RenderState::setup`].
+    pub fn render(hwnd: HWND) {
         RENDER_LOCK.store(true, Ordering::SeqCst);
 
         let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
@@ -88,7 +122,9 @@ impl RenderState {
         RENDER_LOCK.store(false, Ordering::SeqCst);
     }
 
-    pub(crate) fn resize() {
+    /// Resize the engine. Generally only needs to be called automatically as a
+    /// consequence of the `WM_SIZE` event.
+    pub fn resize() {
         // TODO sometimes it doesn't lock.
         if let Some(Some(mut render_engine)) = unsafe { RENDER_ENGINE.get().map(Mutex::try_lock) } {
             trace!("Resizing");
@@ -98,7 +134,9 @@ impl RenderState {
         }
     }
 
-    pub(crate) fn cleanup() {
+    /// Free the render engine resources. Should be called from the
+    /// [`Hooks::unhook`](crate::Hooks::unhook) implementation.
+    pub fn cleanup() {
         unsafe {
             if let (Some(wnd_proc), Some(hwnd)) = (WND_PROC.take(), GAME_HWND.take()) {
                 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
