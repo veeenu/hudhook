@@ -7,8 +7,8 @@ use windows::core::PCSTR;
 use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
-use crate::hooks::render::RenderState;
 use crate::mh::MhHook;
+use crate::renderer::RenderState;
 use crate::{Hooks, ImguiRenderLoop};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();

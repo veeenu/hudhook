@@ -113,8 +113,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use imgui::{Context, Io, Ui};
+use imgui::{Io, Ui};
 use once_cell::sync::OnceCell;
+use renderer::RenderEngine;
 use tracing::error;
 use windows::core::Error;
 pub use windows::Win32::Foundation::HINSTANCE;
@@ -213,14 +214,14 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
-    fn initialize(&mut self, _ctx: &mut Context) {}
+    fn initialize(&mut self, _render_engine: &mut RenderEngine) {}
 
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
-    // Called before rendering frame. Use _ctx object to modify imgui settings
-    // before rendering ui.
-    fn before_render(&mut self, _ctx: &mut Context) {}
+    // Called before rendering each frame. Use the provided `ctx` object to
+    // modify imgui settings before rendering the UI.
+    fn before_render(&mut self, _render_engine: &mut RenderEngine) {}
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
