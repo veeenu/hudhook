@@ -59,7 +59,7 @@ pub fn main(_argc: i32, _argv: *const *const u8) {
 
     let mut dll_path = std::env::current_exe().unwrap();
     dll_path.pop();
-    dll_path.push("hook_you.dll");
+    dll_path.push("dx11_hook.dll");
 
     println!("{:?}", dll_path.canonicalize());
     unsafe {

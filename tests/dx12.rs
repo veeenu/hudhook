@@ -8,27 +8,18 @@ use harness::dx12::Dx12Harness;
 use hook::HookExample;
 use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::*;
-use tracing::metadata::LevelFilter;
 
 #[test]
 fn test_imgui_dx12() {
-    tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_thread_names(true)
-        .init();
+    hook::setup_tracing();
 
     let dx12_harness = Dx12Harness::new("DX12 hook example");
     thread::sleep(Duration::from_millis(500));
 
-    if let Err(e) =
-        Hudhook::builder().with(HookExample::new().into_hook::<ImguiDx12Hooks>()).build().apply()
-    {
+    if let Err(e) = Hudhook::builder().with::<ImguiDx12Hooks>(HookExample::new()).build().apply() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
-    thread::sleep(Duration::from_millis(5000));
+    thread::sleep(Duration::from_millis(25000));
     drop(dx12_harness);
 }

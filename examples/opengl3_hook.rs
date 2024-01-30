@@ -1,5 +1,5 @@
 use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::*;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 struct HookYou;
@@ -35,4 +35,4 @@ impl ImguiRenderLoop for HookYou {
     }
 }
 
-hudhook::hudhook!(HookYou::new().into_hook::<ImguiOpenGl3Hooks>());
+hudhook::hudhook!(ImguiOpenGl3Hooks, HookYou::new());

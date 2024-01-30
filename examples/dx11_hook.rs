@@ -1,5 +1,7 @@
+// Please ignore these examples; they are broken.
+
 use hudhook::hooks::dx11::ImguiDx11Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::*;
 use imgui::Condition;
 use tracing::metadata::LevelFilter;
 struct Dx11HookExample;
@@ -7,7 +9,7 @@ struct Dx11HookExample;
 impl Dx11HookExample {
     fn new() -> Self {
         println!("Initializing");
-        hudhook::alloc_console().expect("AllocConsole");
+        hudhook::alloc_console().ok();
         hudhook::enable_console_colors();
 
         tracing_subscriber::fmt()
@@ -35,4 +37,4 @@ impl ImguiRenderLoop for Dx11HookExample {
     }
 }
 
-hudhook::hudhook!(Dx11HookExample::new().into_hook::<ImguiDx11Hooks>());
+hudhook::hudhook!(ImguiDx11Hooks, Dx11HookExample::new());

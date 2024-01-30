@@ -6,19 +6,25 @@ use std::mem::size_of;
 use imgui::Io;
 use parking_lot::MutexGuard;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyA, MAPVK_VSC_TO_VK_EX, VIRTUAL_KEY, VK_CONTROL, VK_LBUTTON, VK_LCONTROL, VK_LMENU,
-    VK_LSHIFT, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN,
-    VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
     GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE_0_0,
     RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{ImguiRenderLoop, ImguiWindowsEventHandler};
-use crate::hooks::{get_wheel_delta_wparam, hiword};
+use super::render::RenderState;
+use crate::renderer::dx12::RenderEngine;
+use crate::ImguiRenderLoop;
+
+pub type WndProcType =
+    unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+
+// Replication of the Win32 HIWORD macro.
+#[inline]
+fn hiword(l: u32) -> u16 {
+    ((l >> 16) & 0xffff) as u16
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Raw input
@@ -238,13 +244,15 @@ pub fn imgui_wnd_proc_impl<T>(
     umsg: u32,
     WPARAM(wparam): WPARAM,
     LPARAM(lparam): LPARAM,
-    mut imgui_renderer: MutexGuard<Box<impl ImguiWindowsEventHandler>>,
+    wnd_proc: WndProcType,
+    mut render_engine: MutexGuard<RenderEngine>,
     imgui_render_loop: T,
 ) -> LRESULT
 where
     T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
 {
-    let io = imgui_renderer.io_mut();
+    let mut ctx = render_engine.ctx();
+    let io = ctx.io_mut();
     match umsg {
         WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
         state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
@@ -277,26 +285,33 @@ where
             io.mouse_down[btn] = false;
         },
         WM_MOUSEWHEEL => {
-            let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _);
+            // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
+            let wheel_delta_wparam = hiword(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
             io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_MOUSEHWHEEL => {
-            let wheel_delta_wparam = get_wheel_delta_wparam(wparam as _);
+            // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
+            let wheel_delta_wparam = hiword(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
+        WM_SIZE => {
+            drop(ctx);
+            drop(render_engine);
+            RenderState::resize();
+            return LRESULT(1);
+        },
         _ => {},
     };
 
-    let wnd_proc = imgui_renderer.wnd_proc();
-    let should_block_messages =
-        imgui_render_loop.as_ref().should_block_messages(imgui_renderer.io());
+    let should_block_messages = imgui_render_loop.as_ref().should_block_messages(io);
 
     imgui_render_loop.as_ref().on_wnd_proc(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
 
-    drop(imgui_renderer);
+    drop(ctx);
+    drop(render_engine);
 
     if should_block_messages {
         return LRESULT(1);

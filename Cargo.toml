@@ -1,6 +1,6 @@
 [package]
 name = "hudhook"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "A graphics API hook with dear imgui render loop. Supports DirectX 9, 11, 12, and OpenGL 3."
 homepage = "https://github.com/veeenu/hudhook"
@@ -11,7 +11,7 @@ authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"
-targets = ["x86_64-pc-windows-msvc"]
+targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
 
 [features]
 default = ["dx9", "dx11", "dx12", "opengl3", "inject"]
@@ -54,26 +54,6 @@ crate-type = ["cdylib"]
 name = "dx11_host"
 crate-type = ["bin"]
 
-# Renderers examples
-#
-# These examples contain code that creates a window and a rendering surface and
-# plainly renders some imgui code with the appropriate renderer.
-
-[[example]]
-name = "renderer-dx9"
-path = "examples/renderers/dx9.rs"
-crate-type = ["bin"]
-
-[[example]]
-name = "renderer-dx11"
-path = "examples/renderers/dx11.rs"
-crate-type = ["bin"]
-
-[[example]]
-name = "renderer-dx12"
-path = "examples/renderers/dx12.rs"
-crate-type = ["bin"]
-
 [dependencies]
 imgui = "0.11"
 imgui-opengl = "0.1"
@@ -99,6 +79,7 @@ windows = { version = "0.51.0", features = [
   "Win32_Graphics_Direct3D12",
   "Win32_Graphics_Direct3D_Fxc",
   "Win32_Graphics_Direct3D",
+  "Win32_Graphics_DirectComposition",
   "Win32_Graphics_Gdi",
   "Win32_Graphics_OpenGL",
   "Win32_UI_Input",
@@ -108,6 +89,7 @@ windows = { version = "0.51.0", features = [
 tracing = { version = "0.1", features = ["log"] }
 memoffset = "0.9.0"
 once_cell = "1.18.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.3"

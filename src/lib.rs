@@ -45,11 +45,10 @@
 //!
 //! ##### Example
 //!
-//! Implement the [`hooks::ImguiRenderLoop`] trait:
+//! Implement the [`ImguiRenderLoop`] trait:
 //!
 //! ```no_run
 //! // lib.rs
-//! use hudhook::hooks::ImguiRenderLoop;
 //! use hudhook::*;
 //!
 //! pub struct MyRenderLoop;
@@ -68,25 +67,25 @@
 //! {
 //!     // Use this if hooking into a DirectX 9 application.
 //!     use hudhook::hooks::dx9::ImguiDx9Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx9Hooks>());
+//!     hudhook!(ImguiDx9Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 11 application.
 //!     use hudhook::hooks::dx11::ImguiDx11Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx11Hooks>());
+//!     hudhook!(ImguiDx11Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a DirectX 12 application.
 //!     use hudhook::hooks::dx12::ImguiDx12Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
+//!     hudhook!(ImguiDx12Hooks, MyRenderLoop);
 //! }
 //!
 //! {
 //!     // Use this if hooking into a OpenGL 3 application.
 //!     use hudhook::hooks::opengl3::ImguiOpenGl3Hooks;
-//!     hudhook!(MyRenderLoop.into_hook::<ImguiOpenGl3Hooks>());
+//!     hudhook!(ImguiOpenGl3Hooks, MyRenderLoop);
 //! }
 //! ```
 //!
@@ -114,10 +113,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
+use imgui::{Context, Io, Ui};
 use once_cell::sync::OnceCell;
 use tracing::error;
 use windows::core::Error;
 pub use windows::Win32::Foundation::HINSTANCE;
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
     AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
@@ -126,16 +127,13 @@ use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 pub use {imgui, tracing};
 
-use crate::hooks::Hooks;
-pub use crate::hooks::ImguiRenderLoop;
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 
 pub mod hooks;
-pub mod mh;
-pub mod renderers;
-
 #[cfg(feature = "inject")]
 pub mod inject;
+pub mod mh;
+pub mod renderer;
 
 mod util;
 
@@ -209,6 +207,53 @@ pub fn eject() {
             FreeLibraryAndExitThread(module, 0);
         }
     });
+}
+
+/// Implement your `imgui` rendering logic via this trait.
+pub trait ImguiRenderLoop {
+    /// Called once at the first occurrence of the hook. Implement this to
+    /// initialize your data.
+    fn initialize(&mut self, _ctx: &mut Context) {}
+
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui);
+
+    // Called before rendering frame. Use _ctx object to modify imgui settings
+    // before rendering ui.
+    fn before_render(&mut self, _ctx: &mut Context) {}
+
+    /// Called during the window procedure.
+    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
+
+    /// If this function returns true, the WndProc function will not call the
+    /// procedure of the parent window.
+    fn should_block_messages(&self, _io: &Io) -> bool {
+        false
+    }
+}
+
+/// Generic trait for platform-specific hooks.
+///
+/// Implement this if you are building a custom renderer.
+///
+/// Check out first party implementations ([`crate::hooks::dx9`],
+/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
+/// for guidance on how to implement the methods.
+pub trait Hooks {
+    fn from_render_loop<T>(t: T) -> Box<Self>
+    where
+        Self: Sized,
+        T: ImguiRenderLoop + Send + Sync + 'static;
+
+    /// Return the list of hooks to be enabled, in order.
+    fn hooks(&self) -> &[MhHook];
+
+    /// Cleanup global data and disable the hooks.
+    ///
+    /// # Safety
+    ///
+    /// Is most definitely UB.
+    unsafe fn unhook(&mut self);
 }
 
 /// Holds all the activated hooks and manages their lifetime.
@@ -311,8 +356,11 @@ pub struct HudhookBuilder(Hudhook);
 
 impl HudhookBuilder {
     /// Add a hook object.
-    pub fn with(mut self, hook: Box<dyn Hooks>) -> Self {
-        self.0 .0.push(hook);
+    pub fn with<T: Hooks + 'static>(
+        mut self,
+        render_loop: impl ImguiRenderLoop + Send + Sync + 'static,
+    ) -> Self {
+        self.0 .0.push(T::from_render_loop(render_loop));
         self
     }
 
@@ -352,7 +400,7 @@ impl HudhookBuilder {
 /// ```
 #[macro_export]
 macro_rules! hudhook {
-    ($hooks:expr) => {
+    ($t:ty, $hooks:expr) => {
         use hudhook::tracing::*;
         use hudhook::*;
 
@@ -364,13 +412,16 @@ macro_rules! hudhook {
             _: *mut ::std::ffi::c_void,
         ) {
             if reason == DLL_PROCESS_ATTACH {
-                trace!("DllMain()");
+                ::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {
-                    if let Err(e) =
-                        Hudhook::builder().with({ $hooks }).with_hmodule(hmodule).build().apply()
+                    if let Err(e) = ::hudhook::Hudhook::builder()
+                        .with::<$t>({ $hooks })
+                        .with_hmodule(hmodule)
+                        .build()
+                        .apply()
                     {
-                        error!("Couldn't apply hooks: {e:?}");
-                        eject();
+                        ::tracing::error!("Couldn't apply hooks: {e:?}");
+                        ::hudhook::eject();
                     }
                 });
             }

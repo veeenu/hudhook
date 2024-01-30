@@ -23,10 +23,10 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, GetMessageA,
+    AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA, WS_OVERLAPPEDWINDOW,
-    WS_VISIBLE,
+    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
+    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 pub struct Dx11Harness {
@@ -173,12 +173,12 @@ impl Drop for Dx11Harness {
 fn handle_message(window: HWND) -> bool {
     unsafe {
         let mut msg = MaybeUninit::uninit();
-        if GetMessageA(msg.as_mut_ptr(), window, 0, 0).0 > 0 {
+        if PeekMessageA(msg.as_mut_ptr(), window, 0, 0, PM_REMOVE).0 > 0 {
             TranslateMessage(msg.as_ptr());
             DispatchMessageA(msg.as_ptr());
             msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
         } else {
-            false
+            true
         }
     }
 }
