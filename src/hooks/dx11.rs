@@ -110,7 +110,7 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
 pub struct ImguiDx11Hooks([MhHook; 1]);
 
 impl ImguiDx11Hooks {
-    /// Construct a set of [`crate::mh::MhHook`]s that will render UI via the
+    /// Construct a set of [`MhHook`]s that will render UI via the
     /// provided [`ImguiRenderLoop`].
     ///
     /// The following functions are hooked:

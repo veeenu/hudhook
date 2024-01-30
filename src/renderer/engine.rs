@@ -46,6 +46,7 @@ const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #7"),
 ];
 
+// Holds D3D12 resources for a back buffer.
 #[derive(Debug)]
 struct FrameContext {
     desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
@@ -100,6 +101,7 @@ impl FrameContext {
     }
 }
 
+// Holds D3D12 buffers for a frame.
 struct FrameResources {
     index_buffer: Option<ID3D12Resource>,
     vertex_buffer: Option<ID3D12Resource>,
@@ -213,6 +215,8 @@ impl Default for FrameResources {
     }
 }
 
+// RAII wrapper around a [`std::mem::ManuallyDrop`] for a D3D12 resource
+// barrier.
 struct Barrier;
 
 impl Barrier {
@@ -245,6 +249,7 @@ impl Barrier {
     }
 }
 
+// Holds and manages the lifetimes for the DirectComposition data structures.
 struct Compositor {
     dcomp_dev: IDCompositionDevice,
     _dcomp_target: IDCompositionTarget,
@@ -271,6 +276,12 @@ impl Compositor {
     }
 }
 
+/// The [`hudhook`](crate) render engine.
+///
+/// Most of the operations of this structures are managed by the library itself
+/// and are not available to the clients. For this reason, it can't be
+/// instantiated directly but only by [`Hooks`](crate::Hooks) implementations
+/// via [`RenderState`](crate::renderer::RenderState).
 pub struct RenderEngine {
     target_hwnd: HWND,
 
@@ -558,7 +569,7 @@ impl RenderEngine {
 }
 
 impl RenderEngine {
-    /// Returns the HWND the UI is composited on top of.
+    /// Returns the [`HWND`] the UI is composited on top of.
     pub fn hwnd(&self) -> HWND {
         self.target_hwnd
     }
@@ -569,6 +580,13 @@ impl RenderEngine {
         Rc::clone(&self.ctx)
     }
 
+    /// Upload an image into a texture and return a [`imgui::TextureId`].
+    ///
+    /// Should be used ideally ahead-of-time in
+    /// [`ImguiRenderLoop::initialize`](crate::ImguiRenderLoop::initialize), but
+    /// can be used in
+    /// [`ImguiRenderLoop::before_render`](crate::ImguiRenderLoop::before_render)
+    /// provided the performance cost is acceptable.
     pub fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.resize_texture_heap()? };
 

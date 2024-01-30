@@ -1,3 +1,4 @@
+//! Thin FFI wrapper around [`minhook`](https://github.com/TsudaKageyu/minhook).
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 
 use std::ffi::c_void;

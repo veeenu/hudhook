@@ -118,14 +118,12 @@ use once_cell::sync::OnceCell;
 use renderer::RenderEngine;
 use tracing::error;
 use windows::core::Error;
-pub use windows::Win32::Foundation::HINSTANCE;
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
     AllocConsole, FreeConsole, GetConsoleMode, GetStdHandle, SetConsoleMode, CONSOLE_MODE,
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
-pub use windows::Win32::System::SystemServices::{DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH};
 pub use {imgui, tracing};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
@@ -188,7 +186,8 @@ pub fn free_console() -> Result<(), Error> {
 ///
 /// To eject your DLL, invoke the [`eject`] method from anywhere in your
 /// render loop. This will disable the hooks, free the console (if it has
-/// been created before) and invoke `FreeLibraryAndExitThread`.
+/// been created before) and invoke
+/// [`windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread`].
 ///
 /// Befor calling [`eject`], make sure to perform any manual cleanup (e.g.
 /// dropping/resetting the contents of static mutable variables).
@@ -219,14 +218,14 @@ pub trait ImguiRenderLoop {
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
-    // Called before rendering each frame. Use the provided `ctx` object to
-    // modify imgui settings before rendering the UI.
+    /// Called before rendering each frame. Use the provided `ctx` object to
+    /// modify imgui settings before rendering the UI.
     fn before_render(&mut self, _render_engine: &mut RenderEngine) {}
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
 
-    /// If this function returns true, the WndProc function will not call the
+    /// If this function returns `true`, the WndProc function will not call the
     /// procedure of the parent window.
     fn should_block_messages(&self, _io: &Io) -> bool {
         false
@@ -235,12 +234,17 @@ pub trait ImguiRenderLoop {
 
 /// Generic trait for platform-specific hooks.
 ///
-/// Implement this if you are building a custom renderer.
+/// Implement this if you are building a custom hook for a non-supported
+/// renderer.
 ///
-/// Check out first party implementations ([`crate::hooks::dx9`],
-/// [`crate::hooks::dx11`], [`crate::hooks::dx12`], [`crate::hooks::opengl3`])
-/// for guidance on how to implement the methods.
+/// Check out first party implementations for guidance on how to implement the
+/// methods:
+/// - [`ImguiDx9Hooks`](crate::hooks::dx9::ImguiDx9Hooks)
+/// - [`ImguiDx11Hooks`](crate::hooks::dx11::ImguiDx11Hooks)
+/// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
+/// - [`ImguiOpenGl3Hooks`](crate::hooks::opengl3::ImguiOpenGl3Hooks)
 pub trait Hooks {
+    /// Constructor that should return a boxed version of [`Self`].
     fn from_render_loop<T>(t: T) -> Box<Self>
     where
         Self: Sized,
@@ -299,6 +303,7 @@ impl Hudhook {
         Ok(())
     }
 
+    /// Disable and cleanup the hooks.
     pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
         // Queue disabling all the hooks.
         for hook in self.hooks() {
@@ -365,7 +370,7 @@ impl HudhookBuilder {
         self
     }
 
-    /// Save the DLL instance (for the eject method).
+    /// Save the DLL instance (for the [`eject`] method).
     pub fn with_hmodule(self, module: HINSTANCE) -> Self {
         unsafe { MODULE.set(module).unwrap() };
         self
@@ -408,11 +413,11 @@ macro_rules! hudhook {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: ::hudhook::HINSTANCE,
+            hmodule: ::windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut ::std::ffi::c_void,
         ) {
-            if reason == DLL_PROCESS_ATTACH {
+            if reason == ::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
                 ::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {
                     if let Err(e) = ::hudhook::Hudhook::builder()
@@ -421,7 +426,7 @@ macro_rules! hudhook {
                         .build()
                         .apply()
                     {
-                        ::tracing::error!("Couldn't apply hooks: {e:?}");
+                        ::hudhook::tracing::error!("Couldn't apply hooks: {e:?}");
                         ::hudhook::eject();
                     }
                 });
