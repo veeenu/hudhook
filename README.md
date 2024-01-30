@@ -7,7 +7,7 @@ A render loop hook library with [Dear ImGui](https://github.com/ocornut/imgui) o
 
 Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3.
 
-![hello](tests/hello.mp4)
+<video><source src="tests/hello.webm" type="video/webm"></video>
 
 Read the tutorial book [here](https://veeenu.github.io/hudhook).
 
