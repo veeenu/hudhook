@@ -2,8 +2,19 @@
 
 Let's now build an application that will inject the DLL into our target process.
 
-First of all, let's download and compile the [DirectX 12 samples](samples).
-We will target the `HelloTexture` sample.
+First of all, let's download and compile the [DirectX 12 samples][samples]. We
+will target the `HelloTexture` sample. Note that you may have to open the `.sln`
+file and retarget it if the build fails.
+
+```powershell
+Invoke-WebRequest `
+    https://github.com/microsoft/DirectX-Graphics-Samples/releases/download/MicrosoftDocs-Samples/d3d12-hello-world-samples-win32.zip `
+    -OutFile d3d12-samples.zip
+
+Expand-Archive -Path d3d12-samples.zip d3d12-samples
+cd d3d12-samples\src\HelloTeture
+msbuild -p:Platform=x64
+```
 
 Let's add a binary target to our project's `Cargo.toml`:
 

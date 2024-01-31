@@ -5,20 +5,20 @@ entry point. In Windows, that entails implementing the `DllMain` method. We coul
 [roll our own][roll-your-own], but `hudhook` provides facilities to simplify that to a single
 line of code.
 
-The `hudhook!` macro takes in an object whose type is one of the hook structures.
-The one we care about is `ImguiDx12Hooks` as we are targeting a DirectX 12 host application.
+The `hudhook!` macro takes in the type of the hook we are targeting, and an instance of a struct
+that implements the `ImguiRenderLoop` trait.
+We are targeting a DirectX 12 host application, so the target hook type is `ImguiDx12Hooks`.
 
-We don't have to implement this trait manually: all the objects implementing `ImguiRenderLoop` also
-have an `into_hook` method which is designed for that purpose. We only need to invoke it, also
-specifying which hook type we want with a generic parameter:
+Our `HelloHud` struct already implements `ImguiRenderLoop`, so we can
+instantiate it and use it as-is:
 
 ```rust
 use hudhook::hooks::dx12::ImguiDX12Hooks;
 
-hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDx12Hooks>());
+hudhook::hudhook!(ImguiDx12Hooks, HelloHud::new());
 ```
 
-We are finally ready to build our library:
+We are finally ready to build our library.
 
 ```
 cargo build --release
@@ -47,7 +47,7 @@ pub unsafe extern "stdcall" fn DllMain(
         trace!("DllMain()");
         std::thread::spawn(move || {
             if let Err(e) = Hudhook::builder()
-                .with(HelloHud::new().into_hook::<ImguiDx12Hooks>())
+                .with::<ImguiDx12Hooks>(HelloHud::new())
                 .with_hmodule(hmodule)
                 .build()
                 .apply()
