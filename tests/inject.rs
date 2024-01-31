@@ -29,7 +29,7 @@ fn test_inject_by_name() {
     std::thread::sleep(Duration::from_millis(500));
     println!("Should show a message box that says \"Hello\".");
 
-    Process::by_name("Notepad.exe")
+    Process::by_name("notepad.exe")
         .unwrap()
         .inject(examples_path().join("dummy_hook.dll"))
         .unwrap();
