@@ -124,7 +124,7 @@ use windows::Win32::System::Console::{
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
-pub use {imgui, tracing};
+pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 
@@ -350,7 +350,7 @@ impl Hudhook {
 ///     if reason == DLL_PROCESS_ATTACH {
 ///         std::thread::spawn(move || {
 ///             let hooks = Hudhook::builder()
-///                 .with(MyRenderLoop.into_hook::<ImguiDx12Hooks>())
+///                 .with::<ImguiDx12Hooks>(MyRenderLoop())
 ///                 .with_hmodule(hmodule)
 ///                 .build();
 ///             hooks.apply();
@@ -407,18 +407,17 @@ impl HudhookBuilder {
 #[macro_export]
 macro_rules! hudhook {
     ($t:ty, $hooks:expr) => {
-        use hudhook::tracing::*;
         use hudhook::*;
 
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
-            hmodule: ::windows::Win32::Foundation::HINSTANCE,
+            hmodule: ::hudhook::windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut ::std::ffi::c_void,
         ) {
-            if reason == ::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
-                ::tracing::trace!("DllMain()");
+            if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
+                ::hudhook::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {
                     if let Err(e) = ::hudhook::Hudhook::builder()
                         .with::<$t>({ $hooks })
