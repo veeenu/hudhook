@@ -169,7 +169,8 @@ fn get_process_by_name(name: &str) -> Result<HANDLE> {
 
 // 32-bit implementation. Uses [`PROCESSENTRY32`].
 unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
-    let name = PCSTR(HSTRING::from(name_str).to_os_string().as_encoded_bytes().as_ptr());
+    let name = HSTRING::from(name_str).to_os_string();
+    let name = name.as_encoded_bytes();
 
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
     let mut pe32 =
@@ -187,7 +188,8 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
     }
 
     let pid = loop {
-        let proc_name = PCSTR(pe32.szExeFile.as_ptr());
+        let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
+        let proc_name = &pe32.szExeFile[..zero_idx];
 
         if proc_name == name {
             break Ok(pe32.th32ProcessID);
@@ -204,10 +206,9 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
     OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
 }
 
-// 64-bit implementation. Uses [`PROCESSENTRY32W`] and
-// [`widestring::U16CString`].
+// 64-bit implementation. Uses [`PROCESSENTRY32W`].
 unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
-    let name = PCWSTR(HSTRING::from(name_str).as_ptr());
+    let name = HSTRING::from(name_str);
 
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
     let mut pe32 =
@@ -225,8 +226,9 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
     }
 
     let pid = loop {
-        let proc_name = PCWSTR(pe32.szExeFile.as_ptr());
-        if proc_name == name {
+        let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
+        let proc_name = HSTRING::from_wide(&pe32.szExeFile[..zero_idx])?;
+        if name == proc_name {
             break Ok(pe32.th32ProcessID);
         }
 
