@@ -14,5 +14,7 @@ crate-type = ["cdylib", "rlib"]
 name = "hello_hud"
 
 [dependencies]
-hudhook = { version = "0.4.0", path = "../.." }
-imgui = "0.9.0"
+hudhook = { version = "0.6.0", path = "../.." }
+imgui = "0.11.0"
+tracing = "0.1.40"
+windows = "0.52.0"

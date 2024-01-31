@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::*;
 use imgui::*;
 
 struct HelloHud {
@@ -23,4 +23,4 @@ impl ImguiRenderLoop for HelloHud {
     }
 }
 
-hudhook::hudhook!(HelloHud::new().into_hook::<ImguiDx12Hooks>());
+hudhook::hudhook!(ImguiDx12Hooks, HelloHud::new());
