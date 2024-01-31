@@ -1,19 +1,17 @@
 //! Facilities for injecting compiled DLLs into target processes.
 
-use std::ffi::{CStr, CString};
 use std::mem::{self, size_of};
 use std::path::PathBuf;
-use std::ptr::null;
 
 use tracing::debug;
-use windows::core::{Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
+use windows::core::{s, w, Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32First, Process32FirstW, Process32Next, Process32NextW,
     PROCESSENTRY32, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
-use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
 };
@@ -41,17 +39,10 @@ impl Process {
 
     /// Inject the DLL in the process.
     pub fn inject(&self, dll_path: PathBuf) -> Result<()> {
-        let kernel32 = CString::new("Kernel32").unwrap();
-        let loadlibraryw = CString::new("LoadLibraryW").unwrap();
+        let proc_addr =
+            unsafe { GetProcAddress(GetModuleHandleW(w!("Kernel32"))?, s!("LoadLibraryW")) };
 
-        let proc_addr = unsafe {
-            GetProcAddress(
-                GetModuleHandleA(PCSTR(kernel32.as_ptr() as _))?,
-                PCSTR(loadlibraryw.as_ptr() as _),
-            )
-        };
-
-        let dll_path = HSTRING::from(dll_path.canonicalize().unwrap().as_os_str());
+        let dll_path = HSTRING::from(dll_path.canonicalize().unwrap().as_path());
         let dll_path_buf = unsafe {
             VirtualAllocEx(
                 self.0,
@@ -97,6 +88,11 @@ impl Process {
             Ok(())
         }
     }
+
+    /// Retrieve the process handle.
+    pub fn handle(&self) -> HANDLE {
+        self.0
+    }
 }
 
 impl Drop for Process {
@@ -118,9 +114,8 @@ fn get_process_by_title(title: &str) -> Result<HANDLE> {
 
 // 32-bit implementation. Uses [`std::ffi::CString`] and `FindWindowA`.
 unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
-    let title = title.split_once('\0').map(|(t, _)| t).unwrap_or(title);
-    let title = CString::new(title).unwrap();
-    let hwnd = FindWindowA(PCSTR(null()), PCSTR(title.as_bytes_with_nul().as_ptr()));
+    let title = HSTRING::from(title).to_os_string();
+    let hwnd = FindWindowA(None, PCSTR(title.as_encoded_bytes().as_ptr()));
 
     if hwnd.0 == 0 {
         let last_error = match GetLastError() {
@@ -142,7 +137,7 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
 // 64-bit implementation. Uses [`widestring::U16CString`] and `FindWindowW`.
 unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     let title = HSTRING::from(title);
-    let hwnd = FindWindowW(PCWSTR(null()), PCWSTR(title.as_ptr()));
+    let hwnd = FindWindowW(None, PCWSTR(title.as_ptr()));
 
     if hwnd.0 == 0 {
         let last_error = match GetLastError() {
@@ -173,9 +168,8 @@ fn get_process_by_name(name: &str) -> Result<HANDLE> {
 }
 
 // 32-bit implementation. Uses [`PROCESSENTRY32`].
-unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
-    let name = name.split_once('\0').map(|(t, _)| t).unwrap_or(name);
-    let name = CString::new(name).unwrap();
+unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
+    let name = PCSTR(HSTRING::from(name_str).to_os_string().as_encoded_bytes().as_ptr());
 
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
     let mut pe32 =
@@ -193,18 +187,15 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
     }
 
     let pid = loop {
-        let proc_name = CStr::from_ptr(pe32.szExeFile.as_ptr() as *const i8);
+        let proc_name = PCSTR(pe32.szExeFile.as_ptr());
 
-        if proc_name == name.as_ref() {
+        if proc_name == name {
             break Ok(pe32.th32ProcessID);
         }
 
         if Process32Next(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(
-                HRESULT(0),
-                format!("Process {} not found", name.to_string_lossy()).into(),
-            ));
+            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found").into()));
         }
     }?;
 
@@ -215,8 +206,8 @@ unsafe fn get_process_by_name32(name: &str) -> Result<HANDLE> {
 
 // 64-bit implementation. Uses [`PROCESSENTRY32W`] and
 // [`widestring::U16CString`].
-unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
-    let name = PCWSTR::from_raw(HSTRING::from(name).as_ptr()).display().to_string();
+unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
+    let name = PCWSTR(HSTRING::from(name_str).as_ptr());
 
     let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)?;
     let mut pe32 =
@@ -234,14 +225,14 @@ unsafe fn get_process_by_name64(name: &str) -> Result<HANDLE> {
     }
 
     let pid = loop {
-        let proc_name = PCWSTR::from_raw(pe32.szExeFile.as_ptr()).display().to_string();
+        let proc_name = PCWSTR(pe32.szExeFile.as_ptr());
         if proc_name == name {
             break Ok(pe32.th32ProcessID);
         }
 
         if Process32NextW(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(HRESULT(0), format!("Process {} not found", name).into()));
+            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found").into()));
         }
     }?;
 
