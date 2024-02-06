@@ -23,7 +23,7 @@ use windows::Win32::Graphics::Dxgi::{
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
-use crate::renderer::RenderState;
+use crate::renderer::{print_dxgi_debug_messages, RenderState};
 use crate::util::try_out_ptr;
 use crate::{Hooks, ImguiRenderLoop};
 
@@ -68,7 +68,9 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    RenderState::render(hwnd);
+    RenderState::render(hwnd, p_this.GetBuffer(1).ok());
+
+    print_dxgi_debug_messages();
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(p_this, sync_interval, flags)
@@ -87,27 +89,6 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
 
     trace!("Call IDXGISwapChain::ResizeBuffers trampoline");
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
-}
-
-unsafe fn print_dxgi_debug_messages() {
-    let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
-
-    for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-        let mut msg_len: usize = 0;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-        let diqm = vec![0u8; msg_len];
-        let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
-        let diqm = pdiqm.as_ref().unwrap();
-        debug!(
-            "[DIQ] {}",
-            String::from_utf8_lossy(std::slice::from_raw_parts(
-                diqm.pDescription,
-                diqm.DescriptionByteLength - 1
-            ))
-        );
-    }
-    diq.ClearStoredMessages(DXGI_DEBUG_ALL);
 }
 
 fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {

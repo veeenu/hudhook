@@ -5,12 +5,14 @@ use std::sync::OnceLock;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC};
 
+use super::print_dxgi_debug_messages;
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
 use crate::ImguiRenderLoop;
@@ -92,7 +94,7 @@ impl RenderState {
     ///
     /// Make sure that the passed [`HWND`] is the one returned by
     /// [`RenderState::setup`].
-    pub fn render(hwnd: HWND) {
+    pub fn render(hwnd: HWND, target_back_buffer: Option<ID3D12Resource>) {
         RENDER_LOCK.store(true, Ordering::SeqCst);
 
         let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
@@ -102,7 +104,13 @@ impl RenderState {
 
         let render_engine = unsafe {
             RENDER_ENGINE.get_or_init(|| {
-                let mut render_engine = RenderEngine::new(hwnd).unwrap();
+                let mut render_engine = match RenderEngine::new(hwnd) {
+                    Ok(render_engine) => render_engine,
+                    Err(e) => {
+                        print_dxgi_debug_messages();
+                        panic!("{e:?}");
+                    },
+                };
                 render_loop.initialize(&mut render_engine);
                 Mutex::new(render_engine)
             })
@@ -118,6 +126,16 @@ impl RenderState {
         if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
             error!("Render: {e:?}");
         }
+
+        let Some(target_back_buffer) = target_back_buffer else {
+            unimplemented!();
+        };
+
+        if let Err(e) = render_engine.composite(target_back_buffer) {
+            error!("Composite: {e:?}");
+        }
+
+        drop(render_engine);
 
         RENDER_LOCK.store(false, Ordering::SeqCst);
     }

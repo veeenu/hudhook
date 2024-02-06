@@ -56,7 +56,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    RenderState::render(hwnd);
+    RenderState::render(hwnd, None);
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(p_this, sync_interval, flags)

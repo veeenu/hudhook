@@ -31,7 +31,7 @@ unsafe extern "system" fn opengl32_wgl_swap_buffers_impl(dc: HDC) {
 
     let hwnd = RenderState::setup(|| WindowFromDC(dc));
 
-    RenderState::render(hwnd);
+    RenderState::render(hwnd, None);
 
     trace!("Call OpenGL3 wglSwapBuffers trampoline");
     opengl32_wgl_swap_buffers(dc);

@@ -10,6 +10,7 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn setup_tracing() {
+    dotenv::dotenv().ok();
     tracing_subscriber::registry()
         .with(
             fmt::layer().event_format(

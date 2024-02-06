@@ -32,6 +32,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
+use super::compositor::D3D12Compositor;
 use super::keys;
 use crate::util::{try_out_param, try_out_ptr};
 
@@ -217,10 +218,10 @@ impl Default for FrameResources {
 
 // RAII wrapper around a [`std::mem::ManuallyDrop`] for a D3D12 resource
 // barrier.
-struct Barrier;
+pub(crate) struct Barrier;
 
 impl Barrier {
-    fn create(
+    pub(crate) fn create(
         buf: ID3D12Resource,
         before: D3D12_RESOURCE_STATES,
         after: D3D12_RESOURCE_STATES,
@@ -241,7 +242,7 @@ impl Barrier {
         vec![barrier]
     }
 
-    fn drop(barriers: Vec<D3D12_RESOURCE_BARRIER>) {
+    pub(crate) fn drop(barriers: Vec<D3D12_RESOURCE_BARRIER>) {
         for barrier in barriers {
             let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
             let _ = ManuallyDrop::into_inner(transition.pResource);
@@ -312,6 +313,7 @@ pub struct RenderEngine {
     textures: Vec<(ID3D12Resource, TextureId)>,
 
     compositor: Compositor,
+    d3d12compositor: D3D12Compositor,
 }
 
 impl RenderEngine {
@@ -411,6 +413,12 @@ impl RenderEngine {
 
         let ctx = Rc::new(RefCell::new(ctx));
         let compositor = unsafe { Compositor::new(target_hwnd) }?;
+        let d3d12compositor = D3D12Compositor::new(
+            target_hwnd,
+            device.clone(),
+            dxgi_factory.clone(),
+            swap_chain.clone(),
+        )?;
 
         Ok(Self {
             target_hwnd,
@@ -429,6 +437,7 @@ impl RenderEngine {
             const_buf: [[0f32; 4]; 4],
             ctx,
             compositor,
+            d3d12compositor,
             font_texture_resource: None,
             root_signature: None,
             pipeline_state: None,
@@ -562,9 +571,15 @@ impl RenderEngine {
         Barrier::drop(back_buffer_to_present_barrier);
 
         // Composite the frame over the hwnd.
-        unsafe { self.compositor.render(&self.swap_chain) }?;
+        // unsafe { self.compositor.render(&self.swap_chain) }?;
+        // unsafe { composite(self.target_hwnd, &self.device, &self.swap_chain) }?;
+        // self.d3d12compositor.composite()?;
 
         Ok(())
+    }
+
+    pub(crate) fn composite(&mut self, target_back_buffer: ID3D12Resource) -> Result<()> {
+        self.d3d12compositor.composite(target_back_buffer, unsafe { self.swap_chain.GetBuffer(0) }?)
     }
 }
 
