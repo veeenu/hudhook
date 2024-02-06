@@ -9,7 +9,7 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId, Ui};
 use memoffset::offset_of;
 use tracing::{error, trace};
-use windows::core::{s, w, ComInterface, Result, PCSTR, PCWSTR};
+use windows::core::{s, w, ComInterface, Result, PCSTR};
 use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
@@ -18,8 +18,7 @@ use windows::Win32::Graphics::Direct3D::{
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, IDXGIAdapter, IDXGIFactory2, IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG,
-    DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    CreateDXGIFactory2, IDXGIFactory2, DXGI_CREATE_FACTORY_DEBUG,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::{
@@ -31,65 +30,60 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow,
 use super::keys;
 use crate::util::{try_out_param, try_out_ptr, Barrier};
 
-const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
-    w!("hudhook Command allocator #0"),
-    w!("hudhook Command allocator #1"),
-    w!("hudhook Command allocator #2"),
-    w!("hudhook Command allocator #3"),
-    w!("hudhook Command allocator #4"),
-    w!("hudhook Command allocator #5"),
-    w!("hudhook Command allocator #6"),
-    w!("hudhook Command allocator #7"),
-];
-
-// Holds D3D12 resources for a back buffer.
-#[derive(Debug)]
-struct FrameContext {
+struct RenderTarget {
+    texture: ID3D12Resource,
     desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
-    back_buffer: ID3D12Resource,
-    command_allocator: ID3D12CommandAllocator,
-    fence: ID3D12Fence,
-    fence_val: u64,
-    fence_event: HANDLE,
 }
 
-impl FrameContext {
-    unsafe fn new(
+impl RenderTarget {
+    fn new(
         device: &ID3D12Device,
-        swap_chain: &IDXGISwapChain3,
-        handle_start: D3D12_CPU_DESCRIPTOR_HANDLE,
-        heap_inc_size: u32,
-        index: u32,
+        desc_handle: D3D12_CPU_DESCRIPTOR_HANDLE,
+        width: u32,
+        height: u32,
     ) -> Result<Self> {
-        let desc_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-            ptr: handle_start.ptr + (index * heap_inc_size) as usize,
-        };
+        let texture = try_out_param(|v| unsafe {
+            device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                    CreationNodeMask: 0,
+                    VisibleNodeMask: 0,
+                },
+                D3D12_HEAP_FLAG_SHARED,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                    Alignment: 65536,
+                    Width: width as u64,
+                    Height: height,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                    Flags: D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+                },
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                Some(&D3D12_CLEAR_VALUE {
+                    Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    Anonymous: D3D12_CLEAR_VALUE_0 { Color: [0.0, 0.0, 0.0, 0.0] },
+                }),
+                v,
+            )
+        })?;
 
-        let back_buffer: ID3D12Resource = swap_chain.GetBuffer(index)?;
-        device.CreateRenderTargetView(&back_buffer, None, desc_handle);
+        let texture = texture.unwrap();
 
-        let command_allocator: ID3D12CommandAllocator =
-            device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
-        command_allocator.SetName(COMMAND_ALLOCATOR_NAMES[index as usize % 8])?;
+        unsafe { device.CreateRenderTargetView(&texture, None, desc_handle) };
 
-        Ok(FrameContext {
-            desc_handle,
-            back_buffer,
-            command_allocator,
-            fence: device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
-            fence_val: 0,
-            fence_event: CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003).unwrap(),
-        })
+        Ok(Self { texture, desc_handle })
     }
+}
 
-    fn wait_fence(&mut self) {
-        unsafe {
-            if self.fence.GetCompletedValue() < self.fence_val {
-                self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
-                WaitForSingleObjectEx(self.fence_event, INFINITE, false);
-            }
-            self.fence_val += 1;
-        }
+impl Drop for RenderTarget {
+    fn drop(&mut self) {
+        trace!("Dropping render target");
     }
 }
 
@@ -216,13 +210,11 @@ impl Default for FrameResources {
 pub struct RenderEngine {
     target_hwnd: HWND,
 
-    _dxgi_factory: IDXGIFactory2,
-    _dxgi_adapter: IDXGIAdapter,
-
     device: ID3D12Device,
-    swap_chain: IDXGISwapChain3,
+    render_target: RenderTarget,
 
     command_queue: ID3D12CommandQueue,
+    command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
 
     textures_heap: ID3D12DescriptorHeap,
@@ -230,8 +222,7 @@ pub struct RenderEngine {
 
     cpu_desc: D3D12_CPU_DESCRIPTOR_HANDLE,
     gpu_desc: D3D12_GPU_DESCRIPTOR_HANDLE,
-    frame_resources: Vec<FrameResources>,
-    frame_contexts: Vec<FrameContext>,
+    frame_resources: FrameResources,
     const_buf: [[f32; 4]; 4],
 
     ctx: Rc<RefCell<Context>>,
@@ -241,6 +232,12 @@ pub struct RenderEngine {
     pipeline_state: Option<ID3D12PipelineState>,
 
     textures: Vec<(ID3D12Resource, TextureId)>,
+    fence: ID3D12Fence,
+    fence_val: u64,
+    fence_event: HANDLE,
+
+    width: i32,
+    height: i32,
 }
 
 impl RenderEngine {
@@ -267,22 +264,6 @@ impl RenderEngine {
 
         let (width, height) = crate::util::win_size(target_hwnd);
 
-        let sd = DXGI_SWAP_CHAIN_DESC1 {
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-            Width: width as _,
-            Height: height as _,
-            BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            BufferCount: 2,
-            SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-            AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
-            ..Default::default()
-        };
-
-        let swap_chain =
-            unsafe { dxgi_factory.CreateSwapChainForComposition(&command_queue, &sd, None) }?
-                .cast::<IDXGISwapChain3>()?;
-
         // Descriptor heap for textures (font + user-defined)
         let textures_heap: ID3D12DescriptorHeap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
@@ -297,27 +278,19 @@ impl RenderEngine {
             device
                 .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                     Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                    NumDescriptors: sd.BufferCount,
+                    NumDescriptors: 1,
                     Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
                     NodeMask: 1,
                 })
                 .unwrap()
         };
 
-        let rtv_heap_inc_size =
-            unsafe { device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
-
         let rtv_heap_handle_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
-        // Build frame contexts.
-        let frame_contexts: Vec<FrameContext> = (0..sd.BufferCount)
-            .map(|i| unsafe {
-                FrameContext::new(&device, &swap_chain, rtv_heap_handle_start, rtv_heap_inc_size, i)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let render_target =
+            RenderTarget::new(&device, rtv_heap_handle_start, width as _, height as _)?;
 
-        let frame_resources =
-            (0..sd.BufferCount).map(|_| FrameResources::default()).collect::<Vec<_>>();
+        let frame_resources = FrameResources::default();
 
         // Build command objects.
         let command_allocator: ID3D12CommandAllocator =
@@ -341,66 +314,49 @@ impl RenderEngine {
 
         let ctx = Rc::new(RefCell::new(ctx));
 
+        let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE)? };
+        let fence_event = unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1f0003)? };
+
         Ok(Self {
             target_hwnd,
-            _dxgi_factory: dxgi_factory,
-            _dxgi_adapter: dxgi_adapter,
             device,
-            swap_chain,
+            render_target,
             command_queue,
+            command_allocator,
             command_list,
             textures_heap,
             rtv_heap,
             cpu_desc,
             gpu_desc,
             frame_resources,
-            frame_contexts,
             const_buf: [[0f32; 4]; 4],
             ctx,
             font_texture_resource: None,
             root_signature: None,
             pipeline_state: None,
             textures: Vec::new(),
+            fence,
+            fence_val: 0,
+            fence_event,
+            width,
+            height,
         })
     }
 
     pub(crate) fn resize(&mut self) -> Result<()> {
         let (width, height) = crate::util::win_size(self.target_hwnd);
 
-        self.frame_contexts.drain(..).for_each(drop);
-        self.frame_resources.drain(..).for_each(drop);
+        trace!("Resizing to {width}x{height}");
 
-        let mut sd = Default::default();
-        unsafe { self.swap_chain.GetDesc(&mut sd)? };
-        unsafe {
-            self.swap_chain.ResizeBuffers(
-                sd.BufferCount,
-                width as _,
-                height as _,
-                sd.BufferDesc.Format,
-                sd.Flags,
-            )?
-        };
+        self.render_target = RenderTarget::new(
+            &self.device,
+            unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() },
+            width as _,
+            height as _,
+        )?;
 
-        let rtv_heap_inc_size =
-            unsafe { self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
-
-        let rtv_heap_handle_start = unsafe { self.rtv_heap.GetCPUDescriptorHandleForHeapStart() };
-
-        // Build frame contexts.
-        self.frame_contexts = (0..sd.BufferCount)
-            .map(|i| unsafe {
-                FrameContext::new(
-                    &self.device,
-                    &self.swap_chain,
-                    rtv_heap_handle_start,
-                    rtv_heap_inc_size,
-                    i,
-                )
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        self.frame_resources = (0..sd.BufferCount).map(|_| FrameResources::default()).collect();
+        self.width = width;
+        self.height = height;
 
         Ok(())
     }
@@ -413,22 +369,16 @@ impl RenderEngine {
             unsafe { self.create_device_objects() }?;
         }
 
-        let idx = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
-        // self.frame_contexts[idx].wait_fence();
-        // self.frame_contexts[idx].incr();
-
-        let command_allocator = &self.frame_contexts[idx].command_allocator;
-
         // Reset command allocator and list state.
         unsafe {
-            command_allocator.Reset().unwrap();
-            self.command_list.Reset(command_allocator, None).unwrap();
+            self.command_allocator.Reset().unwrap();
+            self.command_list.Reset(&self.command_allocator, None).unwrap();
         }
 
         // Setup a barrier that waits for the back buffer to transition to a render
         // target.
         let back_buffer_to_rt_barrier = Barrier::new(
-            self.frame_contexts[idx].back_buffer.clone(),
+            self.render_target.texture.clone(),
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
@@ -439,13 +389,13 @@ impl RenderEngine {
             // Setup the back buffer as a render target and clear it.
             self.command_list.OMSetRenderTargets(
                 1,
-                Some(&self.frame_contexts[idx].desc_handle),
+                Some(&self.render_target.desc_handle),
                 BOOL::from(false),
                 None,
             );
             self.command_list.SetDescriptorHeaps(&[Some(self.textures_heap.clone())]);
             self.command_list.ClearRenderTargetView(
-                self.frame_contexts[idx].desc_handle,
+                self.render_target.desc_handle,
                 &[0.0, 0.0, 0.0, 0.0],
                 None,
             );
@@ -458,14 +408,14 @@ impl RenderEngine {
         render_loop(ui);
         let draw_data = ctx.render();
 
-        if let Err(e) = unsafe { self.render_draw_data(draw_data, idx) } {
+        if let Err(e) = unsafe { self.render_draw_data(draw_data) } {
             eprintln!("{}", e);
         };
 
         // Setup a barrier to wait for the back buffer to transition to presentable
         // state.
         let back_buffer_to_present_barrier = Barrier::new(
-            self.frame_contexts[idx].back_buffer.clone(),
+            self.render_target.texture.clone(),
             D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PRESENT,
         );
@@ -476,15 +426,13 @@ impl RenderEngine {
             // Close and execute the command list.
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-            self.command_queue
-                .Signal(&self.frame_contexts[idx].fence, self.frame_contexts[idx].fence_val)?;
-            self.frame_contexts[idx].wait_fence();
+            self.command_queue.Signal(&self.fence, self.fence_val)?;
+            if self.fence.GetCompletedValue() < self.fence_val {
+                self.fence.SetEventOnCompletion(self.fence_val, self.fence_event)?;
+                WaitForSingleObjectEx(self.fence_event, INFINITE, false);
+            }
+            self.fence_val += 1;
         }
-
-        unsafe {
-            // Present the content.
-            self.swap_chain.Present(1, 0).ok()?;
-        };
 
         // Drop the barriers.
         drop(back_buffer_to_rt_barrier);
@@ -525,20 +473,18 @@ impl RenderEngine {
     }
 
     pub fn back_buffer(&self) -> Result<ID3D12Resource> {
-        unsafe { self.swap_chain.GetBuffer(self.swap_chain.GetCurrentBackBufferIndex()) }
+        Ok(self.render_target.texture.clone())
     }
 }
 
 impl RenderEngine {
     unsafe fn setup_io(&mut self) -> Result<()> {
-        let sd = try_out_param(|sd| unsafe { self.swap_chain.GetDesc1(sd) })?;
-
         let mut ctx = self.ctx.borrow_mut();
 
         // Setup display size and cursor position.
         let io = ctx.io_mut();
 
-        io.display_size = [sd.Width as f32, sd.Height as f32];
+        io.display_size = [self.width as f32, self.height as f32];
 
         let active_window = unsafe { GetForegroundWindow() };
         if !HANDLE(active_window.0).is_invalid()
@@ -1047,17 +993,14 @@ impl RenderEngine {
             drop(font_texture_resource);
         }
 
-        self.frame_resources.iter_mut().for_each(|fr| {
-            drop(fr.index_buffer.take());
-            drop(fr.vertex_buffer.take());
-        });
+        drop(self.frame_resources.index_buffer.take());
+        drop(self.frame_resources.vertex_buffer.take());
     }
 
-    unsafe fn setup_render_state(&mut self, draw_data: &DrawData, idx: usize) {
+    unsafe fn setup_render_state(&mut self, draw_data: &DrawData) {
         let display_pos = draw_data.display_pos;
         let display_size = draw_data.display_size;
 
-        let frame_resources = &self.frame_resources[idx];
         self.const_buf = {
             let [l, t, r, b] = [
                 display_pos[0],
@@ -1087,19 +1030,25 @@ impl RenderEngine {
         self.command_list.IASetVertexBuffers(
             0,
             Some(&[D3D12_VERTEX_BUFFER_VIEW {
-                BufferLocation: frame_resources
+                BufferLocation: self
+                    .frame_resources
                     .vertex_buffer
                     .as_ref()
                     .unwrap()
                     .GetGPUVirtualAddress(),
-                SizeInBytes: (frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
+                SizeInBytes: (self.frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
                 StrideInBytes: size_of::<DrawVert>() as _,
             }]),
         );
 
         self.command_list.IASetIndexBuffer(Some(&D3D12_INDEX_BUFFER_VIEW {
-            BufferLocation: frame_resources.index_buffer.as_ref().unwrap().GetGPUVirtualAddress(),
-            SizeInBytes: (frame_resources.index_buffer_size * size_of::<DrawIdx>()) as _,
+            BufferLocation: self
+                .frame_resources
+                .index_buffer
+                .as_ref()
+                .unwrap()
+                .GetGPUVirtualAddress(),
+            SizeInBytes: (self.frame_resources.index_buffer_size * size_of::<DrawIdx>()) as _,
             Format: if size_of::<DrawIdx>() == 2 {
                 DXGI_FORMAT_R16_UINT
             } else {
@@ -1118,7 +1067,7 @@ impl RenderEngine {
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
     }
 
-    unsafe fn render_draw_data(&mut self, draw_data: &DrawData, idx: usize) -> Result<()> {
+    unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
         let print_device_removed_reason = |e: windows::core::Error| -> windows::core::Error {
             trace!("Device removed reason: {:?}", unsafe { self.device.GetDeviceRemovedReason() });
             e
@@ -1133,7 +1082,7 @@ impl RenderEngine {
             return Ok(());
         }
 
-        self.frame_resources[idx]
+        self.frame_resources
             .resize(
                 &self.device,
                 draw_data.total_idx_count as usize,
@@ -1145,29 +1094,27 @@ impl RenderEngine {
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
         let mut idx_resource: *mut imgui::DrawIdx = null_mut();
 
-        self.frame_resources[idx].vertices.clear();
-        self.frame_resources[idx].indices.clear();
+        self.frame_resources.vertices.clear();
+        self.frame_resources.indices.clear();
         draw_data.draw_lists().map(|m| (m.vtx_buffer().iter(), m.idx_buffer().iter())).for_each(
             |(v, i)| {
-                self.frame_resources[idx].vertices.extend(v);
-                self.frame_resources[idx].indices.extend(i);
+                self.frame_resources.vertices.extend(v);
+                self.frame_resources.indices.extend(i);
             },
         );
 
-        let vertices = &self.frame_resources[idx].vertices;
-        let indices = &self.frame_resources[idx].indices;
+        let vertices = &self.frame_resources.vertices;
+        let indices = &self.frame_resources.indices;
 
         {
-            let frame_resources = &self.frame_resources[idx];
-
-            if let Some(vb) = frame_resources.vertex_buffer.as_ref() {
+            if let Some(vb) = self.frame_resources.vertex_buffer.as_ref() {
                 vb.Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as *mut *mut c_void))
                     .map_err(print_device_removed_reason)?;
                 std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
                 vb.Unmap(0, Some(&range));
             };
 
-            if let Some(ib) = frame_resources.index_buffer.as_ref() {
+            if let Some(ib) = self.frame_resources.index_buffer.as_ref() {
                 ib.Map(0, Some(&range), Some(&mut idx_resource as *mut _ as *mut *mut c_void))
                     .map_err(print_device_removed_reason)?;
                 std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
@@ -1175,7 +1122,7 @@ impl RenderEngine {
             };
         }
 
-        self.setup_render_state(draw_data, idx);
+        self.setup_render_state(draw_data);
 
         let mut vtx_offset = 0usize;
         let mut idx_offset = 0usize;
@@ -1211,7 +1158,7 @@ impl RenderEngine {
                         }
                     },
                     DrawCmd::ResetRenderState => {
-                        self.setup_render_state(draw_data, idx);
+                        self.setup_render_state(draw_data);
                     },
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
                         callback(cl.raw(), raw_cmd)

@@ -251,7 +251,7 @@ impl ImguiDx12Hooks {
             d3d12_command_queue_execute_command_lists_addr as *mut _,
             d3d12_command_queue_execute_command_lists_impl as *mut _,
         )
-        .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
+        .expect("couldn't create ID3D12CommandQueue::ExecuteCommandLists hook");
 
         RenderState::set_render_loop(t);
         TRAMPOLINES.get_or_init(|| Trampolines {

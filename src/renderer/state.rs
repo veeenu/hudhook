@@ -161,6 +161,8 @@ impl RenderState {
             if let Err(e) = render_engine.resize() {
                 error!("Couldn't resize: {e:?}");
             }
+        } else {
+            error!("Couldn't lock for resize");
         }
     }
 

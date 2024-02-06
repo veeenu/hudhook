@@ -301,7 +301,9 @@ where
             drop(ctx);
             drop(render_engine);
             RenderState::resize();
-            return LRESULT(1);
+            return unsafe {
+                CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
+            };
         },
         _ => {},
     };
