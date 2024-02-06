@@ -3,7 +3,6 @@ use std::ffi::c_void;
 use std::mem::{size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use imgui;
 use imgui::internal::RawWrapper;
@@ -17,9 +16,6 @@ use windows::Win32::Graphics::Direct3D::{
     ID3DBlob, ID3DInclude, D3D_FEATURE_LEVEL_11_1, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 };
 use windows::Win32::Graphics::Direct3D12::*;
-use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
-};
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory2, IDXGIAdapter, IDXGIFactory2, IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG,
@@ -32,9 +28,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
-use super::compositor::D3D12Compositor;
 use super::keys;
-use crate::util::{try_out_param, try_out_ptr};
+use crate::util::{try_out_param, try_out_ptr, Barrier};
 
 const COMMAND_ALLOCATOR_NAMES: [PCWSTR; 8] = [
     w!("hudhook Command allocator #0"),
@@ -87,17 +82,13 @@ impl FrameContext {
         })
     }
 
-    fn incr(&mut self) {
-        static FENCE_MAX: AtomicU64 = AtomicU64::new(0);
-        self.fence_val = FENCE_MAX.fetch_add(1, Ordering::SeqCst);
-    }
-
     fn wait_fence(&mut self) {
         unsafe {
             if self.fence.GetCompletedValue() < self.fence_val {
                 self.fence.SetEventOnCompletion(self.fence_val, self.fence_event).unwrap();
                 WaitForSingleObjectEx(self.fence_event, INFINITE, false);
             }
+            self.fence_val += 1;
         }
     }
 }
@@ -216,67 +207,6 @@ impl Default for FrameResources {
     }
 }
 
-// RAII wrapper around a [`std::mem::ManuallyDrop`] for a D3D12 resource
-// barrier.
-pub(crate) struct Barrier;
-
-impl Barrier {
-    pub(crate) fn create(
-        buf: ID3D12Resource,
-        before: D3D12_RESOURCE_STATES,
-        after: D3D12_RESOURCE_STATES,
-    ) -> Vec<D3D12_RESOURCE_BARRIER> {
-        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: ManuallyDrop::new(Some(buf)),
-            Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-            StateBefore: before,
-            StateAfter: after,
-        });
-
-        let barrier = D3D12_RESOURCE_BARRIER {
-            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
-        };
-
-        vec![barrier]
-    }
-
-    pub(crate) fn drop(barriers: Vec<D3D12_RESOURCE_BARRIER>) {
-        for barrier in barriers {
-            let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-            let _ = ManuallyDrop::into_inner(transition.pResource);
-        }
-    }
-}
-
-// Holds and manages the lifetimes for the DirectComposition data structures.
-struct Compositor {
-    dcomp_dev: IDCompositionDevice,
-    _dcomp_target: IDCompositionTarget,
-    root_visual: IDCompositionVisual,
-}
-
-impl Compositor {
-    unsafe fn new(target_hwnd: HWND) -> Result<Self> {
-        let dcomp_dev: IDCompositionDevice = DCompositionCreateDevice(None)?;
-        let dcomp_target = dcomp_dev.CreateTargetForHwnd(target_hwnd, BOOL::from(true))?;
-
-        let root_visual = dcomp_dev.CreateVisual()?;
-        dcomp_target.SetRoot(&root_visual)?;
-        dcomp_dev.Commit()?;
-
-        Ok(Self { dcomp_dev, _dcomp_target: dcomp_target, root_visual })
-    }
-
-    unsafe fn render(&self, swap_chain: &IDXGISwapChain3) -> Result<()> {
-        self.root_visual.SetContent(swap_chain)?;
-        self.dcomp_dev.Commit()?;
-
-        Ok(())
-    }
-}
-
 /// The [`hudhook`](crate) render engine.
 ///
 /// Most of the operations of this structures are managed by the library itself
@@ -311,9 +241,6 @@ pub struct RenderEngine {
     pipeline_state: Option<ID3D12PipelineState>,
 
     textures: Vec<(ID3D12Resource, TextureId)>,
-
-    compositor: Compositor,
-    d3d12compositor: D3D12Compositor,
 }
 
 impl RenderEngine {
@@ -336,6 +263,7 @@ impl RenderEngine {
 
         let command_queue: ID3D12CommandQueue =
             unsafe { device.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
+        unsafe { command_queue.SetName(w!("Render engine CQ")) }?;
 
         let (width, height) = crate::util::win_size(target_hwnd);
 
@@ -412,13 +340,6 @@ impl RenderEngine {
         ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
 
         let ctx = Rc::new(RefCell::new(ctx));
-        let compositor = unsafe { Compositor::new(target_hwnd) }?;
-        let d3d12compositor = D3D12Compositor::new(
-            target_hwnd,
-            device.clone(),
-            dxgi_factory.clone(),
-            swap_chain.clone(),
-        )?;
 
         Ok(Self {
             target_hwnd,
@@ -436,8 +357,6 @@ impl RenderEngine {
             frame_contexts,
             const_buf: [[0f32; 4]; 4],
             ctx,
-            compositor,
-            d3d12compositor,
             font_texture_resource: None,
             root_signature: None,
             pipeline_state: None,
@@ -495,8 +414,8 @@ impl RenderEngine {
         }
 
         let idx = unsafe { self.swap_chain.GetCurrentBackBufferIndex() } as usize;
-        self.frame_contexts[idx].wait_fence();
-        self.frame_contexts[idx].incr();
+        // self.frame_contexts[idx].wait_fence();
+        // self.frame_contexts[idx].incr();
 
         let command_allocator = &self.frame_contexts[idx].command_allocator;
 
@@ -508,14 +427,14 @@ impl RenderEngine {
 
         // Setup a barrier that waits for the back buffer to transition to a render
         // target.
-        let back_buffer_to_rt_barrier = Barrier::create(
+        let back_buffer_to_rt_barrier = Barrier::new(
             self.frame_contexts[idx].back_buffer.clone(),
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
 
         unsafe {
-            self.command_list.ResourceBarrier(&back_buffer_to_rt_barrier);
+            self.command_list.ResourceBarrier(back_buffer_to_rt_barrier.as_ref());
 
             // Setup the back buffer as a render target and clear it.
             self.command_list.OMSetRenderTargets(
@@ -545,20 +464,21 @@ impl RenderEngine {
 
         // Setup a barrier to wait for the back buffer to transition to presentable
         // state.
-        let back_buffer_to_present_barrier = Barrier::create(
+        let back_buffer_to_present_barrier = Barrier::new(
             self.frame_contexts[idx].back_buffer.clone(),
             D3D12_RESOURCE_STATE_RENDER_TARGET,
             D3D12_RESOURCE_STATE_PRESENT,
         );
 
         unsafe {
-            self.command_list.ResourceBarrier(&back_buffer_to_present_barrier);
+            self.command_list.ResourceBarrier(back_buffer_to_present_barrier.as_ref());
 
             // Close and execute the command list.
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
             self.command_queue
                 .Signal(&self.frame_contexts[idx].fence, self.frame_contexts[idx].fence_val)?;
+            self.frame_contexts[idx].wait_fence();
         }
 
         unsafe {
@@ -567,19 +487,10 @@ impl RenderEngine {
         };
 
         // Drop the barriers.
-        Barrier::drop(back_buffer_to_rt_barrier);
-        Barrier::drop(back_buffer_to_present_barrier);
-
-        // Composite the frame over the hwnd.
-        // unsafe { self.compositor.render(&self.swap_chain) }?;
-        // unsafe { composite(self.target_hwnd, &self.device, &self.swap_chain) }?;
-        // self.d3d12compositor.composite()?;
+        drop(back_buffer_to_rt_barrier);
+        drop(back_buffer_to_present_barrier);
 
         Ok(())
-    }
-
-    pub(crate) fn composite(&mut self, target_back_buffer: ID3D12Resource) -> Result<()> {
-        self.d3d12compositor.composite(target_back_buffer, unsafe { self.swap_chain.GetBuffer(0) }?)
     }
 }
 
@@ -611,6 +522,10 @@ impl RenderEngine {
         self.textures.push((p_texture, tex_id));
 
         Ok(tex_id)
+    }
+
+    pub fn back_buffer(&self) -> Result<ID3D12Resource> {
+        unsafe { self.swap_chain.GetBuffer(self.swap_chain.GetCurrentBackBufferIndex()) }
     }
 }
 
@@ -1151,12 +1066,12 @@ impl RenderEngine {
                 display_pos[1] + display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);

@@ -54,7 +54,7 @@ unsafe extern "system" fn dx9_present_impl(
         creation_parameters.hFocusWindow
     });
 
-    RenderState::render(hwnd, None);
+    RenderState::render(hwnd);
 
     trace!("Call IDirect3DDevice9::Present trampoline");
     dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)

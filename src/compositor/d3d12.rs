@@ -3,81 +3,144 @@ use std::mem::{self, size_of, ManuallyDrop};
 use std::ptr::{self, null_mut};
 
 use memoffset::offset_of;
-use tracing::{error, trace};
+use tracing::error;
 use windows::core::{s, w, ComInterface, Result};
-use windows::Win32::Foundation::{BOOL, HANDLE, HWND, RECT};
+use windows::Win32::Foundation::{BOOL, HANDLE, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
     ID3DBlob, ID3DInclude, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
 };
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12SerializeRootSignature, ID3D12CommandAllocator, ID3D12CommandList, ID3D12CommandQueue,
-    ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList,
-    ID3D12PipelineState, ID3D12Resource, ID3D12RootSignature, D3D12_BLEND_INV_SRC_ALPHA,
-    D3D12_BLEND_ONE, D3D12_BLEND_OP_ADD, D3D12_BLEND_SRC_ALPHA, D3D12_COLOR_WRITE_ENABLE_ALL,
-    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
+    D3D12SerializeRootSignature, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
+    ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList, ID3D12PipelineState, ID3D12Resource,
+    ID3D12RootSignature, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_ONE, D3D12_BLEND_OP_ADD,
+    D3D12_BLEND_SRC_ALPHA, D3D12_COLOR_WRITE_ENABLE_ALL, D3D12_COMMAND_LIST_TYPE_DIRECT,
     D3D12_COMPARISON_FUNC_ALWAYS, D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
-    D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_CULL_MODE_NONE,
-    D3D12_DEFAULT_DEPTH_BIAS, D3D12_DEFAULT_DEPTH_BIAS_CLAMP,
-    D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS,
-    D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_RANGE, D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-    D3D12_DESCRIPTOR_RANGE_TYPE_SRV, D3D12_FENCE_FLAG_NONE, D3D12_FILL_MODE_SOLID,
-    D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_GRAPHICS_PIPELINE_STATE_DESC, D3D12_HEAP_FLAG_NONE,
-    D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT, D3D12_HEAP_TYPE_UPLOAD,
-    D3D12_INDEX_BUFFER_VIEW, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, D3D12_INPUT_ELEMENT_DESC,
-    D3D12_INPUT_LAYOUT_DESC, D3D12_MEMORY_POOL_UNKNOWN, D3D12_PIPELINE_STATE_FLAG_NONE,
+    D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_CULL_MODE_NONE, D3D12_DEFAULT_DEPTH_BIAS,
+    D3D12_DEFAULT_DEPTH_BIAS_CLAMP, D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+    D3D12_DEFAULT_SLOPE_SCALED_DEPTH_BIAS, D3D12_DESCRIPTOR_HEAP_DESC,
+    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_RANGE,
+    D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, D3D12_FENCE_FLAG_NONE,
+    D3D12_FILL_MODE_SOLID, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_GRAPHICS_PIPELINE_STATE_DESC,
+    D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_UPLOAD, D3D12_INDEX_BUFFER_VIEW,
+    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, D3D12_INPUT_ELEMENT_DESC, D3D12_INPUT_LAYOUT_DESC,
+    D3D12_MEMORY_POOL_UNKNOWN, D3D12_PIPELINE_STATE_FLAG_NONE,
     D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, D3D12_RANGE, D3D12_RASTERIZER_DESC,
     D3D12_RENDER_TARGET_BLEND_DESC, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_BUFFER,
-    D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST,
-    D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-    D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_ROOT_CONSTANTS,
-    D3D12_ROOT_DESCRIPTOR_TABLE, D3D12_ROOT_PARAMETER, D3D12_ROOT_PARAMETER_0,
-    D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-    D3D12_ROOT_SIGNATURE_DESC, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+    D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_PRESENT,
+    D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_ROOT_CONSTANTS, D3D12_ROOT_DESCRIPTOR_TABLE,
+    D3D12_ROOT_PARAMETER, D3D12_ROOT_PARAMETER_0, D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+    D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE, D3D12_ROOT_SIGNATURE_DESC,
+    D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
     D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS,
     D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS,
     D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS, D3D12_SHADER_BYTECODE,
     D3D12_SHADER_RESOURCE_VIEW_DESC, D3D12_SHADER_RESOURCE_VIEW_DESC_0,
     D3D12_SHADER_VISIBILITY_PIXEL, D3D12_SHADER_VISIBILITY_VERTEX, D3D12_SRV_DIMENSION_TEXTURE2D,
     D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK, D3D12_STATIC_SAMPLER_DESC, D3D12_TEX2D_SRV,
-    D3D12_TEXTURE_ADDRESS_MODE_WRAP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_TEXTURE_LAYOUT_UNKNOWN,
-    D3D12_VERTEX_BUFFER_VIEW, D3D12_VIEWPORT, D3D_ROOT_SIGNATURE_VERSION_1_0,
+    D3D12_TEXTURE_ADDRESS_MODE_WRAP, D3D12_TEXTURE_LAYOUT_ROW_MAJOR, D3D12_VERTEX_BUFFER_VIEW,
+    D3D12_VIEWPORT, D3D_ROOT_SIGNATURE_VERSION_1_0,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D32_FLOAT,
-    DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM,
-    DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_R16_UINT,
+    DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
 };
-use windows::Win32::Graphics::Dxgi::{
-    IDXGIFactory2, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
-};
+use windows::Win32::Graphics::Dxgi::{IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC};
 use windows::Win32::System::Threading::{
     CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
 };
 
-use crate::renderer::engine::Barrier;
-use crate::util::{try_out_param, try_out_ptr};
+use crate::util::{try_out_param, try_out_ptr, Barrier};
 
 struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
 }
 
-pub(crate) struct D3D12Compositor {
-    target_hwnd: HWND,
-    target_texture: ID3D12Resource,
+pub struct D3D12Compositor(D3D12CompositorState);
+
+enum D3D12CompositorState {
+    Builder(Option<ID3D12Device>, Option<IDXGISwapChain3>, Option<ID3D12CommandQueue>),
+    Compositor(D3D12CompositorInner),
+}
+
+impl Default for D3D12Compositor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl D3D12Compositor {
+    pub fn new() -> Self {
+        Self(D3D12CompositorState::Builder(None, None, None))
+    }
+
+    pub fn with_swap_chain(&mut self, swap_chain: &IDXGISwapChain3) -> Result<&mut Self> {
+        if let D3D12CompositorState::Builder(
+            ref mut builder_device,
+            ref mut builder_swap_chain,
+            _,
+        ) = self.0
+        {
+            *builder_device = Some(unsafe { swap_chain.GetDevice::<ID3D12Device>() }?);
+            *builder_swap_chain = Some(swap_chain.clone());
+        }
+
+        self.check()?;
+
+        Ok(self)
+    }
+
+    pub fn with_command_queue(&mut self, command_queue: &ID3D12CommandQueue) -> Result<&mut Self> {
+        if let D3D12CompositorState::Builder(_, _, ref mut builder_command_queue) = self.0 {
+            let desc = unsafe { command_queue.GetDesc() };
+            if desc.Type.0 == 0 {
+                *builder_command_queue = Some(command_queue.clone());
+            }
+        }
+
+        self.check()?;
+
+        Ok(self)
+    }
+
+    pub fn composite(&mut self, source_resource: ID3D12Resource) -> Result<()> {
+        if let D3D12CompositorState::Compositor(ref mut inner) = self.0 {
+            inner.composite(source_resource)?;
+        }
+
+        Ok(())
+    }
+
+    fn check(&mut self) -> Result<()> {
+        if let D3D12CompositorState::Builder(
+            ref mut device @ Some(_),
+            ref mut swap_chain @ Some(_),
+            ref mut command_queue @ Some(_),
+        ) = self.0
+        {
+            self.0 = D3D12CompositorState::Compositor(D3D12CompositorInner::new(
+                device.take().unwrap(),
+                swap_chain.take().unwrap(),
+                command_queue.take().unwrap(),
+            )?);
+        }
+
+        Ok(())
+    }
+}
+
+struct D3D12CompositorInner {
     device: ID3D12Device,
-    composite_swap_chain: IDXGISwapChain3,
+    target_swap_chain: IDXGISwapChain3,
     heap: ID3D12DescriptorHeap,
     rtv_heap: ID3D12DescriptorHeap,
     pipeline_state: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
     command_allocator: ID3D12CommandAllocator,
-    command_queue: ID3D12CommandQueue,
     command_list: ID3D12GraphicsCommandList,
+    target_command_queue: ID3D12CommandQueue,
     fence: ID3D12Fence,
     fence_val: u64,
     fence_event: HANDLE,
@@ -85,80 +148,20 @@ pub(crate) struct D3D12Compositor {
     index_buffer: ID3D12Resource,
 }
 
-impl D3D12Compositor {
-    pub(crate) fn new(
-        target_hwnd: HWND,
+impl D3D12CompositorInner {
+    fn new(
         device: ID3D12Device,
-        dxgi_factory: IDXGIFactory2,
-        source_swap_chain: IDXGISwapChain3,
+        target_swap_chain: IDXGISwapChain3,
+        target_command_queue: ID3D12CommandQueue,
     ) -> Result<Self> {
-        trace!("Create cq");
-        let command_queue: ID3D12CommandQueue = unsafe {
-            device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
-                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-                Priority: 0,
-                Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
-                NodeMask: 0,
-            })
-        }?;
-        trace!("Create ca");
         let command_allocator: ID3D12CommandAllocator =
             unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
 
-        trace!("Create cl");
         let command_list: ID3D12GraphicsCommandList = unsafe {
             device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
         }?;
         unsafe { command_list.Close() }?;
 
-        let orig_desc: DXGI_SWAP_CHAIN_DESC1 =
-            try_out_param(|v| unsafe { source_swap_chain.GetDesc1(v) })?;
-
-        let desc = DXGI_SWAP_CHAIN_DESC1 {
-            BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-            SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-            AlphaMode: DXGI_ALPHA_MODE_IGNORE,
-            ..orig_desc
-        };
-
-        trace!("Create swap chain");
-        let composite_swap_chain: IDXGISwapChain3 = unsafe {
-            dxgi_factory
-                .CreateSwapChainForHwnd(&command_queue, target_hwnd, &desc, None, None)?
-                .cast()?
-        };
-
-        trace!("Create texture");
-        let target_texture: ID3D12Resource = try_out_param(|v| unsafe {
-            device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_DEFAULT,
-                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                    CreationNodeMask: 1,
-                    VisibleNodeMask: 1,
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                    Alignment: 0,
-                    Width: desc.Width as _,
-                    Height: desc.Height as _,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                    Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                    Flags: D3D12_RESOURCE_FLAG_NONE,
-                },
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                None,
-                v,
-            )
-        })?
-        .unwrap();
-
-        trace!("Create heap");
         let heap: ID3D12DescriptorHeap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -168,7 +171,6 @@ impl D3D12Compositor {
             })
         }?;
 
-        trace!("Create rtv heap");
         let rtv_heap: ID3D12DescriptorHeap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -178,14 +180,11 @@ impl D3D12Compositor {
             })
         }?;
 
-        trace!("Create dev obj");
         let (pipeline_state, root_signature) = Self::create_device_objects(&device)?;
 
-        trace!("Create fence");
         let fence: ID3D12Fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
         let fence_event = unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003) }?;
 
-        trace!("Create vb");
         let vertex_buffer: ID3D12Resource = try_out_param(|v| unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -216,7 +215,6 @@ impl D3D12Compositor {
         .unwrap();
         unsafe { vertex_buffer.SetName(w!("Compositor Vertex Buffer"))? };
 
-        trace!("Create ib");
         let index_buffer: ID3D12Resource = try_out_param(|v| unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -248,14 +246,13 @@ impl D3D12Compositor {
         unsafe { vertex_buffer.SetName(w!("Compositor Index Buffer"))? };
 
         let vtx: &[Vertex] = &[
-            Vertex { pos: [0., 0.], uv: [0., 0.] },
-            Vertex { pos: [1., 0.], uv: [1., 0.] },
-            Vertex { pos: [0., 1.], uv: [0., 1.] },
-            Vertex { pos: [1., 1.], uv: [1., 1.] },
+            Vertex { pos: [-1., -1.], uv: [0., 1.] },
+            Vertex { pos: [1., -1.], uv: [1., 1.] },
+            Vertex { pos: [-1., 1.], uv: [0., 0.] },
+            Vertex { pos: [1., 1.], uv: [1., 0.] },
         ];
         let idx: &[u16] = &[0, 1, 2, 1, 3, 2];
 
-        trace!("Map vb");
         unsafe {
             let range = D3D12_RANGE { Begin: 0, End: mem::size_of_val(vtx) };
             let mut resource: *mut Vertex = null_mut();
@@ -268,7 +265,6 @@ impl D3D12Compositor {
             vertex_buffer.Unmap(0, Some(&range));
         }
 
-        trace!("Map ib");
         unsafe {
             let range = D3D12_RANGE { Begin: 0, End: mem::size_of_val(idx) };
             let mut resource: *mut u16 = null_mut();
@@ -278,17 +274,15 @@ impl D3D12Compositor {
         }
 
         Ok(Self {
-            target_hwnd,
             device,
-            composite_swap_chain,
+            target_swap_chain,
             heap,
             rtv_heap,
-            target_texture,
             pipeline_state,
             root_signature,
-            command_queue,
             command_list,
             command_allocator,
+            target_command_queue,
             fence,
             fence_val: 0,
             fence_event,
@@ -538,12 +532,12 @@ impl D3D12Compositor {
         Ok((pipeline_state, root_signature))
     }
 
-    pub(crate) fn composite(
-        &mut self,
-        target_resource: ID3D12Resource,
-        source_resource: ID3D12Resource,
-    ) -> Result<()> {
-        trace!("Composite start");
+    fn composite(&mut self, source_resource: ID3D12Resource) -> Result<()> {
+        let desc: DXGI_SWAP_CHAIN_DESC =
+            try_out_param(|v| unsafe { self.target_swap_chain.GetDesc(v) })?;
+        let target_resource: ID3D12Resource = unsafe {
+            self.target_swap_chain.GetBuffer(self.target_swap_chain.GetCurrentBackBufferIndex())
+        }?;
 
         unsafe {
             if self.fence.GetCompletedValue() < self.fence_val {
@@ -553,9 +547,6 @@ impl D3D12Compositor {
             self.fence_val += 1;
         }
 
-        // let back_buffer: ID3D12Resource = unsafe {
-        // self.composite_swap_chain.GetBuffer(0) }?;
-        trace!("Create RTV");
         unsafe {
             self.device.CreateRenderTargetView(
                 &target_resource,
@@ -563,8 +554,6 @@ impl D3D12Compositor {
                 self.rtv_heap.GetCPUDescriptorHandleForHeapStart(),
             )
         };
-
-        trace!("Create SRV");
 
         unsafe {
             self.device.CreateShaderResourceView(
@@ -586,7 +575,7 @@ impl D3D12Compositor {
             )
         };
 
-        let target_rt_barrier = Barrier::create(
+        let target_rt_barrier = Barrier::new(
             target_resource.clone(),
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
@@ -594,24 +583,23 @@ impl D3D12Compositor {
 
         unsafe {
             self.command_allocator.Reset()?;
-            trace!("Reset");
             self.command_list.Reset(&self.command_allocator, None)?;
 
-            self.command_list.ResourceBarrier(&target_rt_barrier);
+            self.command_list.ResourceBarrier(target_rt_barrier.as_ref());
 
             self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
                 TopLeftX: 0f32,
                 TopLeftY: 0f32,
-                Width: 800.,
-                Height: 600.,
+                Width: desc.BufferDesc.Width as f32,
+                Height: desc.BufferDesc.Height as f32,
                 MinDepth: 0f32,
                 MaxDepth: 1f32,
             }]);
             self.command_list.RSSetScissorRects(&[RECT {
                 left: 0,
                 top: 0,
-                right: 800,
-                bottom: 600,
+                right: desc.BufferDesc.Width as _,
+                bottom: desc.BufferDesc.Height as _,
             }]);
 
             self.command_list.IASetVertexBuffers(
@@ -633,25 +621,22 @@ impl D3D12Compositor {
             self.command_list.SetGraphicsRootSignature(&self.root_signature);
             self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
 
-            trace!("set rt");
             self.command_list.OMSetRenderTargets(
                 1,
                 Some(&self.rtv_heap.GetCPUDescriptorHandleForHeapStart()),
                 BOOL::from(false),
                 None,
             );
-            trace!("set dh");
             self.command_list.SetDescriptorHeaps(&[Some(self.heap.clone())]);
 
-            trace!("set grdt");
             self.command_list
                 .SetGraphicsRootDescriptorTable(1, self.heap.GetGPUDescriptorHandleForHeapStart());
-            trace!("draw call");
             self.command_list.DrawIndexedInstanced(6, 1, 0, 0, 0);
             self.command_list.Close()?;
 
-            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().cast()?)]);
-            self.command_queue.Signal(&self.fence, self.fence_val)?;
+            self.target_command_queue
+                .ExecuteCommandLists(&[Some(self.command_list.clone().cast()?)]);
+            self.target_command_queue.Signal(&self.fence, self.fence_val)?;
         }
 
         Ok(())

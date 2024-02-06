@@ -128,6 +128,7 @@ pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 
+pub mod compositor;
 pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;

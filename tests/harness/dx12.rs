@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -11,11 +11,15 @@ use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, D3D12GetDebugInterface, ID3D12CommandAllocator, ID3D12CommandQueue,
-    ID3D12Debug, ID3D12DescriptorHeap, ID3D12Device, ID3D12GraphicsCommandList, ID3D12Resource,
-    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
-    D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-    D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-    D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+    ID3D12Debug, ID3D12DescriptorHeap, ID3D12Device, ID3D12Fence, ID3D12GraphicsCommandList,
+    ID3D12Resource, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC,
+    D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC,
+    D3D12_DESCRIPTOR_HEAP_FLAG_NONE, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_FENCE_FLAG_NONE,
+    D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+    D3D12_RESOURCE_STATES, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET,
+    D3D12_RESOURCE_TRANSITION_BARRIER,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -29,12 +33,45 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::System::Threading::{
+    CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT, INFINITE,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
     HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
     WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
+
+pub struct Barrier;
+
+impl Barrier {
+    pub fn create(
+        buf: ID3D12Resource,
+        before: D3D12_RESOURCE_STATES,
+        after: D3D12_RESOURCE_STATES,
+    ) -> [D3D12_RESOURCE_BARRIER; 1] {
+        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+            pResource: ManuallyDrop::new(Some(buf)),
+            Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            StateBefore: before,
+            StateAfter: after,
+        });
+
+        [D3D12_RESOURCE_BARRIER {
+            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
+        }]
+    }
+
+    pub fn drop(barrier: [D3D12_RESOURCE_BARRIER; 1]) {
+        for barrier in barrier {
+            let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+            let _ = ManuallyDrop::into_inner(transition.pResource);
+        }
+    }
+}
 
 pub struct Dx12Harness {
     child: Option<JoinHandle<()>>,
@@ -114,6 +151,7 @@ impl Dx12Harness {
                     dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_alloc, None)
                 }
                 .unwrap();
+                unsafe { command_list.Close().unwrap() };
 
                 let swap_chain_desc = DXGI_SWAP_CHAIN_DESC {
                     BufferDesc: DXGI_MODE_DESC {
@@ -169,6 +207,7 @@ impl Dx12Harness {
                     .unwrap()
                 };
 
+                let mut rtv_handles = Vec::new();
                 let rtv_heap_inc_size =
                     unsafe { dev.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) };
                 let rtv_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
@@ -180,12 +219,19 @@ impl Dx12Harness {
                             ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
                         };
                         dev.CreateRenderTargetView(&buf, None, rtv_handle);
+                        rtv_handles.push(rtv_handle);
                     }
                 }
 
                 let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
 
                 unsafe { SetTimer(hwnd, 0, 100, None) };
+
+                let fence: ID3D12Fence =
+                    unsafe { dev.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap() };
+                let mut fence_val = 0;
+                let fence_event =
+                    unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003) }.unwrap();
 
                 loop {
                     trace!("Debug");
@@ -210,13 +256,41 @@ impl Dx12Harness {
                     }
 
                     unsafe {
-                        command_list.Close().unwrap();
+                        let rtv_barrier = Barrier::create(
+                            swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex()).unwrap(),
+                            D3D12_RESOURCE_STATE_PRESENT,
+                            D3D12_RESOURCE_STATE_RENDER_TARGET,
+                        );
+                        let present_barrier = Barrier::create(
+                            swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex()).unwrap(),
+                            D3D12_RESOURCE_STATE_RENDER_TARGET,
+                            D3D12_RESOURCE_STATE_PRESENT,
+                        );
+
+                        let rtv = rtv_handles[swap_chain.GetCurrentBackBufferIndex() as usize];
+
                         command_alloc.Reset().unwrap();
                         command_list.Reset(&command_alloc, None).unwrap();
-                    }
+                        command_list.ResourceBarrier(&rtv_barrier);
+                        command_list.ClearRenderTargetView(rtv, &[0.3, 0.8, 0.3, 0.8], None);
+                        command_list.ResourceBarrier(&present_barrier);
+                        command_list.Close().unwrap();
+                        command_queue.ExecuteCommandLists(&[Some(command_list.cast().unwrap())]);
+                        command_queue.Signal(&fence, fence_val);
 
-                    trace!("Present");
-                    unsafe { swap_chain.Present(1, 0) }.unwrap();
+                        trace!("Present");
+                        swap_chain.Present(1, 0).unwrap();
+
+                        if fence.GetCompletedValue() < fence_val {
+                            fence.SetEventOnCompletion(fence_val, fence_event);
+                            WaitForSingleObjectEx(fence_event, INFINITE, false);
+                        }
+
+                        fence_val += 1;
+
+                        Barrier::drop(present_barrier);
+                        Barrier::drop(rtv_barrier);
+                    }
 
                     trace!("Handle message");
                     if !handle_message(hwnd) {

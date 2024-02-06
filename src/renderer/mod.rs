@@ -1,5 +1,4 @@
 //! The [`hudhook`](crate) overlay rendering engine.
-mod compositor;
 mod engine;
 mod input;
 mod keys;

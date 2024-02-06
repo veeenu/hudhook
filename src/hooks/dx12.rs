@@ -2,26 +2,27 @@ use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
 
-use tracing::{debug, info, trace};
+use parking_lot::Mutex;
+use tracing::{error, info, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12CreateDevice, ID3D12CommandQueue, ID3D12Device, D3D12_COMMAND_LIST_TYPE_DIRECT,
-    D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
+    D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device,
+    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue, IDXGISwapChain,
-    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory1, IDXGIFactory1, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 use super::DummyHwnd;
+use crate::compositor::d3d12::D3D12Compositor;
 use crate::mh::MhHook;
 use crate::renderer::{print_dxgi_debug_messages, RenderState};
 use crate::util::try_out_ptr;
@@ -39,12 +40,20 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
     flags: u32,
 ) -> HRESULT;
 
+type D3D12CommandQueueExecuteCommandListsType = unsafe extern "system" fn(
+    This: ID3D12CommandQueue,
+    num_command_lists: u32,
+    command_lists: *mut ID3D12CommandList,
+);
+
 struct Trampolines {
     dxgi_swap_chain_present: DXGISwapChainPresentType,
     dxgi_swap_chain_resize_buffers: DXGISwapChainResizeBuffersType,
+    d3d12_command_queue_execute_command_lists: D3D12CommandQueueExecuteCommandListsType,
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
+static mut COMPOSITOR: OnceLock<Mutex<D3D12Compositor>> = OnceLock::new();
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain3,
@@ -68,7 +77,22 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    RenderState::render(hwnd, p_this.GetBuffer(1).ok());
+    RenderState::lock();
+    let back_buffer = RenderState::render(hwnd);
+    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(D3D12Compositor::new())).lock();
+
+    if let Err(e) = compositor.with_swap_chain(&p_this) {
+        error!("Could not initialize compositor's swap chain: {e:?}");
+    }
+
+    if let Some(back_buffer) = back_buffer {
+        if let Err(e) = compositor.composite(back_buffer) {
+            error!("Could not composite: {e:?}");
+        }
+    }
+
+    drop(compositor);
+    RenderState::unlock();
 
     print_dxgi_debug_messages();
 
@@ -91,7 +115,43 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
 }
 
-fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
+unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
+    cmd_queue: ID3D12CommandQueue,
+    num_command_lists: u32,
+    command_lists: *mut ID3D12CommandList,
+) {
+    trace!(
+        "ID3D12CommandQueue::ExecuteCommandLists({cmd_queue:?}, {num_command_lists}, \
+         {command_lists:p}) invoked"
+    );
+
+    let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
+        TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
+
+    if RenderState::is_locked() {
+        return d3d12_command_queue_execute_command_lists(
+            cmd_queue,
+            num_command_lists,
+            command_lists,
+        );
+    }
+
+    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(D3D12Compositor::new())).lock();
+
+    if let Err(e) = compositor.with_command_queue(&cmd_queue) {
+        error!("Could not initialize compositor command queue: {e:?}");
+    }
+
+    drop(compositor);
+
+    d3d12_command_queue_execute_command_lists(cmd_queue, num_command_lists, command_lists);
+}
+
+fn get_target_addrs() -> (
+    DXGISwapChainPresentType,
+    DXGISwapChainResizeBuffersType,
+    D3D12CommandQueueExecuteCommandListsType,
+) {
     let dummy_hwnd = DummyHwnd::new();
 
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
@@ -147,11 +207,13 @@ fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
         unsafe { mem::transmute(swap_chain.vtable().Present) };
     let resize_buffers_ptr: DXGISwapChainResizeBuffersType =
         unsafe { mem::transmute(swap_chain.vtable().ResizeBuffers) };
+    let cqecl_ptr: D3D12CommandQueueExecuteCommandListsType =
+        unsafe { mem::transmute(command_queue.vtable().ExecuteCommandLists) };
 
-    (present_ptr, resize_buffers_ptr)
+    (present_ptr, resize_buffers_ptr, cqecl_ptr)
 }
 
-pub struct ImguiDx12Hooks([MhHook; 2]);
+pub struct ImguiDx12Hooks([MhHook; 3]);
 
 impl ImguiDx12Hooks {
     /// Construct a set of [`MhHook`]s that will render UI via the
@@ -168,8 +230,11 @@ impl ImguiDx12Hooks {
     where
         T: ImguiRenderLoop + Send + Sync,
     {
-        let (dxgi_swap_chain_present_addr, dxgi_swap_chain_resize_buffers_addr) =
-            get_target_addrs();
+        let (
+            dxgi_swap_chain_present_addr,
+            dxgi_swap_chain_resize_buffers_addr,
+            d3d12_command_queue_execute_command_lists_addr,
+        ) = get_target_addrs();
 
         trace!("IDXGISwapChain::Present = {:p}", dxgi_swap_chain_present_addr as *const c_void);
         let hook_present = MhHook::new(
@@ -182,14 +247,20 @@ impl ImguiDx12Hooks {
             dxgi_swap_chain_resize_buffers_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
+        let hook_cqecl = MhHook::new(
+            d3d12_command_queue_execute_command_lists_addr as *mut _,
+            d3d12_command_queue_execute_command_lists_impl as *mut _,
+        )
+        .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
 
         RenderState::set_render_loop(t);
         TRAMPOLINES.get_or_init(|| Trampolines {
             dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
             dxgi_swap_chain_resize_buffers: mem::transmute(hook_resize_buffers.trampoline()),
+            d3d12_command_queue_execute_command_lists: mem::transmute(hook_cqecl.trampoline()),
         });
 
-        Self([hook_present, hook_resize_buffers])
+        Self([hook_present, hook_resize_buffers, hook_cqecl])
     }
 }
 

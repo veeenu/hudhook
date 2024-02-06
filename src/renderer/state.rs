@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
+use windows::Win32::Graphics::Direct3D12::{ID3D12CommandQueue, ID3D12Resource};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -21,6 +21,7 @@ static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();
 static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
+static mut COMMAND_QUEUE: OnceLock<ID3D12CommandQueue> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
 /// Global renderer state manager.
@@ -90,16 +91,22 @@ impl RenderState {
         RENDER_LOCK.load(Ordering::SeqCst)
     }
 
+    pub fn lock() {
+        RENDER_LOCK.store(true, Ordering::SeqCst);
+    }
+
+    pub fn unlock() {
+        RENDER_LOCK.store(false, Ordering::SeqCst);
+    }
+
     /// Render the UI and composite it over the passed [`HWND`].
     ///
     /// Make sure that the passed [`HWND`] is the one returned by
     /// [`RenderState::setup`].
-    pub fn render(hwnd: HWND, target_back_buffer: Option<ID3D12Resource>) {
-        RENDER_LOCK.store(true, Ordering::SeqCst);
-
+    pub fn render(hwnd: HWND) -> Option<ID3D12Resource> {
         let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
             error!("Could not obtain render loop");
-            return;
+            return None;
         };
 
         let render_engine = unsafe {
@@ -118,7 +125,7 @@ impl RenderState {
 
         let Some(mut render_engine) = render_engine.try_lock() else {
             error!("Could not lock render engine");
-            return;
+            return None;
         };
 
         render_loop.before_render(&mut render_engine);
@@ -127,17 +134,22 @@ impl RenderState {
             error!("Render: {e:?}");
         }
 
-        let Some(target_back_buffer) = target_back_buffer else {
-            unimplemented!();
-        };
+        // let Some(target_back_buffer) = target_back_buffer else {
+        //     unimplemented!();
+        // };
+        //
+        // if let Some(cq) = unsafe { COMMAND_QUEUE.get() } {
+        //     trace!("Compositing then");
+        //     if let Err(e) = render_engine.bad_composite(target_back_buffer,
+        // cq.clone()) {         error!("Composite: {e:?}");
+        //     }
+        // }
 
-        if let Err(e) = render_engine.composite(target_back_buffer) {
-            error!("Composite: {e:?}");
-        }
+        let back_buffer = render_engine.back_buffer().ok();
 
         drop(render_engine);
 
-        RENDER_LOCK.store(false, Ordering::SeqCst);
+        back_buffer
     }
 
     /// Resize the engine. Generally only needs to be called automatically as a
@@ -168,6 +180,10 @@ impl RenderState {
             RENDER_LOOP.take();
             RENDER_LOCK.store(false, Ordering::SeqCst);
         }
+    }
+
+    pub fn bad_set_command_queue(cq: ID3D12CommandQueue) {
+        unsafe { COMMAND_QUEUE.get_or_init(move || cq) };
     }
 }
 
