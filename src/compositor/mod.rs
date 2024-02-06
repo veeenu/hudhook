@@ -1,2 +1,2 @@
-pub mod d3d12;
 pub mod dcomp;
+pub mod dx12;

@@ -22,7 +22,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 
 use super::DummyHwnd;
-use crate::compositor::d3d12::D3D12Compositor;
+use crate::compositor::dx12::Compositor;
 use crate::mh::MhHook;
 use crate::renderer::{print_dxgi_debug_messages, RenderState};
 use crate::util::try_out_ptr;
@@ -53,7 +53,7 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut COMPOSITOR: OnceLock<Mutex<D3D12Compositor>> = OnceLock::new();
+static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain3,
@@ -79,7 +79,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 
     RenderState::lock();
     let back_buffer = RenderState::render(hwnd);
-    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(D3D12Compositor::new())).lock();
+    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new())).lock();
 
     if let Err(e) = compositor.with_swap_chain(&p_this) {
         error!("Could not initialize compositor's swap chain: {e:?}");
@@ -136,7 +136,7 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
         );
     }
 
-    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(D3D12Compositor::new())).lock();
+    let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new())).lock();
 
     if let Err(e) = compositor.with_command_queue(&cmd_queue) {
         error!("Could not initialize compositor command queue: {e:?}");

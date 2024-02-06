@@ -58,30 +58,27 @@ struct Vertex {
     uv: [f32; 2],
 }
 
-pub struct D3D12Compositor(D3D12CompositorState);
+pub struct Compositor(CompositorState);
 
-enum D3D12CompositorState {
+enum CompositorState {
     Builder(Option<ID3D12Device>, Option<IDXGISwapChain3>, Option<ID3D12CommandQueue>),
-    Compositor(D3D12CompositorInner),
+    Compositor(CompositorInner),
 }
 
-impl Default for D3D12Compositor {
+impl Default for Compositor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl D3D12Compositor {
+impl Compositor {
     pub fn new() -> Self {
-        Self(D3D12CompositorState::Builder(None, None, None))
+        Self(CompositorState::Builder(None, None, None))
     }
 
     pub fn with_swap_chain(&mut self, swap_chain: &IDXGISwapChain3) -> Result<&mut Self> {
-        if let D3D12CompositorState::Builder(
-            ref mut builder_device,
-            ref mut builder_swap_chain,
-            _,
-        ) = self.0
+        if let CompositorState::Builder(ref mut builder_device, ref mut builder_swap_chain, _) =
+            self.0
         {
             *builder_device = Some(unsafe { swap_chain.GetDevice::<ID3D12Device>() }?);
             *builder_swap_chain = Some(swap_chain.clone());
@@ -93,7 +90,7 @@ impl D3D12Compositor {
     }
 
     pub fn with_command_queue(&mut self, command_queue: &ID3D12CommandQueue) -> Result<&mut Self> {
-        if let D3D12CompositorState::Builder(_, _, ref mut builder_command_queue) = self.0 {
+        if let CompositorState::Builder(_, _, ref mut builder_command_queue) = self.0 {
             let desc = unsafe { command_queue.GetDesc() };
             if desc.Type.0 == 0 {
                 *builder_command_queue = Some(command_queue.clone());
@@ -106,7 +103,7 @@ impl D3D12Compositor {
     }
 
     pub fn composite(&mut self, source_resource: ID3D12Resource) -> Result<()> {
-        if let D3D12CompositorState::Compositor(ref mut inner) = self.0 {
+        if let CompositorState::Compositor(ref mut inner) = self.0 {
             inner.composite(source_resource)?;
         }
 
@@ -114,13 +111,13 @@ impl D3D12Compositor {
     }
 
     fn check(&mut self) -> Result<()> {
-        if let D3D12CompositorState::Builder(
+        if let CompositorState::Builder(
             ref mut device @ Some(_),
             ref mut swap_chain @ Some(_),
             ref mut command_queue @ Some(_),
         ) = self.0
         {
-            self.0 = D3D12CompositorState::Compositor(D3D12CompositorInner::new(
+            self.0 = CompositorState::Compositor(CompositorInner::new(
                 device.take().unwrap(),
                 swap_chain.take().unwrap(),
                 command_queue.take().unwrap(),
@@ -131,7 +128,7 @@ impl D3D12Compositor {
     }
 }
 
-struct D3D12CompositorInner {
+struct CompositorInner {
     device: ID3D12Device,
     target_swap_chain: IDXGISwapChain3,
     heap: ID3D12DescriptorHeap,
@@ -148,7 +145,7 @@ struct D3D12CompositorInner {
     index_buffer: ID3D12Resource,
 }
 
-impl D3D12CompositorInner {
+impl CompositorInner {
     fn new(
         device: ID3D12Device,
         target_swap_chain: IDXGISwapChain3,
