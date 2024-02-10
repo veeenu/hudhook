@@ -73,7 +73,8 @@ impl RenderTarget {
             )
         })?;
 
-        let texture = texture.unwrap();
+        let texture: ID3D12Resource = texture.unwrap();
+        unsafe { texture.SetName(w!("Hudhook Render Target"))? };
 
         unsafe { device.CreateRenderTargetView(&texture, None, desc_handle) };
 

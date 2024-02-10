@@ -578,6 +578,12 @@ impl CompositorInner {
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
 
+        let target_present_barrier = Barrier::new(
+            target_resource.clone(),
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT,
+        );
+
         unsafe {
             self.command_allocator.Reset()?;
             self.command_list.Reset(&self.command_allocator, None)?;
@@ -629,6 +635,8 @@ impl CompositorInner {
             self.command_list
                 .SetGraphicsRootDescriptorTable(1, self.heap.GetGPUDescriptorHandleForHeapStart());
             self.command_list.DrawIndexedInstanced(6, 1, 0, 0, 0);
+            self.command_list.ResourceBarrier(target_present_barrier.as_ref());
+
             self.command_list.Close()?;
 
             self.target_command_queue
