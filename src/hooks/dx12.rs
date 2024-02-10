@@ -78,15 +78,15 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     });
 
     RenderState::lock();
-    let back_buffer = RenderState::render(hwnd);
+    let surface = RenderState::render(hwnd);
     let mut compositor = COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new())).lock();
 
     if let Err(e) = compositor.with_swap_chain(&p_this) {
         error!("Could not initialize compositor's swap chain: {e:?}");
     }
 
-    if let Some(back_buffer) = back_buffer {
-        if let Err(e) = compositor.composite(back_buffer) {
+    if let Some(surface) = surface {
+        if let Err(e) = compositor.composite(surface.resource) {
             error!("Could not composite: {e:?}");
         }
     }

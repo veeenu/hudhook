@@ -7,9 +7,21 @@ mod state;
 pub use engine::RenderEngine;
 pub use state::RenderState;
 use tracing::debug;
-use windows::Win32::Graphics::Dxgi::{
-    DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
+use windows::Win32::Graphics::{
+    Direct3D12::{
+        ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Device, ID3D12GraphicsCommandList,
+        ID3D12Resource,
+    },
+    Dxgi::{DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE},
 };
+
+pub(crate) struct RenderedSurface {
+    pub device: ID3D12Device,
+    pub resource: ID3D12Resource,
+    pub command_queue: ID3D12CommandQueue,
+    pub command_allocator: ID3D12CommandAllocator,
+    pub command_list: ID3D12GraphicsCommandList,
+}
 
 pub(crate) unsafe fn print_dxgi_debug_messages() {
     let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();

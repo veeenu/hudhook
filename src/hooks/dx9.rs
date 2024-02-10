@@ -2,6 +2,7 @@ use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
 
+use parking_lot::Mutex;
 use tracing::trace;
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{BOOL, HWND, RECT};
@@ -13,6 +14,7 @@ use windows::Win32::Graphics::Direct3D9::{
 use windows::Win32::Graphics::Gdi::RGNDATA;
 
 use super::DummyHwnd;
+use crate::compositor::dx9::Compositor;
 use crate::mh::MhHook;
 use crate::renderer::RenderState;
 use crate::util::try_out_ptr;
@@ -31,6 +33,7 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
+static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
 
 unsafe extern "system" fn dx9_present_impl(
     p_this: IDirect3DDevice9,
@@ -54,7 +57,12 @@ unsafe extern "system" fn dx9_present_impl(
         creation_parameters.hFocusWindow
     });
 
-    RenderState::render(hwnd);
+    RenderState::lock();
+    let surface = RenderState::render(hwnd).unwrap();
+    let mut compositor =
+        COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this, hwnd).unwrap())).lock();
+    compositor.composite(surface).unwrap();
+    RenderState::unlock();
 
     trace!("Call IDirect3DDevice9::Present trampoline");
     dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)

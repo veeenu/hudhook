@@ -12,7 +12,7 @@ use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
 use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC};
 
-use super::print_dxgi_debug_messages;
+use super::{print_dxgi_debug_messages, RenderedSurface};
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
 use crate::ImguiRenderLoop;
@@ -103,7 +103,7 @@ impl RenderState {
     ///
     /// Make sure that the passed [`HWND`] is the one returned by
     /// [`RenderState::setup`].
-    pub fn render(hwnd: HWND) -> Option<ID3D12Resource> {
+    pub fn render(hwnd: HWND) -> Option<RenderedSurface> {
         let Some(render_loop) = (unsafe { RENDER_LOOP.get_mut() }) else {
             error!("Could not obtain render loop");
             return None;
@@ -145,11 +145,11 @@ impl RenderState {
         //     }
         // }
 
-        let back_buffer = render_engine.back_buffer().ok();
+        let surface = render_engine.surface().ok()?;
 
         drop(render_engine);
 
-        back_buffer
+        Some(surface)
     }
 
     /// Resize the engine. Generally only needs to be called automatically as a

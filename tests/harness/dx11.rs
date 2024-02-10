@@ -9,8 +9,8 @@ use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
+    D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
@@ -28,6 +28,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
     WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
+
+pub fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
+where
+    T: Default,
+    F: FnMut(&mut T) -> Result<O, E>,
+{
+    let mut t: T = Default::default();
+    match f(&mut t) {
+        Ok(_) => Ok(t),
+        Err(e) => Err(e),
+    }
+}
 
 pub struct Dx11Harness {
     child: Option<JoinHandle<()>>,
@@ -118,6 +130,17 @@ impl Dx11Harness {
                     .unwrap()
                 };
                 let swap_chain = p_swap_chain.unwrap();
+                let device = p_device.unwrap();
+                let context = p_context.unwrap();
+
+                let backbuf: ID3D11Resource = unsafe { swap_chain.GetBuffer(0).unwrap() };
+
+                println!("here");
+                let rtv = try_out_param(|v| unsafe {
+                    device.CreateRenderTargetView(&backbuf, None, Some(v))
+                })
+                .unwrap()
+                .unwrap();
 
                 unsafe { SetTimer(handle, 0, 100, None) };
 
@@ -142,6 +165,8 @@ impl Dx11Harness {
                         }
                         diq.ClearStoredMessages(DXGI_DEBUG_ALL);
                     }
+
+                    unsafe { context.ClearRenderTargetView(&rtv, &[0.2, 0.8, 0.2, 0.8]) };
 
                     eprintln!("Present...");
                     unsafe { swap_chain.Present(1, 0).unwrap() };

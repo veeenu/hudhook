@@ -2,6 +2,7 @@ use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
 
+use parking_lot::Mutex;
 use tracing::{info, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::BOOL;
@@ -9,8 +10,8 @@ use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11Device1, ID3D11DeviceContext,
+    D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -21,8 +22,9 @@ use windows::Win32::Graphics::Dxgi::{
 };
 
 use super::DummyHwnd;
+use crate::compositor::dx11::Compositor;
 use crate::mh::MhHook;
-use crate::renderer::RenderState;
+use crate::renderer::{print_dxgi_debug_messages, RenderState};
 use crate::{Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
@@ -33,6 +35,7 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
+static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
     p_this: IDXGISwapChain,
@@ -56,7 +59,22 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         desc.OutputWindow
     });
 
-    RenderState::render(hwnd);
+    RenderState::lock();
+    if let Some(surface) = RenderState::render(hwnd) {
+        let mut compositor = COMPOSITOR
+            .get_or_init(|| {
+                Mutex::new(
+                    Compositor::new(&p_this.GetDevice::<ID3D11Device1>().unwrap(), hwnd, &surface)
+                        .unwrap(),
+                )
+            })
+            .lock();
+        if let Err(e) = compositor.composite(surface, &p_this) {
+            print_dxgi_debug_messages();
+            panic!("{e}");
+        }
+    }
+    RenderState::unlock();
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(p_this, sync_interval, flags)

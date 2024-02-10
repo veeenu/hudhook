@@ -27,7 +27,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, IsChild};
 
-use super::keys;
+use super::{keys, RenderedSurface};
 use crate::util::{try_out_param, try_out_ptr, Barrier};
 
 struct RenderTarget {
@@ -472,8 +472,14 @@ impl RenderEngine {
         Ok(tex_id)
     }
 
-    pub fn back_buffer(&self) -> Result<ID3D12Resource> {
-        Ok(self.render_target.texture.clone())
+    pub fn surface(&self) -> Result<RenderedSurface> {
+        let device = self.device.clone();
+        let command_queue = self.command_queue.clone();
+        let command_allocator = self.command_allocator.clone();
+        let command_list = self.command_list.clone();
+        let resource = self.render_target.texture.clone();
+
+        Ok(RenderedSurface { device, resource, command_queue, command_allocator, command_list })
     }
 }
 
