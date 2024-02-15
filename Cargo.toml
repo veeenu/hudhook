@@ -10,8 +10,13 @@ license-file = "LICENSE"
 authors = ["Andrea Venuta <venutawebdesign@gmail.com>"]
 
 [package.metadata.docs.rs]
-default-target = "x86_64-pc-windows-msvc"
-targets = ["x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
+default-target = "x86_64-pc-windows-gnu"
+targets = [
+  "x86_64-pc-windows-msvc",
+  "i686-pc-windows-msvc",
+  "x86_64-pc-windows-gnu",
+  "i686-pc-windows-gnu"
+]
 
 [features]
 default = ["dx9", "dx11", "dx12", "opengl3", "inject"]

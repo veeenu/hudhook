@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
 
-use tracing::{debug, info, trace};
+use tracing::{info, trace};
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -15,8 +15,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, DXGIGetDebugInterface1, IDXGIFactory1, IDXGIInfoQueue, IDXGISwapChain,
-    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory1, IDXGIFactory1, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
@@ -89,27 +88,6 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags)
 }
 
-unsafe fn print_dxgi_debug_messages() {
-    let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
-
-    for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-        let mut msg_len: usize = 0;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-        let diqm = vec![0u8; msg_len];
-        let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-        diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap();
-        let diqm = pdiqm.as_ref().unwrap();
-        debug!(
-            "[DIQ] {}",
-            String::from_utf8_lossy(std::slice::from_raw_parts(
-                diqm.pDescription,
-                diqm.DescriptionByteLength - 1
-            ))
-        );
-    }
-    diq.ClearStoredMessages(DXGI_DEBUG_ALL);
-}
-
 fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersType) {
     let dummy_hwnd = DummyHwnd::new();
 
@@ -157,7 +135,7 @@ fn get_target_addrs() -> (DXGISwapChainPresentType, DXGISwapChainResizeBuffersTy
     }) {
         Ok(swap_chain) => swap_chain,
         Err(e) => {
-            unsafe { print_dxgi_debug_messages() };
+            crate::util::print_dxgi_debug_messages();
             panic!("{e:?}");
         },
     };

@@ -16,9 +16,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    DXGIGetDebugInterface1, IDXGIInfoQueue, IDXGISwapChain, DXGI_DEBUG_ALL,
-    DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
@@ -81,8 +79,6 @@ impl Dx11Harness {
                     )
                 };
 
-                let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
-
                 let mut p_device: Option<ID3D11Device> = None;
                 let mut p_swap_chain: Option<IDXGISwapChain> = None;
                 let mut p_context: Option<ID3D11DeviceContext> = None;
@@ -122,26 +118,7 @@ impl Dx11Harness {
                 unsafe { SetTimer(handle, 0, 100, None) };
 
                 loop {
-                    unsafe {
-                        for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-                            eprintln!("Debug Message {i}");
-                            let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-                            let diqm = vec![0u8; msg_len];
-                            let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
-                                .unwrap();
-                            let diqm = pdiqm.as_ref().unwrap();
-                            eprintln!(
-                                "{}",
-                                String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription,
-                                    diqm.DescriptionByteLength
-                                ))
-                            );
-                        }
-                        diq.ClearStoredMessages(DXGI_DEBUG_ALL);
-                    }
+                    unsafe { hudhook::util::print_dxgi_debug_messages() };
 
                     eprintln!("Present...");
                     unsafe { swap_chain.Present(1, 0).unwrap() };

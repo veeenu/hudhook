@@ -10,10 +10,10 @@ use windows::core::{s, ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12CreateDevice, D3D12GetDebugInterface, ID3D12CommandAllocator, ID3D12CommandQueue,
-    ID3D12Debug, ID3D12DescriptorHeap, ID3D12Device, ID3D12GraphicsCommandList, ID3D12Resource,
-    D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
-    D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+    D3D12CreateDevice, ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12DescriptorHeap,
+    ID3D12Device, ID3D12GraphicsCommandList, ID3D12Resource, D3D12_COMMAND_LIST_TYPE_DIRECT,
+    D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE, D3D12_CPU_DESCRIPTOR_HANDLE,
+    D3D12_DESCRIPTOR_HEAP_DESC, D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
     D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
     D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
 };
@@ -22,8 +22,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, DXGIGetDebugInterface1, IDXGIFactory, IDXGIInfoQueue, IDXGISwapChain,
-    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory, IDXGIFactory, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
@@ -88,9 +87,9 @@ impl Dx12Harness {
                     )
                 }; // lpParam
 
-                let mut debug_interface: Option<ID3D12Debug> = None;
-                unsafe { D3D12GetDebugInterface(&mut debug_interface) }.unwrap();
-                unsafe { debug_interface.as_ref().unwrap().EnableDebugLayer() };
+                // let mut debug_interface: Option<ID3D12Debug> = None;
+                // unsafe { D3D12GetDebugInterface(&mut debug_interface) }.unwrap();
+                // unsafe { debug_interface.as_ref().unwrap().EnableDebugLayer() };
 
                 let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
                 let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
@@ -183,31 +182,10 @@ impl Dx12Harness {
                     }
                 }
 
-                let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
-
                 unsafe { SetTimer(hwnd, 0, 100, None) };
 
                 loop {
-                    trace!("Debug");
-                    unsafe {
-                        for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-                            let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-                            let diqm = vec![0u8; msg_len];
-                            let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
-                                .unwrap();
-                            let diqm = pdiqm.as_ref().unwrap();
-                            println!(
-                                "{}",
-                                String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription,
-                                    diqm.DescriptionByteLength
-                                ))
-                            );
-                        }
-                        diq.ClearStoredMessages(DXGI_DEBUG_ALL);
-                    }
+                    unsafe { hudhook::util::print_dxgi_debug_messages() };
 
                     unsafe {
                         command_list.Close().unwrap();
