@@ -3,7 +3,7 @@ use std::mem::{self, size_of, ManuallyDrop};
 use std::ptr::{self, null_mut};
 
 use memoffset::offset_of;
-use tracing::error;
+use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::{BOOL, HANDLE, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -53,6 +53,7 @@ use windows::Win32::System::Threading::{
 
 use crate::util::{try_out_param, try_out_ptr, Barrier};
 
+#[repr(C)]
 struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
