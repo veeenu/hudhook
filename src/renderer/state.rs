@@ -4,20 +4,24 @@ use std::sync::OnceLock;
 
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrA;
-use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, GWLP_WNDPROC};
+use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW, GWLP_WNDPROC};
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
 use crate::ImguiRenderLoop;
 
+use super::vulkan::Vulkan;
+
 static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();
-static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
+// static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
+static mut RENDER_ENGINE: OnceLock<Mutex<Vulkan>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
@@ -102,8 +106,10 @@ impl RenderState {
 
         let render_engine = unsafe {
             RENDER_ENGINE.get_or_init(|| {
-                let mut render_engine = RenderEngine::new(hwnd).unwrap();
-                render_loop.initialize(&mut render_engine);
+                let hinstance = HINSTANCE(GetModuleHandleW(None).unwrap().0);
+                let render_engine = Vulkan::new(hwnd, hinstance).unwrap();
+                // let mut render_engine = RenderEngine::new(hwnd).unwrap();
+                // render_loop.initialize(&mut render_engine);
                 Mutex::new(render_engine)
             })
         };
@@ -113,11 +119,15 @@ impl RenderState {
             return;
         };
 
-        render_loop.before_render(&mut render_engine);
-
-        if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
-            error!("Render: {e:?}");
+        if let Err(e) = render_engine.draw() {
+            error!("error: {e:?}");
         }
+
+        // render_loop.before_render(&mut render_engine);
+
+        // if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
+        //     error!("Render: {e:?}");
+        // }
 
         RENDER_LOCK.store(false, Ordering::SeqCst);
     }
@@ -128,9 +138,9 @@ impl RenderState {
         // TODO sometimes it doesn't lock.
         if let Some(Some(mut render_engine)) = unsafe { RENDER_ENGINE.get().map(Mutex::try_lock) } {
             trace!("Resizing");
-            if let Err(e) = render_engine.resize() {
-                error!("Couldn't resize: {e:?}");
-            }
+            // if let Err(e) = render_engine.resize() {
+            //     error!("Couldn't resize: {e:?}");
+            // }
         }
     }
 
@@ -181,13 +191,14 @@ unsafe extern "system" fn imgui_wnd_proc(
         return DefWindowProcW(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
     };
 
-    imgui_wnd_proc_impl(
-        hwnd,
-        umsg,
-        WPARAM(wparam),
-        LPARAM(lparam),
-        wnd_proc,
-        render_engine,
-        render_loop,
-    )
+    // imgui_wnd_proc_impl(
+    //     hwnd,
+    //     umsg,
+    //     WPARAM(wparam),
+    //     LPARAM(lparam),
+    //     wnd_proc,
+    //     render_engine,
+    //     render_loop,
+    // )
+    CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
 }
