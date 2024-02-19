@@ -5,7 +5,6 @@ use std::sync::OnceLock;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Direct3D12::{ID3D12CommandQueue, ID3D12Resource};
 #[cfg(target_arch = "x86")]
 use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
@@ -21,7 +20,6 @@ static mut GAME_HWND: OnceLock<HWND> = OnceLock::new();
 static mut WND_PROC: OnceLock<WndProcType> = OnceLock::new();
 static mut RENDER_ENGINE: OnceLock<Mutex<RenderEngine>> = OnceLock::new();
 static mut RENDER_LOOP: OnceLock<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceLock::new();
-static mut COMMAND_QUEUE: OnceLock<ID3D12CommandQueue> = OnceLock::new();
 static RENDER_LOCK: AtomicBool = AtomicBool::new(false);
 
 /// Global renderer state manager.
@@ -182,10 +180,6 @@ impl RenderState {
             RENDER_LOOP.take();
             RENDER_LOCK.store(false, Ordering::SeqCst);
         }
-    }
-
-    pub fn bad_set_command_queue(cq: ID3D12CommandQueue) {
-        unsafe { COMMAND_QUEUE.get_or_init(move || cq) };
     }
 }
 
