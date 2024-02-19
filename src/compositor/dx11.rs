@@ -22,19 +22,19 @@ use windows::{
                 ID3D11Device1, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader,
                 ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
                 ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
-                D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_RENDER_TARGET,
-                D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-                D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC,
-                D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
-                D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID,
-                D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_INPUT_ELEMENT_DESC,
-                D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC,
-                D3D11_RENDER_TARGET_BLEND_DESC, D3D11_RESOURCE_MISC_SHARED, D3D11_SAMPLER_DESC,
-                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV,
-                D3D11_TEXTURE_ADDRESS_WRAP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
-                D3D11_VIEWPORT,
+                D3D11_APPEND_ALIGNED_ELEMENT, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER,
+                D3D11_BIND_RENDER_TARGET, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC,
+                D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
+                D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+                D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
+                D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAP_WRITE_DISCARD,
+                D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_RESOURCE_MISC_SHARED,
+                D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
+                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA,
+                D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_USAGE_DEFAULT,
+                D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
             },
             Direct3D11on12::{D3D11On12CreateDevice, ID3D11On12Device, D3D11_RESOURCE_FLAGS},
             Direct3D12::{
@@ -178,24 +178,10 @@ impl Compositor {
     }
 }
 
+#[repr(C)]
 struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
-}
-
-#[repr(transparent)]
-struct VertexConstantBuffer([[f32; 4]; 4]);
-
-impl From<[f32; 4]> for VertexConstantBuffer {
-    fn from(value: [f32; 4]) -> Self {
-        let [l, t, r, b] = value;
-        VertexConstantBuffer([
-            [2. / (r - l), 0., 0., 0.],
-            [0., 2. / (t - b), 0., 0.],
-            [0., 0., 0.5, 0.],
-            [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-        ])
-    }
 }
 
 struct QuadRenderer {
@@ -208,7 +194,6 @@ struct QuadRenderer {
     depth_stencil_state: ID3D11DepthStencilState,
     vertex_buffer: Option<ID3D11Buffer>,
     index_buffer: ID3D11Buffer,
-    matrix_buffer: ID3D11Buffer,
 }
 
 impl QuadRenderer {
@@ -220,12 +205,9 @@ impl QuadRenderer {
             Vertex { pos: [1., -1.], uv: [1., 1.] },
         ];
 
-        const INDICES: [u16; 6] = [1, 2, 3, 1, 2, 3];
+        const INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
 
         const VERTEX_SHADER_SRC: &str = r"
-            cbuffer vertexBuffer : register(b0) {
-              float4x4 ProjectionMatrix;
-            };
             struct VS_INPUT
             {
               float2 pos : POSITION;
@@ -242,7 +224,7 @@ impl QuadRenderer {
             {
               PS_INPUT output;
               output.pos = float4(input.pos.xy, 0.0f, 1.0f);
-              output.uv  = input.uv;
+              output.uv  = input.uv.xy;
               return output;
             }
         ";
@@ -313,7 +295,7 @@ impl QuadRenderer {
             d3d11.CreateInputLayout(
                 &[
                     D3D11_INPUT_ELEMENT_DESC {
-                        SemanticName: s!("POSITION\0"),
+                        SemanticName: s!("POSITION"),
                         SemanticIndex: 0,
                         Format: DXGI_FORMAT_R32G32_FLOAT,
                         InputSlot: 0,
@@ -322,11 +304,11 @@ impl QuadRenderer {
                         InstanceDataStepRate: 0,
                     },
                     D3D11_INPUT_ELEMENT_DESC {
-                        SemanticName: s!("TEXCOORD\0"),
+                        SemanticName: s!("TEXCOORD"),
                         SemanticIndex: 0,
                         Format: DXGI_FORMAT_R32G32_FLOAT,
                         InputSlot: 0,
-                        AlignedByteOffset: 8,
+                        AlignedByteOffset: D3D11_APPEND_ALIGNED_ELEMENT,
                         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
                         InstanceDataStepRate: 0,
                     },
@@ -464,21 +446,6 @@ impl QuadRenderer {
             )
         })?;
 
-        let matrix_buffer: ID3D11Buffer = try_out_ptr(|v| unsafe {
-            d3d11.CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    ByteWidth: std::mem::size_of::<VertexConstantBuffer>() as u32,
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                },
-                None,
-                Some(v),
-            )
-        })?;
-
         let mut ms = Default::default();
         d3d11_ctx.Map(&vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut ms))?;
         ptr::copy_nonoverlapping(VERTICES.as_ptr(), ms.pData as _, VERTICES.len());
@@ -499,7 +466,6 @@ impl QuadRenderer {
             rasterizer_state,
             vertex_buffer: Some(vertex_buffer),
             index_buffer,
-            matrix_buffer,
         })
     }
 
@@ -511,9 +477,8 @@ impl QuadRenderer {
         d3d11_ctx.OMSetBlendState(&self.blend_state, Some(&[0f32; 4]), 0xFFFFFFFF);
         d3d11_ctx.OMSetDepthStencilState(&self.depth_stencil_state, 0);
         d3d11_ctx.RSSetState(&self.rasterizer_state);
-        d3d11_ctx.IASetVertexBuffers(0, 1, Some(&self.vertex_buffer), Some(&20), Some(&0));
+        d3d11_ctx.IASetVertexBuffers(0, 1, Some(&self.vertex_buffer), Some(&16), Some(&0));
         d3d11_ctx.IASetIndexBuffer(&self.index_buffer, DXGI_FORMAT_R16_UINT, 0);
-        d3d11_ctx.VSSetConstantBuffers(0, Some(&[Some(self.matrix_buffer.clone())]));
         d3d11_ctx.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 
@@ -544,17 +509,6 @@ impl QuadRenderer {
         })?;
 
         let desc: DXGI_SWAP_CHAIN_DESC = try_out_param(|v| target.GetDesc(v))?;
-
-        let mut ms = Default::default();
-        let vcb = VertexConstantBuffer::from([
-            0.,
-            0.,
-            desc.BufferDesc.Width as f32,
-            desc.BufferDesc.Height as f32,
-        ]);
-        d3d11_ctx.Map(&self.matrix_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut ms))?;
-        ptr::copy_nonoverlapping(&vcb, ms.pData as _, 1);
-        d3d11_ctx.Unmap(&self.matrix_buffer, 0);
 
         d3d11_ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
             TopLeftX: 0.,
