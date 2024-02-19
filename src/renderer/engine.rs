@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
-use std::mem::{size_of, ManuallyDrop};
+use std::mem::{self, size_of, ManuallyDrop};
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
 
@@ -89,116 +89,120 @@ impl Drop for RenderTarget {
 }
 
 // Holds D3D12 buffers for a frame.
-struct FrameResources {
-    index_buffer: Option<ID3D12Resource>,
-    vertex_buffer: Option<ID3D12Resource>,
-    index_buffer_size: usize,
+struct Buffers {
+    vertex_buffer: ID3D12Resource,
+    index_buffer: ID3D12Resource,
     vertex_buffer_size: usize,
+    index_buffer_size: usize,
     vertices: Vec<DrawVert>,
     indices: Vec<DrawIdx>,
+    projection_buffer: [[f32; 4]; 4],
 }
 
-impl FrameResources {
-    fn resize(&mut self, dev: &ID3D12Device, indices: usize, vertices: usize) -> Result<()> {
-        if self.vertex_buffer.is_none() || self.vertex_buffer_size < vertices {
-            drop(self.vertex_buffer.take());
+impl Buffers {
+    fn new(device: &ID3D12Device) -> Result<Self> {
+        const INITIAL_VERTEX_CAPACITY: usize = 5000;
+        const INITIAL_INDEX_CAPACITY: usize = 10000;
+        Ok(Self {
+            vertex_buffer: Self::create_vertex_buffer(device, INITIAL_VERTEX_CAPACITY)?,
+            index_buffer: Self::create_index_buffer(device, INITIAL_INDEX_CAPACITY)?,
+            vertex_buffer_size: INITIAL_VERTEX_CAPACITY,
+            index_buffer_size: INITIAL_INDEX_CAPACITY,
+            vertices: Vec::with_capacity(INITIAL_VERTEX_CAPACITY),
+            indices: Vec::with_capacity(INITIAL_INDEX_CAPACITY),
+            projection_buffer: Default::default(),
+        })
+    }
 
-            self.vertex_buffer_size = vertices + 5000;
-            let props = D3D12_HEAP_PROPERTIES {
-                Type: D3D12_HEAP_TYPE_UPLOAD,
-                CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                CreationNodeMask: 0,
-                VisibleNodeMask: 0,
-            };
-            let desc = D3D12_RESOURCE_DESC {
-                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                Alignment: 65536,
-                Width: (self.vertex_buffer_size * size_of::<imgui::DrawVert>()) as u64,
-                Height: 1,
-                DepthOrArraySize: 1,
-                MipLevels: 1,
-                Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                Flags: D3D12_RESOURCE_FLAG_NONE,
-            };
+    fn create_vertex_buffer(device: &ID3D12Device, vertices: usize) -> Result<ID3D12Resource> {
+        try_out_ptr(|v| unsafe {
+            device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                    CreationNodeMask: 0,
+                    VisibleNodeMask: 0,
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 65536,
+                    Width: (vertices * size_of::<imgui::DrawVert>()) as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                None,
+                v,
+            )
+        })
+        .map_err(|e| {
+            error!("Creating vertex buffer: {:?}", e);
+            e
+        })
+    }
 
-            unsafe {
-                dev.CreateCommittedResource(
-                    &props,
-                    D3D12_HEAP_FLAG_NONE,
-                    &desc,
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    None,
-                    &mut self.vertex_buffer,
-                )
-            }
-            .map_err(|e| {
-                error!("Resizing index buffer: {:?}", e);
-                e
-            })?;
+    fn create_index_buffer(device: &ID3D12Device, indices: usize) -> Result<ID3D12Resource> {
+        try_out_ptr(|v| unsafe {
+            device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                    CreationNodeMask: 0,
+                    VisibleNodeMask: 0,
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 0,
+                    Width: (indices * size_of::<imgui::DrawIdx>()) as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                None,
+                v,
+            )
+        })
+        .map_err(|e| {
+            error!("Creating index buffer: {:?}", e);
+            e
+        })
+    }
+
+    fn resize(&mut self, device: &ID3D12Device, indices: usize, vertices: usize) -> Result<()> {
+        if self.vertex_buffer_size < vertices {
+            let vertices = vertices + 5000;
+            drop(mem::replace(
+                &mut self.vertex_buffer,
+                Buffers::create_vertex_buffer(device, vertices)?,
+            ));
+
+            self.vertex_buffer_size = vertices;
         }
 
-        if self.index_buffer.is_none() || self.index_buffer_size < indices {
-            drop(self.index_buffer.take());
-            self.index_buffer_size = indices + 10000;
-            let props = D3D12_HEAP_PROPERTIES {
-                Type: D3D12_HEAP_TYPE_UPLOAD,
-                CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                CreationNodeMask: 0,
-                VisibleNodeMask: 0,
-            };
-            let desc = D3D12_RESOURCE_DESC {
-                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                Alignment: 0,
-                Width: (self.index_buffer_size * size_of::<imgui::DrawIdx>()) as u64,
-                Height: 1,
-                DepthOrArraySize: 1,
-                MipLevels: 1,
-                Format: DXGI_FORMAT_UNKNOWN,
-                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                Flags: D3D12_RESOURCE_FLAG_NONE,
-            };
+        if self.index_buffer_size < indices {
+            let indices = indices + 5000;
+            drop(mem::replace(
+                &mut self.index_buffer,
+                Buffers::create_index_buffer(device, indices)?,
+            ));
 
-            unsafe {
-                dev.CreateCommittedResource(
-                    &props,
-                    D3D12_HEAP_FLAG_NONE,
-                    &desc,
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    None,
-                    &mut self.index_buffer,
-                )
-            }
-            .map_err(|e| {
-                error!("Resizing index buffer: {:?}", e);
-                e
-            })?;
+            self.index_buffer_size = indices;
         }
         Ok(())
-    }
-}
-
-impl Drop for FrameResources {
-    fn drop(&mut self) {
-        drop(self.vertex_buffer.take());
-        drop(self.index_buffer.take());
-    }
-}
-
-impl Default for FrameResources {
-    fn default() -> Self {
-        Self {
-            index_buffer: None,
-            vertex_buffer: None,
-            index_buffer_size: 10000,
-            vertex_buffer_size: 5000,
-            vertices: Default::default(),
-            indices: Default::default(),
-        }
     }
 }
 
@@ -223,8 +227,7 @@ pub struct RenderEngine {
 
     cpu_desc: D3D12_CPU_DESCRIPTOR_HANDLE,
     gpu_desc: D3D12_GPU_DESCRIPTOR_HANDLE,
-    frame_resources: FrameResources,
-    const_buf: [[f32; 4]; 4],
+    buffers: Buffers,
 
     ctx: Rc<RefCell<Context>>,
 
@@ -248,20 +251,20 @@ impl RenderEngine {
 
         let dxgi_adapter = unsafe { dxgi_factory.EnumAdapters(0) }?;
 
-        let mut device: Option<ID3D12Device> = None;
-        unsafe { D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, &mut device) }?;
-        let device = device.unwrap();
+        let device: ID3D12Device = try_out_ptr(|v| unsafe {
+            D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
+        })?;
 
-        let queue_desc = D3D12_COMMAND_QUEUE_DESC {
-            Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-            Priority: 0,
-            Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
-            NodeMask: 0,
-        };
+        let command_queue: ID3D12CommandQueue = unsafe {
+            device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
+                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+                Priority: 0,
+                Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
+                NodeMask: 0,
+            })
+        }?;
 
-        let command_queue: ID3D12CommandQueue =
-            unsafe { device.CreateCommandQueue(&queue_desc as *const _) }.unwrap();
-        unsafe { command_queue.SetName(w!("Render engine CQ")) }?;
+        unsafe { command_queue.SetName(w!("Render engine Command Queue")) }?;
 
         let (width, height) = crate::util::win_size(target_hwnd);
 
@@ -291,7 +294,7 @@ impl RenderEngine {
         let render_target =
             RenderTarget::new(&device, rtv_heap_handle_start, width as _, height as _)?;
 
-        let frame_resources = FrameResources::default();
+        let buffers = Buffers::new(&device)?;
 
         // Build command objects.
         let command_allocator: ID3D12CommandAllocator =
@@ -329,8 +332,7 @@ impl RenderEngine {
             rtv_heap,
             cpu_desc,
             gpu_desc,
-            frame_resources,
-            const_buf: [[0f32; 4]; 4],
+            buffers,
             ctx,
             font_texture_resource: None,
             root_signature: None,
@@ -520,9 +522,9 @@ impl RenderEngine {
     }
 
     unsafe fn create_device_objects(&mut self) -> Result<()> {
-        if self.pipeline_state.is_some() {
-            self.invalidate_device_objects();
-        }
+        // if self.pipeline_state.is_some() {
+        //     self.invalidate_device_objects();
+        // }
 
         let desc_range = D3D12_DESCRIPTOR_RANGE {
             RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
@@ -989,40 +991,23 @@ impl RenderEngine {
         Ok(())
     }
 
-    fn invalidate_device_objects(&mut self) {
-        if let Some(root_signature) = self.root_signature.take() {
-            drop(root_signature);
-        }
-        if let Some(pipeline_state) = self.pipeline_state.take() {
-            drop(pipeline_state);
-        }
-        if let Some(font_texture_resource) = self.font_texture_resource.take() {
-            drop(font_texture_resource);
-        }
-
-        drop(self.frame_resources.index_buffer.take());
-        drop(self.frame_resources.vertex_buffer.take());
-    }
+    // fn invalidate_device_objects(&mut self) {
+    //     if let Some(root_signature) = self.root_signature.take() {
+    //         drop(root_signature);
+    //     }
+    //     if let Some(pipeline_state) = self.pipeline_state.take() {
+    //         drop(pipeline_state);
+    //     }
+    //     if let Some(font_texture_resource) = self.font_texture_resource.take() {
+    //         drop(font_texture_resource);
+    //     }
+    //
+    //     drop(self.frame_resources.index_buffer.take());
+    //     drop(self.frame_resources.vertex_buffer.take());
+    // }
 
     unsafe fn setup_render_state(&mut self, draw_data: &DrawData) {
-        let display_pos = draw_data.display_pos;
         let display_size = draw_data.display_size;
-
-        self.const_buf = {
-            let [l, t, r, b] = [
-                display_pos[0],
-                display_pos[1],
-                display_pos[0] + display_size[0],
-                display_pos[1] + display_size[1],
-            ];
-
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
-        };
 
         trace!("Display size {}x{}", display_size[0], display_size[1]);
         self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
@@ -1037,25 +1022,15 @@ impl RenderEngine {
         self.command_list.IASetVertexBuffers(
             0,
             Some(&[D3D12_VERTEX_BUFFER_VIEW {
-                BufferLocation: self
-                    .frame_resources
-                    .vertex_buffer
-                    .as_ref()
-                    .unwrap()
-                    .GetGPUVirtualAddress(),
-                SizeInBytes: (self.frame_resources.vertex_buffer_size * size_of::<DrawVert>()) as _,
+                BufferLocation: self.buffers.vertex_buffer.GetGPUVirtualAddress(),
+                SizeInBytes: (self.buffers.vertex_buffer_size * size_of::<DrawVert>()) as _,
                 StrideInBytes: size_of::<DrawVert>() as _,
             }]),
         );
 
         self.command_list.IASetIndexBuffer(Some(&D3D12_INDEX_BUFFER_VIEW {
-            BufferLocation: self
-                .frame_resources
-                .index_buffer
-                .as_ref()
-                .unwrap()
-                .GetGPUVirtualAddress(),
-            SizeInBytes: (self.frame_resources.index_buffer_size * size_of::<DrawIdx>()) as _,
+            BufferLocation: self.buffers.index_buffer.GetGPUVirtualAddress(),
+            SizeInBytes: (self.buffers.index_buffer_size * size_of::<DrawIdx>()) as _,
             Format: if size_of::<DrawIdx>() == 2 {
                 DXGI_FORMAT_R16_UINT
             } else {
@@ -1068,7 +1043,7 @@ impl RenderEngine {
         self.command_list.SetGraphicsRoot32BitConstants(
             0,
             16,
-            self.const_buf.as_ptr() as *const c_void,
+            self.buffers.projection_buffer.as_ptr() as *const c_void,
             0,
         );
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
@@ -1089,7 +1064,7 @@ impl RenderEngine {
             return Ok(());
         }
 
-        self.frame_resources
+        self.buffers
             .resize(
                 &self.device,
                 draw_data.total_idx_count as usize,
@@ -1101,31 +1076,47 @@ impl RenderEngine {
         let mut vtx_resource: *mut imgui::DrawVert = null_mut();
         let mut idx_resource: *mut imgui::DrawIdx = null_mut();
 
-        self.frame_resources.vertices.clear();
-        self.frame_resources.indices.clear();
+        self.buffers.vertices.clear();
+        self.buffers.indices.clear();
         draw_data.draw_lists().map(|m| (m.vtx_buffer().iter(), m.idx_buffer().iter())).for_each(
             |(v, i)| {
-                self.frame_resources.vertices.extend(v);
-                self.frame_resources.indices.extend(i);
+                self.buffers.vertices.extend(v);
+                self.buffers.indices.extend(i);
             },
         );
 
-        let vertices = &self.frame_resources.vertices;
-        let indices = &self.frame_resources.indices;
+        let vertices = &self.buffers.vertices;
+        let indices = &self.buffers.indices;
 
         {
-            if let Some(vb) = self.frame_resources.vertex_buffer.as_ref() {
-                vb.Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as *mut *mut c_void))
-                    .map_err(print_device_removed_reason)?;
-                std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
-                vb.Unmap(0, Some(&range));
-            };
+            self.buffers
+                .vertex_buffer
+                .Map(0, Some(&range), Some(&mut vtx_resource as *mut _ as *mut *mut c_void))
+                .map_err(print_device_removed_reason)?;
+            std::ptr::copy_nonoverlapping(vertices.as_ptr(), vtx_resource, vertices.len());
+            self.buffers.vertex_buffer.Unmap(0, Some(&range));
 
-            if let Some(ib) = self.frame_resources.index_buffer.as_ref() {
-                ib.Map(0, Some(&range), Some(&mut idx_resource as *mut _ as *mut *mut c_void))
-                    .map_err(print_device_removed_reason)?;
-                std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
-                ib.Unmap(0, Some(&range));
+            self.buffers
+                .index_buffer
+                .Map(0, Some(&range), Some(&mut idx_resource as *mut _ as *mut *mut c_void))
+                .map_err(print_device_removed_reason)?;
+            std::ptr::copy_nonoverlapping(indices.as_ptr(), idx_resource, indices.len());
+            self.buffers.index_buffer.Unmap(0, Some(&range));
+
+            self.buffers.projection_buffer = {
+                let [l, t, r, b] = [
+                    draw_data.display_pos[0],
+                    draw_data.display_pos[1],
+                    draw_data.display_pos[0] + draw_data.display_size[0],
+                    draw_data.display_pos[1] + draw_data.display_size[1],
+                ];
+
+                [
+                    [2. / (r - l), 0., 0., 0.],
+                    [0., 2. / (t - b), 0., 0.],
+                    [0., 0., 0.5, 0.],
+                    [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+                ]
             };
         }
 
