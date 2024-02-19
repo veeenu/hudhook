@@ -1,44 +1,30 @@
-use std::{
-    mem,
-    ptr::{self, null_mut},
-    sync::OnceLock,
-};
+use std::mem;
+use std::ptr::{self, null_mut};
+use std::sync::OnceLock;
 
 use tracing::trace;
-use windows::{
-    core::{w, ComInterface, Result},
-    Win32::{
-        Foundation::{GENERIC_ALL, HWND},
-        Graphics::{
-            Direct3D::D3D_FEATURE_LEVEL_11_1,
-            Direct3D11::{ID3D11Device, ID3D11Resource, ID3D11Texture2D},
-            Direct3D11on12::{D3D11On12CreateDevice, ID3D11On12Device},
-            Direct3D12::{
-                ID3D12Resource, D3D12_CLEAR_VALUE, D3D12_CLEAR_VALUE_0,
-                D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES,
-                D3D12_HEAP_TYPE_READBACK, D3D12_MEMORY_POOL_UNKNOWN, D3D12_RESOURCE_DESC,
-                D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_NONE,
-                D3D12_RESOURCE_STATE_COPY_DEST, D3D12_TEXTURE_LAYOUT_UNKNOWN,
-            },
-            Direct3D9::{
-                Direct3DCreate9Ex, IDirect3DDevice9, IDirect3DTexture9, IDirect3DVertexBuffer9,
-                D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DFMT_A8B8G8R8, D3DFVF_DIFFUSE,
-                D3DFVF_TEX1, D3DFVF_XYZRHW, D3DPOOL_DEFAULT, D3DPT_TRIANGLESTRIP,
-                D3DRS_ALPHABLENDENABLE, D3DRS_DESTBLEND, D3DRS_SRCBLEND, D3DUSAGE_RENDERTARGET,
-                D3DVIEWPORT9, D3D_SDK_VERSION,
-            },
-            Dxgi::{
-                Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
-                IDXGIResource,
-            },
-        },
-    },
+use windows::core::{w, ComInterface, Result};
+use windows::Win32::Foundation::{GENERIC_ALL, HWND};
+use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_1;
+use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Resource, ID3D11Texture2D};
+use windows::Win32::Graphics::Direct3D11on12::{D3D11On12CreateDevice, ID3D11On12Device};
+use windows::Win32::Graphics::Direct3D12::{
+    ID3D12Resource, D3D12_CLEAR_VALUE, D3D12_CLEAR_VALUE_0, D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+    D3D12_HEAP_FLAG_NONE, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_READBACK,
+    D3D12_MEMORY_POOL_UNKNOWN, D3D12_RESOURCE_DESC, D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+    D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_TEXTURE_LAYOUT_UNKNOWN,
 };
+use windows::Win32::Graphics::Direct3D9::{
+    Direct3DCreate9Ex, IDirect3DDevice9, IDirect3DTexture9, IDirect3DVertexBuffer9,
+    D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DFMT_A8B8G8R8, D3DFVF_DIFFUSE, D3DFVF_TEX1,
+    D3DFVF_XYZRHW, D3DPOOL_DEFAULT, D3DPT_TRIANGLESTRIP, D3DRS_ALPHABLENDENABLE, D3DRS_DESTBLEND,
+    D3DRS_SRCBLEND, D3DUSAGE_RENDERTARGET, D3DVIEWPORT9, D3D_SDK_VERSION,
+};
+use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+use windows::Win32::Graphics::Dxgi::IDXGIResource;
 
-use crate::{
-    renderer::RenderedSurface,
-    util::{self, try_out_param},
-};
+use crate::renderer::RenderedSurface;
+use crate::util::{self, try_out_param};
 
 #[repr(C)]
 struct Vertex {

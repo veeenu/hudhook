@@ -1,13 +1,9 @@
 use windows::core::Result;
-use windows::Win32::{
-    Foundation::{BOOL, HWND},
-    Graphics::{
-        DirectComposition::{
-            DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
-        },
-        Dxgi::IDXGISwapChain3,
-    },
+use windows::Win32::Foundation::{BOOL, HWND};
+use windows::Win32::Graphics::DirectComposition::{
+    DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
+use windows::Win32::Graphics::Dxgi::IDXGISwapChain3;
 
 // Holds and manages the lifetimes for the DirectComposition data structures.
 pub struct Compositor {

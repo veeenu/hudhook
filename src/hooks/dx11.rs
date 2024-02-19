@@ -64,7 +64,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         let mut compositor = COMPOSITOR
             .get_or_init(|| {
                 Mutex::new(
-                    Compositor::new(&p_this.GetDevice::<ID3D11Device1>().unwrap(), hwnd, &surface)
+                    Compositor::new(&p_this.GetDevice::<ID3D11Device1>().unwrap(), &surface)
                         .unwrap(),
                 )
             })

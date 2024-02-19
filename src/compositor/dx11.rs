@@ -1,145 +1,51 @@
-use std::{
-    mem::{self, size_of_val},
-    ptr::{self, null_mut},
-    slice,
-    sync::OnceLock,
-};
+use std::{mem, ptr, slice};
 
 use once_cell::sync::OnceCell;
-use tracing::trace;
-use windows::{
-    core::{s, w, ComInterface, Result, PCWSTR},
-    Win32::{
-        Foundation::{CloseHandle, BOOL, GENERIC_ALL, HWND, RECT},
-        Graphics::{
-            Direct3D::{
-                Fxc::D3DCompile, ID3DBlob, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, D3D11_SRV_DIMENSION_TEXTURE2D,
-                D3D_FEATURE_LEVEL_11_1,
-            },
-            Direct3D11::{
-                ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device,
-                ID3D11Device1, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader,
-                ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState,
-                ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11VertexShader,
-                D3D11_APPEND_ALIGNED_ELEMENT, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER,
-                D3D11_BIND_RENDER_TARGET, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC,
-                D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
-                D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
-                D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_STENCIL_DESC,
-                D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAP_WRITE_DISCARD,
-                D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_RESOURCE_MISC_SHARED,
-                D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
-                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA,
-                D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP, D3D11_USAGE_DEFAULT,
-                D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
-            },
-            Direct3D11on12::{D3D11On12CreateDevice, ID3D11On12Device, D3D11_RESOURCE_FLAGS},
-            Direct3D12::{
-                ID3D12CommandQueue, ID3D12Device, ID3D12Resource, D3D12_CLEAR_VALUE,
-                D3D12_CLEAR_VALUE_0, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_HEAP_FLAG_NONE,
-                D3D12_HEAP_FLAG_SHARED, D3D12_HEAP_PROPERTIES, D3D12_HEAP_TYPE_DEFAULT,
-                D3D12_HEAP_TYPE_READBACK, D3D12_MEMORY_POOL_UNKNOWN, D3D12_RESOURCE_DESC,
-                D3D12_RESOURCE_DIMENSION_TEXTURE2D, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-                D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST,
-                D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT,
-                D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_TEXTURE_LAYOUT_UNKNOWN,
-            },
-            Direct3D9::{
-                Direct3DCreate9Ex, IDirect3DDevice9, IDirect3DTexture9, IDirect3DVertexBuffer9,
-                D3DBLEND_INVSRCALPHA, D3DBLEND_SRCALPHA, D3DFMT_A8B8G8R8, D3DFVF_DIFFUSE,
-                D3DFVF_TEX1, D3DFVF_XYZRHW, D3DPOOL_DEFAULT, D3DPT_TRIANGLESTRIP,
-                D3DRS_ALPHABLENDENABLE, D3DRS_DESTBLEND, D3DRS_SRCBLEND, D3DUSAGE_RENDERTARGET,
-                D3DVIEWPORT9, D3D_SDK_VERSION,
-            },
-            Dxgi::{
-                Common::{
-                    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT,
-                    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
-                },
-                IDXGIResource, IDXGISwapChain, DXGI_SWAP_CHAIN_DESC,
-            },
-        },
-    },
+use windows::core::{s, w, ComInterface, Result};
+use windows::Win32::Foundation::{CloseHandle, BOOL, GENERIC_ALL, RECT};
+use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+use windows::Win32::Graphics::Direct3D::{
+    ID3DBlob, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D,
 };
-
-use crate::{
-    renderer::RenderedSurface,
-    util::{self, try_out_param, try_out_ptr},
+use windows::Win32::Graphics::Direct3D11::{
+    ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device1, ID3D11DeviceContext,
+    ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
+    ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
+    ID3D11VertexShader, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_BIND_INDEX_BUFFER,
+    D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
+    D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+    D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
+    D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID,
+    D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
+    D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
+    D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+    D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP,
+    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
 };
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_UNKNOWN,
+};
+use windows::Win32::Graphics::Dxgi::{IDXGISwapChain, DXGI_SWAP_CHAIN_DESC};
 
-/*struct Interop {
-    d3d12: ID3D12Device,
-    command_queue: ID3D12CommandQueue,
-    d3d11: ID3D11Device,
-    d3d11on12: ID3D11On12Device,
-    d3d11_ctx: ID3D11DeviceContext,
-}
-
-impl Interop {
-    fn new(surface: &RenderedSurface) -> Result<Self> {
-        let mut d3d11on12 = None;
-        let mut d3d11_ctx = None;
-        unsafe {
-            D3D11On12CreateDevice(
-                &surface.device,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT.0,
-                Some(&[D3D_FEATURE_LEVEL_11_1]),
-                Some(&[Some(surface.command_queue.cast()?)]),
-                0,
-                Some(&mut d3d11on12),
-                Some(&mut d3d11_ctx),
-                None,
-            )
-        }?;
-
-        let d3d11on12 = d3d11on12.unwrap().cast::<ID3D11On12Device>()?;
-        let d3d11 = d3d11on12.cast::<ID3D11Device>()?;
-        let d3d11_ctx = d3d11_ctx.unwrap();
-
-        Ok(Self {
-            d3d12: surface.device.clone(),
-            command_queue: surface.command_queue.clone(),
-            d3d11,
-            d3d11_ctx,
-            d3d11on12,
-        })
-    }
-}*/
+use crate::renderer::RenderedSurface;
+use crate::util::{try_out_param, try_out_ptr};
 
 pub struct Compositor {
     device: ID3D11Device1,
     device_ctx: ID3D11DeviceContext,
-    target_hwnd: HWND,
-    width: i32,
-    height: i32,
-    // interop: Interop,
     quad_renderer: OnceCell<QuadRenderer>,
 }
 
 impl Compositor {
-    pub fn new(
-        device: &ID3D11Device1,
-        target_hwnd: HWND,
-        surface: &RenderedSurface,
-    ) -> Result<Self> {
-        let (width, height) = util::win_size(target_hwnd);
-
+    pub fn new(device: &ID3D11Device1, surface: &RenderedSurface) -> Result<Self> {
         Ok(Self {
             device: device.clone(),
             device_ctx: unsafe { device.GetImmediateContext()? },
-            target_hwnd,
-            width,
-            height,
-            // interop: Interop::new(surface)?,
             quad_renderer: OnceCell::new(),
         })
     }
 
     pub fn composite(&mut self, surface: RenderedSurface, target: &IDXGISwapChain) -> Result<()> {
-        trace!("handle");
         let handle = unsafe {
             surface.device.CreateSharedHandle(
                 &surface.resource,
@@ -149,7 +55,6 @@ impl Compositor {
             )?
         };
 
-        trace!("resource");
         let resource: ID3D11Texture2D = unsafe { self.device.OpenSharedResource1(handle) }?;
         unsafe { self.render_quad(resource, target) }?;
 
@@ -513,8 +418,8 @@ impl QuadRenderer {
         d3d11_ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
             TopLeftX: 0.,
             TopLeftY: 0.,
-            Width: 800.,  // desc.BufferDesc.Width as f32,
-            Height: 600., //desc.BufferDesc.Height as f32,
+            Width: desc.BufferDesc.Width as f32,
+            Height: desc.BufferDesc.Height as f32,
             MinDepth: 0.,
             MaxDepth: 1.,
         }]));
