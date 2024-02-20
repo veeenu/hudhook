@@ -687,22 +687,19 @@ impl TextureHeap {
             },
             None,
         );
-        self.command_list.ResourceBarrier(&[D3D12_RESOURCE_BARRIER {
-            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            Anonymous: D3D12_RESOURCE_BARRIER_0 {
-                Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                    pResource: mem::transmute_copy(&texture),
-                    Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                    StateBefore: D3D12_RESOURCE_STATE_COPY_DEST,
-                    StateAfter: D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                }),
-            },
-        }]);
+        let barriers = [create_barrier(
+            &texture,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        )];
+
+        self.command_list.ResourceBarrier(&barriers);
         self.command_list.Close()?;
         self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
         self.command_queue.Signal(&self.fence.fence, self.fence.value)?;
         self.fence.wait()?;
+
+        barriers.into_iter().for_each(drop_barrier);
 
         self.device.CreateShaderResourceView(
             &texture,
@@ -727,6 +724,29 @@ impl TextureHeap {
 
         Ok(texture_id)
     }
+}
+
+fn create_barrier(
+    resource: &ID3D12Resource,
+    before: D3D12_RESOURCE_STATES,
+    after: D3D12_RESOURCE_STATES,
+) -> D3D12_RESOURCE_BARRIER {
+    D3D12_RESOURCE_BARRIER {
+        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        Anonymous: D3D12_RESOURCE_BARRIER_0 {
+            Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+                pResource: unsafe { mem::transmute_copy(resource) },
+                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                StateBefore: before,
+                StateAfter: after,
+            }),
+        },
+    }
+}
+
+fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
+    drop(ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition }))
 }
 
 struct Fence {
