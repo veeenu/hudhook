@@ -1,13 +1,11 @@
 // NOTE: see this for ManuallyDrop instanceshttps://github.com/microsoft/windows-rs/issues/2386
 
 use std::ffi::c_void;
-use std::mem::{self, ManuallyDrop};
-use std::{ptr, slice};
+use std::{mem, ptr, slice};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-
 use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result, PCWSTR};
 use windows::Win32::Foundation::*;
@@ -17,12 +15,10 @@ use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::System::Threading::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::util::{self, try_out_param, try_out_ptr};
-
 use super::keys;
+use crate::util::{self, Fence};
 
 pub struct RenderEngine {
     device: ID3D12Device,
@@ -52,7 +48,7 @@ impl RenderEngine {
         let dxgi_factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }?;
         let dxgi_adapter = unsafe { dxgi_factory.EnumAdapters(0) }?;
 
-        let device: ID3D12Device = try_out_ptr(|v| unsafe {
+        let device: ID3D12Device = util::try_out_ptr(|v| unsafe {
             D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
         })?;
 
@@ -118,13 +114,13 @@ impl RenderEngine {
             self.command_allocator.Reset()?;
             self.command_list.Reset(&self.command_allocator, None)?;
 
-            let present_to_rtv_barriers = [create_barrier(
+            let present_to_rtv_barriers = [util::create_barrier(
                 &self.rtv_target,
                 D3D12_RESOURCE_STATE_PRESENT,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
             )];
 
-            let rtv_to_present_barriers = [create_barrier(
+            let rtv_to_present_barriers = [util::create_barrier(
                 &self.rtv_target,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_PRESENT,
@@ -135,16 +131,16 @@ impl RenderEngine {
             self.command_list.SetDescriptorHeaps(&[Some(self.texture_heap.srv_heap.clone())]);
             self.command_list.ClearRenderTargetView(self.rtv_heap_start, &[0.0; 4], None);
 
-            self.render_draw_data(ctx, draw_data)?;
+            self.render_draw_data(draw_data)?;
 
             self.command_list.ResourceBarrier(&rtv_to_present_barriers);
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-            self.command_queue.Signal(&self.fence.fence, self.fence.value)?;
+            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
             self.fence.wait()?;
             self.fence.incr();
 
-            present_to_rtv_barriers.into_iter().for_each(drop_barrier);
-            rtv_to_present_barriers.into_iter().for_each(drop_barrier);
+            present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
+            rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
         }
 
         Ok(self.rtv_target.clone())
@@ -166,7 +162,7 @@ impl RenderEngine {
         if active_window == hwnd
             || (!HANDLE(active_window.0).is_invalid() && IsChild(active_window, hwnd).as_bool())
         {
-            let mut pos = try_out_param(|v| GetCursorPos(v))?;
+            let mut pos = util::try_out_param(|v| GetCursorPos(v))?;
             if ScreenToClient(hwnd, &mut pos).as_bool() {
                 io.mouse_pos = [pos.x as f32, pos.y as f32];
             }
@@ -182,7 +178,7 @@ impl RenderEngine {
         Ok(())
     }
 
-    unsafe fn render_draw_data(&mut self, ctx: &mut Context, draw_data: DrawData) -> Result<()> {
+    unsafe fn render_draw_data(&mut self, draw_data: DrawData) -> Result<()> {
         if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
             trace!(
                 "Insufficent display size {}x{}, skip rendering",
@@ -215,12 +211,12 @@ impl RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         };
 
         let mut vtx_offset = 0usize;
@@ -351,7 +347,7 @@ unsafe fn create_render_target(
     width: u32,
     height: u32,
 ) -> Result<ID3D12Resource> {
-    try_out_ptr(|v| {
+    util::try_out_ptr(|v| {
         device.CreateCommittedResource(
             &D3D12_HEAP_PROPERTIES {
                 Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -509,7 +505,7 @@ unsafe fn create_shader_program(
               return output;
             }"#;
 
-    let vtx_shader: ID3DBlob = try_out_ptr(|v| unsafe {
+    let vtx_shader: ID3DBlob = util::try_out_ptr(|v| unsafe {
         D3DCompile(
             vs.as_ptr() as _,
             vs.len(),
@@ -541,7 +537,7 @@ unsafe fn create_shader_program(
               return out_col;
             }"#;
 
-    let pix_shader = try_out_ptr(|v| unsafe {
+    let pix_shader = util::try_out_ptr(|v| unsafe {
         D3DCompile(
             ps.as_ptr() as _,
             ps.len(),
@@ -679,7 +675,7 @@ impl<T> Buffer<T> {
     }
 
     fn create_resource(device: &ID3D12Device, resource_capacity: usize) -> Result<ID3D12Resource> {
-        try_out_ptr(|v| unsafe {
+        util::try_out_ptr(|v| unsafe {
             device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: D3D12_HEAP_TYPE_UPLOAD,
@@ -813,7 +809,7 @@ impl TextureHeap {
             ptr: gpu_heap_start.ptr + (texture_index * heap_inc_size) as u64,
         };
 
-        let texture: ID3D12Resource = try_out_ptr(|v| unsafe {
+        let texture: ID3D12Resource = util::try_out_ptr(|v| unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -843,7 +839,7 @@ impl TextureHeap {
 
         let upload_pitch = width * 4;
         let upload_size = height * upload_pitch;
-        let upload_buffer: ID3D12Resource = try_out_ptr(|v| unsafe {
+        let upload_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: D3D12_HEAP_TYPE_UPLOAD,
@@ -905,7 +901,7 @@ impl TextureHeap {
             },
             None,
         );
-        let barriers = [create_barrier(
+        let barriers = [util::create_barrier(
             &texture,
             D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -914,10 +910,10 @@ impl TextureHeap {
         self.command_list.ResourceBarrier(&barriers);
         self.command_list.Close()?;
         self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-        self.command_queue.Signal(&self.fence.fence, self.fence.value)?;
+        self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
         self.fence.wait()?;
 
-        barriers.into_iter().for_each(drop_barrier);
+        barriers.into_iter().for_each(util::drop_barrier);
 
         self.device.CreateShaderResourceView(
             &texture,
@@ -941,59 +937,5 @@ impl TextureHeap {
         self.textures.push(Texture { resource: texture, id: texture_id });
 
         Ok(texture_id)
-    }
-}
-
-fn create_barrier(
-    resource: &ID3D12Resource,
-    before: D3D12_RESOURCE_STATES,
-    after: D3D12_RESOURCE_STATES,
-) -> D3D12_RESOURCE_BARRIER {
-    D3D12_RESOURCE_BARRIER {
-        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: unsafe { mem::transmute_copy(resource) },
-                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                StateBefore: before,
-                StateAfter: after,
-            }),
-        },
-    }
-}
-
-fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
-    ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-}
-
-struct Fence {
-    fence: ID3D12Fence,
-    value: u64,
-    event: HANDLE,
-}
-
-impl Fence {
-    fn new(device: &ID3D12Device) -> Result<Self> {
-        let fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
-        let value = 0;
-        let event = unsafe { CreateEventW(None, false, true, None) }?;
-
-        Ok(Fence { fence, value, event })
-    }
-
-    fn incr(&mut self) {
-        self.value += 1;
-    }
-
-    fn wait(&mut self) -> Result<()> {
-        unsafe {
-            if self.fence.GetCompletedValue() < self.value {
-                self.fence.SetEventOnCompletion(self.value, self.event)?;
-                WaitForSingleObjectEx(self.event, u32::MAX, false);
-            }
-        }
-
-        Ok(())
     }
 }

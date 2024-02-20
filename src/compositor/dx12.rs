@@ -59,6 +59,7 @@ struct Vertex {
     uv: [f32; 2],
 }
 
+#[deprecated]
 pub struct Compositor(CompositorState);
 
 enum CompositorState {

@@ -815,7 +815,8 @@ impl RenderEngine {
         Ok(())
     }
 
-    // TODO refactor this to pre-create command allocators/lists in the top level object
+    // TODO refactor this to pre-create command allocators/lists in the top level
+    // object
     fn create_texture_inner(
         &mut self,
         data: &[u8],
@@ -1117,12 +1118,12 @@ impl RenderEngine {
                     draw_data.display_pos[1] + draw_data.display_size[1],
                 ];
 
-                [
-                    [2. / (r - l), 0., 0., 0.],
-                    [0., 2. / (t - b), 0., 0.],
-                    [0., 0., 0.5, 0.],
-                    [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-                ]
+                [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                    (r + l) / (l - r),
+                    (t + b) / (b - t),
+                    0.5,
+                    1.0,
+                ]]
             };
         }
 
