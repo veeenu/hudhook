@@ -815,6 +815,7 @@ impl RenderEngine {
         Ok(())
     }
 
+    // TODO refactor this to pre-create command allocators/lists in the top level object
     fn create_texture_inner(
         &mut self,
         data: &[u8],
@@ -913,13 +914,13 @@ impl RenderEngine {
         let cmd_allocator: ID3D12CommandAllocator =
             unsafe { self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
 
-        unsafe { cmd_allocator.SetName(w!("hudhook font texture Command Allocator")) }?;
+        unsafe { cmd_allocator.SetName(w!("hudhook texture Command Allocator")) }?;
 
         let cmd_list: ID3D12GraphicsCommandList = unsafe {
             self.device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &cmd_allocator, None)
         }?;
 
-        unsafe { cmd_list.SetName(w!("hudhook font texture Command List")) }?;
+        unsafe { cmd_list.SetName(w!("hudhook texture Command List")) }?;
 
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: upload_buffer,
@@ -944,22 +945,20 @@ impl RenderEngine {
             Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
         };
 
-        let barrier = D3D12_RESOURCE_BARRIER {
-            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            Anonymous: D3D12_RESOURCE_BARRIER_0 {
-                Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                    pResource: p_texture.clone(),
-                    Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                    StateBefore: D3D12_RESOURCE_STATE_COPY_DEST,
-                    StateAfter: D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                }),
-            },
-        };
-
         unsafe {
             cmd_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
-            cmd_list.ResourceBarrier(&[barrier]);
+            cmd_list.ResourceBarrier(&[D3D12_RESOURCE_BARRIER {
+                Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+                Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                Anonymous: D3D12_RESOURCE_BARRIER_0 {
+                    Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+                        pResource: p_texture.clone(),
+                        Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                        StateBefore: D3D12_RESOURCE_STATE_COPY_DEST,
+                        StateAfter: D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                    }),
+                },
+            }]);
             cmd_list.Close().unwrap();
             self.command_queue.ExecuteCommandLists(&[Some(cmd_list.cast()?)]);
             self.command_queue.Signal(&fence, 1)?;
@@ -967,24 +966,26 @@ impl RenderEngine {
             WaitForSingleObject(event, u32::MAX);
         };
 
-        let srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC {
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
-            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                Texture2D: D3D12_TEX2D_SRV {
-                    MostDetailedMip: 0,
-                    MipLevels: 1,
-                    PlaneSlice: Default::default(),
-                    ResourceMinLODClamp: Default::default(),
-                },
-            },
-        };
-
         unsafe { CloseHandle(event)? };
 
         unsafe {
-            self.device.CreateShaderResourceView(p_texture.as_ref(), Some(&srv_desc), cpu_desc)
+            self.device.CreateShaderResourceView(
+                p_texture.as_ref(),
+                Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
+                    Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                    Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                        Texture2D: D3D12_TEX2D_SRV {
+                            MostDetailedMip: 0,
+                            MipLevels: 1,
+                            PlaneSlice: Default::default(),
+                            ResourceMinLODClamp: Default::default(),
+                        },
+                    },
+                }),
+                cpu_desc,
+            )
         };
 
         let tex_id = TextureId::from(gpu_desc.ptr as usize);
