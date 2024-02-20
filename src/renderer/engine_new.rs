@@ -1,12 +1,14 @@
 // NOTE: see this for ManuallyDrop instanceshttps://github.com/microsoft/windows-rs/issues/2386
 
+use std::ffi::c_void;
 use std::mem::{self, ManuallyDrop};
 use std::{ptr, slice};
 
-use imgui::{BackendFlags, Context, DrawData, DrawVert, TextureId};
+use imgui::internal::RawWrapper;
+use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 
-use tracing::error;
+use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
@@ -14,10 +16,13 @@ use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 use windows::Win32::Graphics::Dxgi::*;
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::util::{try_out_param, try_out_ptr, Barrier};
+use crate::util::{self, try_out_param, try_out_ptr};
+
+use super::keys;
 
 pub struct RenderEngine {
     device: ID3D12Device,
@@ -27,6 +32,7 @@ pub struct RenderEngine {
     command_list: ID3D12GraphicsCommandList,
 
     rtv_heap: ID3D12DescriptorHeap,
+    rtv_heap_start: D3D12_CPU_DESCRIPTOR_HANDLE,
     rtv_target: ID3D12Resource,
 
     texture_heap: TextureHeap,
@@ -55,6 +61,7 @@ impl RenderEngine {
         }?;
 
         let (rtv_heap, mut texture_heap) = unsafe { create_heaps(&device) }?;
+        let rtv_heap_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
         let rtv_target = unsafe { create_render_target(&device, width, height) }?;
 
         let (root_signature, pipeline_state) = unsafe { create_shader_program(&device) }?;
@@ -83,6 +90,7 @@ impl RenderEngine {
             command_allocator,
             command_list,
             rtv_heap,
+            rtv_heap_start,
             rtv_target,
             texture_heap,
             root_signature,
@@ -98,8 +106,218 @@ impl RenderEngine {
         unsafe { self.texture_heap.create_texture(data, width, height) }
     }
 
-    pub fn render(&mut self, draw_data: DrawData) -> Result<()> {
-        todo!();
+    pub fn render(
+        &mut self,
+        hwnd: HWND,
+        ctx: &mut Context,
+        draw_data: DrawData,
+    ) -> Result<ID3D12Resource> {
+        unsafe {
+            self.render_setup(hwnd, ctx)?;
+
+            self.command_allocator.Reset()?;
+            self.command_list.Reset(&self.command_allocator, None)?;
+
+            let present_to_rtv_barriers = [create_barrier(
+                &self.rtv_target,
+                D3D12_RESOURCE_STATE_PRESENT,
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+            )];
+
+            let rtv_to_present_barriers = [create_barrier(
+                &self.rtv_target,
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_PRESENT,
+            )];
+
+            self.command_list.ResourceBarrier(&present_to_rtv_barriers);
+            self.command_list.OMSetRenderTargets(1, Some(&self.rtv_heap_start), false, None);
+            self.command_list.SetDescriptorHeaps(&[Some(self.texture_heap.srv_heap.clone())]);
+            self.command_list.ClearRenderTargetView(self.rtv_heap_start, &[0.0; 4], None);
+
+            self.render_draw_data(ctx, draw_data)?;
+
+            self.command_list.ResourceBarrier(&rtv_to_present_barriers);
+            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
+            self.command_queue.Signal(&self.fence.fence, self.fence.value)?;
+            self.fence.wait()?;
+            self.fence.incr();
+
+            present_to_rtv_barriers.into_iter().for_each(drop_barrier);
+            rtv_to_present_barriers.into_iter().for_each(drop_barrier);
+        }
+
+        Ok(self.rtv_target.clone())
+    }
+
+    unsafe fn render_setup(&mut self, hwnd: HWND, ctx: &mut Context) -> Result<()> {
+        let desc = self.rtv_target.GetDesc();
+        let (width, height) = util::win_size(hwnd);
+        let (width, height) = (width as u32, height as u32);
+
+        let io = ctx.io_mut();
+
+        if width as u64 != desc.Width || height != desc.Height {
+            self.resize(width, height)?;
+            io.display_size = [width as f32, height as f32];
+        }
+
+        let active_window = GetForegroundWindow();
+        if active_window == hwnd
+            || (!HANDLE(active_window.0).is_invalid() && IsChild(active_window, hwnd).as_bool())
+        {
+            let mut pos = try_out_param(|v| GetCursorPos(v))?;
+            if ScreenToClient(hwnd, &mut pos).as_bool() {
+                io.mouse_pos = [pos.x as f32, pos.y as f32];
+            }
+        }
+
+        io.nav_active = true;
+        io.nav_visible = true;
+
+        for (key, virtual_key) in keys::KEYS {
+            io[key] = virtual_key.0 as u32;
+        }
+
+        Ok(())
+    }
+
+    unsafe fn render_draw_data(&mut self, ctx: &mut Context, draw_data: DrawData) -> Result<()> {
+        if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
+            trace!(
+                "Insufficent display size {}x{}, skip rendering",
+                draw_data.display_size[0],
+                draw_data.display_size[1]
+            );
+            return Ok(());
+        }
+
+        self.vertex_buffer.clear();
+        self.index_buffer.clear();
+
+        draw_data
+            .draw_lists()
+            .map(|draw_list| {
+                (draw_list.vtx_buffer().iter().copied(), draw_list.idx_buffer().iter().copied())
+            })
+            .for_each(|(vertices, indices)| {
+                self.vertex_buffer.extend(vertices);
+                self.index_buffer.extend(indices);
+            });
+
+        self.vertex_buffer.upload(&self.device)?;
+        self.index_buffer.upload(&self.device)?;
+        self.projection_buffer = {
+            let [l, t, r, b] = [
+                draw_data.display_pos[0],
+                draw_data.display_pos[1],
+                draw_data.display_pos[0] + draw_data.display_size[0],
+                draw_data.display_pos[1] + draw_data.display_size[1],
+            ];
+
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
+        };
+
+        let mut vtx_offset = 0usize;
+        let mut idx_offset = 0usize;
+
+        for cl in draw_data.draw_lists() {
+            for cmd in cl.commands() {
+                match cmd {
+                    DrawCmd::Elements { count, cmd_params } => {
+                        let [cx, cy, cw, ch] = cmd_params.clip_rect;
+                        let [x, y] = draw_data.display_pos;
+                        let r = RECT {
+                            left: (cx - x) as i32,
+                            top: (cy - y) as i32,
+                            right: (cw - x) as i32,
+                            bottom: (ch - y) as i32,
+                        };
+
+                        if r.right > r.left && r.bottom > r.top {
+                            let tex_handle = D3D12_GPU_DESCRIPTOR_HANDLE {
+                                ptr: cmd_params.texture_id.id() as _,
+                            };
+                            unsafe {
+                                self.command_list.SetGraphicsRootDescriptorTable(1, tex_handle);
+                                self.command_list.RSSetScissorRects(&[r]);
+                                self.command_list.DrawIndexedInstanced(
+                                    count as _,
+                                    1,
+                                    (cmd_params.idx_offset + idx_offset) as _,
+                                    (cmd_params.vtx_offset + vtx_offset) as _,
+                                    0,
+                                );
+                            }
+                        }
+                    },
+                    DrawCmd::ResetRenderState => {
+                        self.setup_render_state(&draw_data);
+                    },
+                    DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
+                        callback(cl.raw(), raw_cmd)
+                    },
+                }
+            }
+            idx_offset += cl.idx_buffer().len();
+            vtx_offset += cl.vtx_buffer().len();
+        }
+
+        Ok(())
+    }
+
+    unsafe fn setup_render_state(&self, draw_data: &DrawData) {
+        self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
+            TopLeftX: 0f32,
+            TopLeftY: 0f32,
+            Width: draw_data.display_size[0],
+            Height: draw_data.display_size[1],
+            MinDepth: 0f32,
+            MaxDepth: 1f32,
+        }]);
+
+        self.command_list.IASetVertexBuffers(
+            0,
+            Some(&[D3D12_VERTEX_BUFFER_VIEW {
+                BufferLocation: self.vertex_buffer.resource.GetGPUVirtualAddress(),
+                SizeInBytes: (self.vertex_buffer.data.len() * mem::size_of::<DrawVert>()) as _,
+                StrideInBytes: mem::size_of::<DrawVert>() as _,
+            }]),
+        );
+
+        self.command_list.IASetIndexBuffer(Some(&D3D12_INDEX_BUFFER_VIEW {
+            BufferLocation: self.index_buffer.resource.GetGPUVirtualAddress(),
+            SizeInBytes: (self.index_buffer.data.len() * mem::size_of::<DrawIdx>()) as _,
+            Format: if mem::size_of::<DrawIdx>() == 2 {
+                DXGI_FORMAT_R16_UINT
+            } else {
+                DXGI_FORMAT_R32_UINT
+            },
+        }));
+        self.command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        self.command_list.SetPipelineState(&self.pipeline_state);
+        self.command_list.SetGraphicsRootSignature(&self.root_signature);
+        self.command_list.SetGraphicsRoot32BitConstants(
+            0,
+            16,
+            self.projection_buffer.as_ptr() as *const c_void,
+            0,
+        );
+        self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
+    }
+
+    unsafe fn resize(&mut self, width: u32, height: u32) -> Result<()> {
+        drop(mem::replace(
+            &mut self.rtv_target,
+            create_render_target(&self.device, width, height)?,
+        ));
+
+        Ok(())
     }
 }
 
@@ -494,7 +712,7 @@ impl<T> Buffer<T> {
         self.data.clear();
     }
 
-    fn extend<I: Iterator<Item = T>>(&mut self, it: I) {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, it: I) {
         self.data.extend(it)
     }
 
@@ -746,7 +964,7 @@ fn create_barrier(
 }
 
 fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
-    drop(ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition }))
+    ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
 }
 
 struct Fence {
@@ -759,9 +977,13 @@ impl Fence {
     fn new(device: &ID3D12Device) -> Result<Self> {
         let fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
         let value = 0;
-        let event = unsafe { CreateEventW(None, false, false, None) }?;
+        let event = unsafe { CreateEventW(None, false, true, None) }?;
 
         Ok(Fence { fence, value, event })
+    }
+
+    fn incr(&mut self) {
+        self.value += 1;
     }
 
     fn wait(&mut self) -> Result<()> {
@@ -771,7 +993,6 @@ impl Fence {
                 WaitForSingleObjectEx(self.event, u32::MAX, false);
             }
         }
-        self.value += 1;
 
         Ok(())
     }
