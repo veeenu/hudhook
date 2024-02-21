@@ -8,7 +8,7 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use tracing::{error, trace};
-use windows::core::{s, w, ComInterface, Result, PCWSTR};
+use windows::core::{s, w, ComInterface, Interface, Result, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
@@ -18,7 +18,7 @@ use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::keys;
+use super::{keys, print_dxgi_debug_messages};
 use crate::util::{self, Fence};
 
 pub struct RenderEngine {
@@ -54,12 +54,17 @@ impl RenderEngine {
         })?;
 
         let (command_queue, command_allocator, command_list) = unsafe {
-            create_command_objects(&device, w!("hudhook Command Queue"), w!("hudhook Command List"))
+            create_command_objects(
+                &device,
+                w!("hudhook Render Engine Command Queue"),
+                w!("hudhook Render Engine Command List"),
+            )
         }?;
 
         let (rtv_heap, mut texture_heap) = unsafe { create_heaps(&device) }?;
         let rtv_heap_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
-        let rtv_target = unsafe { create_render_target(&device, width, height) }?;
+        let rtv_target = unsafe { create_render_target(&device, width, height, rtv_heap_start) }?;
+        unsafe { rtv_target.SetName(w!("hudhook Render Target")) }?;
 
         let (root_signature, pipeline_state) = unsafe { create_shader_program(&device) }?;
 
@@ -123,22 +128,20 @@ impl RenderEngine {
             self.command_list.ResourceBarrier(&present_to_rtv_barriers);
             self.command_list.OMSetRenderTargets(1, Some(&self.rtv_heap_start), false, None);
             self.command_list.SetDescriptorHeaps(&[Some(self.texture_heap.srv_heap.clone())]);
-            trace!("a");
             self.command_list.ClearRenderTargetView(
                 self.rtv_heap_start,
                 &[0.0, 0.0, 0.0, 0.0],
                 None,
             );
-            trace!("a");
 
             self.render_draw_data(draw_data)?;
 
             self.command_list.ResourceBarrier(&rtv_to_present_barriers);
+            self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
             self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
             self.fence.wait()?;
             self.fence.incr();
-            trace!("a");
 
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
@@ -222,6 +225,8 @@ impl RenderEngine {
             ]]
         };
 
+        self.setup_render_state(draw_data);
+
         let mut vtx_offset = 0usize;
         let mut idx_offset = 0usize;
 
@@ -240,7 +245,7 @@ impl RenderEngine {
 
                         if r.right > r.left && r.bottom > r.top {
                             let tex_handle = D3D12_GPU_DESCRIPTOR_HANDLE {
-                                ptr: cmd_params.texture_id.id() as _,
+                                ptr: cmd_params.texture_id.id() as u64,
                             };
                             unsafe {
                                 self.command_list.SetGraphicsRootDescriptorTable(1, tex_handle);
@@ -252,10 +257,14 @@ impl RenderEngine {
                                     (cmd_params.vtx_offset + vtx_offset) as _,
                                     0,
                                 );
+                                print_dxgi_debug_messages();
                             }
                         }
                     },
                     DrawCmd::ResetRenderState => {
+                        // Q: looking at the commands recorded in here, it
+                        // doesn't seem like this should have any effect
+                        // whatsoever. What am I doing wrong?
                         self.setup_render_state(draw_data);
                     },
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
@@ -313,7 +322,7 @@ impl RenderEngine {
     unsafe fn resize(&mut self, width: u32, height: u32) -> Result<()> {
         drop(mem::replace(
             &mut self.rtv_target,
-            create_render_target(&self.device, width, height)?,
+            create_render_target(&self.device, width, height, self.rtv_heap_start)?,
         ));
 
         Ok(())
@@ -349,8 +358,9 @@ unsafe fn create_render_target(
     device: &ID3D12Device,
     width: u32,
     height: u32,
+    heap_descriptor: D3D12_CPU_DESCRIPTOR_HANDLE,
 ) -> Result<ID3D12Resource> {
-    util::try_out_ptr(|v| {
+    let resource = util::try_out_ptr(|v| {
         device.CreateCommittedResource(
             &D3D12_HEAP_PROPERTIES {
                 Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -379,7 +389,11 @@ unsafe fn create_render_target(
             }),
             v,
         )
-    })
+    })?;
+
+    device.CreateRenderTargetView(&resource, None, heap_descriptor);
+
+    Ok(resource)
 }
 
 unsafe fn create_heaps(device: &ID3D12Device) -> Result<(ID3D12DescriptorHeap, TextureHeap)> {
@@ -657,6 +671,7 @@ unsafe fn create_shader_program(
     };
 
     let pipeline_state = unsafe { device.CreateGraphicsPipelineState(&pso_desc)? };
+    let _ = ManuallyDrop::into_inner(pso_desc.pRootSignature);
 
     Ok((root_signature, pipeline_state))
 }
@@ -734,6 +749,7 @@ impl<T> Buffer<T> {
     }
 }
 
+#[derive(Debug)]
 struct Texture {
     resource: ID3D12Resource,
     id: TextureId,
@@ -875,34 +891,29 @@ impl TextureHeap {
 
         self.command_allocator.Reset()?;
         self.command_list.Reset(&self.command_allocator, None)?;
-        self.command_list.CopyTextureRegion(
-            &D3D12_TEXTURE_COPY_LOCATION {
-                pResource: ManuallyDrop::new(Some(texture.clone())), /* mem::transmute_copy(&
-                                                                      * texture), */
-                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
-            },
-            0,
-            0,
-            0,
-            &D3D12_TEXTURE_COPY_LOCATION {
-                pResource: ManuallyDrop::new(Some(upload_buffer.clone())),
-                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                    PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
-                        Offset: 0,
-                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
-                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                            Width: width,
-                            Height: height,
-                            Depth: 1,
-                            RowPitch: upload_pitch,
-                        },
+        let dst_location = D3D12_TEXTURE_COPY_LOCATION {
+            pResource: ManuallyDrop::new(Some(texture.clone())),
+            Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+        };
+        let src_location = D3D12_TEXTURE_COPY_LOCATION {
+            pResource: ManuallyDrop::new(Some(upload_buffer.clone())),
+            Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                    Offset: 0,
+                    Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        Width: width,
+                        Height: height,
+                        Depth: 1,
+                        RowPitch: upload_pitch,
                     },
                 },
             },
-            None,
-        );
+        };
+
+        self.command_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
         let barriers = [util::create_barrier(
             &texture,
             D3D12_RESOURCE_STATE_COPY_DEST,
@@ -914,8 +925,7 @@ impl TextureHeap {
         self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
         self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
         self.fence.wait()?;
-
-        barriers.into_iter().for_each(util::drop_barrier);
+        self.fence.incr();
 
         self.device.CreateShaderResourceView(
             &texture,
@@ -936,7 +946,12 @@ impl TextureHeap {
         );
 
         let texture_id = TextureId::from(gpu_desc.ptr as usize);
-        self.textures.push(Texture { resource: texture, id: texture_id });
+        self.textures.push(Texture { resource: texture.clone(), id: texture_id });
+
+        barriers.into_iter().for_each(util::drop_barrier);
+        // TODO
+        // let _ = ManuallyDrop::into_inner(src_location.pResource);
+        // let _ = ManuallyDrop::into_inner(dst_location.pResource);
 
         Ok(texture_id)
     }

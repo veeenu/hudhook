@@ -5,7 +5,7 @@ mod input;
 mod keys;
 mod state;
 
-pub use engine::RenderEngine;
+pub use engine_new::RenderEngine;
 pub use state::RenderState;
 use tracing::{debug, trace};
 use windows::Win32::Graphics::Direct3D12::{

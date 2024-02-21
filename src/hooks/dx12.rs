@@ -61,6 +61,7 @@ struct Trampolines {
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
 
+static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
 static mut PIPELINE: OnceCell<Mutex<Pipeline>> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Mutex<Box<dyn ImguiRenderLoop + Send + Sync>>> = OnceCell::new();
 
@@ -78,9 +79,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    trace!("PIPELINE");
-    let Some(mut pipeline) = PIPELINE.get().and_then(Mutex::try_lock) else {
-        trace!("Could not lock pipeline in Present");
+    let Some(command_queue) = COMMAND_QUEUE.get() else {
+        trace!("No command queue yet");
         print_dxgi_debug_messages();
         return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
     };
@@ -88,6 +88,36 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     trace!("RENDER LOOP");
     let Some(mut render_loop) = RENDER_LOOP.get().and_then(Mutex::try_lock) else {
         trace!("Could not lock render loop in Present");
+        print_dxgi_debug_messages();
+        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+    };
+
+    trace!("PIPELINE INIT");
+    let pipeline = PIPELINE.get_or_try_init(|| -> windows::core::Result<_> {
+        trace!("Context create");
+        let mut ctx = Context::create();
+        ctx.io_mut().display_size = [800., 600.];
+        trace!("Render engine new");
+        let mut engine = engine_new::RenderEngine::new(&mut ctx, 800, 600)?;
+        trace!("Compositor new");
+        let compositor = dx12_new::Compositor::new(command_queue.clone())?;
+
+        render_loop.initialize(&mut engine);
+
+        Ok(Mutex::new(Pipeline { ctx: Rc::new(RefCell::new(ctx)), compositor, engine }))
+    });
+    let pipeline = match pipeline {
+        Ok(pipeline) => pipeline,
+        Err(e) => {
+            error!("Could not initialize rendering pipeline: {e:?}");
+            print_dxgi_debug_messages();
+            return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+        },
+    };
+
+    trace!("PIPELINE");
+    let Some(mut pipeline) = pipeline.try_lock() else {
+        trace!("Could not lock pipeline in Present");
         print_dxgi_debug_messages();
         return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
     };
@@ -105,6 +135,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         print_dxgi_debug_messages();
         return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
     }
+
+    render_loop.before_render(&mut pipeline.engine);
 
     trace!("RENDER CTX");
     let mut ctx = ctx.borrow_mut();
@@ -197,39 +229,13 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
 ) {
     trace!(
         "ID3D12CommandQueue::ExecuteCommandLists({command_queue:?}, {num_command_lists}, \
-         {command_lists:p}) invoked"
+         {command_lists:p}) invoked",
     );
 
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    static LOCK: AtomicBool = AtomicBool::new(false);
-
-    if LOCK.load(Ordering::SeqCst) {
-        return d3d12_command_queue_execute_command_lists(
-            command_queue,
-            num_command_lists,
-            command_lists,
-        );
-    }
-
-    if let Err(e) = PIPELINE.get_or_try_init(|| -> windows::core::Result<_> {
-        LOCK.store(true, Ordering::SeqCst);
-        trace!("Context create");
-        let mut ctx = Context::create();
-        ctx.io_mut().display_size = [800., 600.];
-        trace!("Render engine new");
-        let engine = engine_new::RenderEngine::new(&mut ctx, 800, 600)?;
-        trace!("Compositor new");
-        let compositor = dx12_new::Compositor::new(command_queue.clone())?;
-
-        Ok(Mutex::new(Pipeline { ctx: Rc::new(RefCell::new(ctx)), compositor, engine }))
-    }) {
-        LOCK.store(false, Ordering::SeqCst);
-        error!("Could not initialize rendering pipeline: {e:?}");
-    };
-
-    LOCK.store(false, Ordering::SeqCst);
+    COMMAND_QUEUE.get_or_init(|| command_queue.clone());
 
     // if RenderState::is_locked() {
     //     return d3d12_command_queue_execute_command_lists(

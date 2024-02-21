@@ -11,7 +11,9 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
     D3D12_RESOURCE_STATES, D3D12_RESOURCE_TRANSITION_BARRIER,
 };
-use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObjectEx};
+use windows::Win32::System::Threading::{
+    CreateEventExW, CreateEventW, WaitForSingleObjectEx, CREATE_EVENT,
+};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 /// Helper for fallible [`windows`] APIs that have an out-param with a default
@@ -167,7 +169,7 @@ pub(crate) fn create_barrier(
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
         Anonymous: D3D12_RESOURCE_BARRIER_0 {
             Transition: ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-                pResource: unsafe { mem::transmute_copy(resource) },
+                pResource: ManuallyDrop::new(Some(resource.clone())),
                 Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
                 StateBefore: before,
                 StateAfter: after,
@@ -177,7 +179,8 @@ pub(crate) fn create_barrier(
 }
 
 pub(crate) fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
-    ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+    let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
+    let _ = ManuallyDrop::into_inner(transition.pResource);
 }
 
 pub(crate) struct Fence {
@@ -190,7 +193,7 @@ impl Fence {
     pub(crate) fn new(device: &ID3D12Device) -> windows::core::Result<Self> {
         let fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
         let value = AtomicU64::new(0);
-        let event = unsafe { CreateEventW(None, false, true, None) }?;
+        let event = unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1f0003) }?;
 
         Ok(Fence { fence, value, event })
     }

@@ -115,7 +115,7 @@ use std::thread;
 
 use imgui::{Io, Ui};
 use once_cell::sync::OnceCell;
-use renderer::RenderEngine;
+use renderer::engine_new::RenderEngine;
 use tracing::error;
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};

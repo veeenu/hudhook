@@ -109,15 +109,16 @@ impl RenderState {
 
         let render_engine = unsafe {
             RENDER_ENGINE.get_or_init(|| {
-                let mut render_engine = match RenderEngine::new(hwnd) {
-                    Ok(render_engine) => render_engine,
-                    Err(e) => {
-                        print_dxgi_debug_messages();
-                        panic!("{e:?}");
-                    },
-                };
-                render_loop.initialize(&mut render_engine);
-                Mutex::new(render_engine)
+                // let mut render_engine = match RenderEngine::new(hwnd) {
+                //     Ok(render_engine) => render_engine,
+                //     Err(e) => {
+                //         print_dxgi_debug_messages();
+                //         panic!("{e:?}");
+                //     },
+                // };
+                // render_loop.initialize(&mut render_engine);
+                // Mutex::new(render_engine)
+                todo!();
             })
         };
 
@@ -128,9 +129,9 @@ impl RenderState {
 
         render_loop.before_render(&mut render_engine);
 
-        if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
-            error!("Render: {e:?}");
-        }
+        // if let Err(e) = render_engine.render(|ui| render_loop.render(ui)) {
+        //     error!("Render: {e:?}");
+        // }
 
         // let Some(target_back_buffer) = target_back_buffer else {
         //     unimplemented!();
@@ -143,11 +144,11 @@ impl RenderState {
         //     }
         // }
 
-        let surface = render_engine.surface().ok()?;
+        // let surface = render_engine.surface().ok()?;
 
         drop(render_engine);
 
-        Some(surface)
+        None // Some(surface)
     }
 
     /// Resize the engine. Generally only needs to be called automatically as a
@@ -156,9 +157,9 @@ impl RenderState {
         // TODO sometimes it doesn't lock.
         if let Some(Some(mut render_engine)) = unsafe { RENDER_ENGINE.get().map(Mutex::try_lock) } {
             trace!("Resizing");
-            if let Err(e) = render_engine.resize() {
-                error!("Couldn't resize: {e:?}");
-            }
+            // if let Err(e) = render_engine.resize() {
+            //     error!("Couldn't resize: {e:?}");
+            // }
         } else {
             error!("Couldn't lock for resize");
         }

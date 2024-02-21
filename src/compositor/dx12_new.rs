@@ -1,8 +1,9 @@
+use std::mem::ManuallyDrop;
 use std::{mem, ptr, slice};
 
 use imgui::DrawVert;
 use memoffset::offset_of;
-use tracing::error;
+use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
@@ -57,18 +58,20 @@ impl Compositor {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
                 NumDescriptors: 1,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-                NodeMask: 1,
+                NodeMask: 0,
             })
         }?;
+        unsafe { rtv_heap.SetName(w!("hudhook Compositor RTV Heap"))? };
 
         let srv_heap: ID3D12DescriptorHeap = unsafe {
             device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                NumDescriptors: 8,
+                NumDescriptors: 1,
                 Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                 NodeMask: 0,
             })
         }?;
+        unsafe { srv_heap.SetName(w!("hudhook Compositor SRV Heap"))? };
 
         let vertex_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
             device.CreateCommittedResource(
@@ -169,17 +172,8 @@ impl Compositor {
     pub fn composite(&self, source: ID3D12Resource, target: ID3D12Resource) -> Result<()> {
         let desc = unsafe { target.GetDesc() };
 
-        let target_rt_barriers = [util::create_barrier(
-            &target,
-            D3D12_RESOURCE_STATE_PRESENT,
-            D3D12_RESOURCE_STATE_RENDER_TARGET,
-        )];
-
-        let target_present_barriers = [util::create_barrier(
-            &target,
-            D3D12_RESOURCE_STATE_RENDER_TARGET,
-            D3D12_RESOURCE_STATE_PRESENT,
-        )];
+        self.fence.wait()?;
+        self.fence.incr();
 
         unsafe {
             self.device.CreateRenderTargetView(
@@ -208,6 +202,18 @@ impl Compositor {
                 self.srv_heap.GetCPUDescriptorHandleForHeapStart(),
             )
         };
+
+        let target_rt_barriers = [util::create_barrier(
+            &target,
+            D3D12_RESOURCE_STATE_PRESENT,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+        )];
+
+        let target_present_barriers = [util::create_barrier(
+            &target,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT,
+        )];
 
         unsafe {
             self.command_allocator.Reset()?;
@@ -241,19 +247,21 @@ impl Compositor {
                 Format: DXGI_FORMAT_R16_UINT,
             }));
             self.command_list.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            self.command_list.SetPipelineState(&self.pipeline_state);
-            self.command_list.SetGraphicsRootSignature(&self.root_signature);
             self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
-
             self.command_list.OMSetRenderTargets(
                 1,
                 Some(&self.rtv_heap.GetCPUDescriptorHandleForHeapStart()),
                 false,
                 None,
             );
+
+            self.command_list.SetPipelineState(&self.pipeline_state);
+            self.command_list.SetGraphicsRootSignature(&self.root_signature);
             self.command_list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
+            print_dxgi_debug_messages();
+
             self.command_list.SetGraphicsRootDescriptorTable(
-                1,
+                0,
                 self.srv_heap.GetGPUDescriptorHandleForHeapStart(),
             );
             self.command_list.DrawIndexedInstanced(6, 1, 0, 0, 0);
@@ -262,8 +270,6 @@ impl Compositor {
 
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.clone().cast()?)]);
             self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
-            self.fence.wait()?;
-            self.fence.incr();
         }
 
         target_rt_barriers.into_iter().for_each(util::drop_barrier);
@@ -276,41 +282,46 @@ impl Compositor {
 unsafe fn create_shader_program(
     device: &ID3D12Device,
 ) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
+    let desc_range = [D3D12_DESCRIPTOR_RANGE {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        OffsetInDescriptorsFromTableStart: 0,
+    }];
+
     let parameters = [D3D12_ROOT_PARAMETER {
         ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
         Anonymous: D3D12_ROOT_PARAMETER_0 {
             DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
                 NumDescriptorRanges: 1,
-                pDescriptorRanges: &D3D12_DESCRIPTOR_RANGE {
-                    RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-                    NumDescriptors: 1,
-                    BaseShaderRegister: 0,
-                    RegisterSpace: 0,
-                    OffsetInDescriptorsFromTableStart: 0,
-                },
+                pDescriptorRanges: desc_range.as_ptr(),
             },
         },
         ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
     }];
+
+    let samplers = [D3D12_STATIC_SAMPLER_DESC {
+        Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        AddressU: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        AddressV: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        AddressW: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        MipLODBias: 0f32,
+        MaxAnisotropy: 0,
+        ComparisonFunc: D3D12_COMPARISON_FUNC_ALWAYS,
+        BorderColor: D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+        MinLOD: 0f32,
+        MaxLOD: 0f32,
+        ShaderRegister: 0,
+        RegisterSpace: 0,
+        ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+    }];
+
     let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
         NumParameters: 1,
         pParameters: parameters.as_ptr(),
         NumStaticSamplers: 1,
-        pStaticSamplers: &D3D12_STATIC_SAMPLER_DESC {
-            Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-            AddressU: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            AddressV: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            AddressW: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-            MipLODBias: 0f32,
-            MaxAnisotropy: 0,
-            ComparisonFunc: D3D12_COMPARISON_FUNC_ALWAYS,
-            BorderColor: D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-            MinLOD: 0f32,
-            MaxLOD: 0f32,
-            ShaderRegister: 0,
-            RegisterSpace: 0,
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-        },
+        pStaticSamplers: samplers.as_ptr(),
         Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
             | D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS
             | D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS
@@ -332,6 +343,7 @@ unsafe fn create_shader_program(
         0,
         slice::from_raw_parts(blob.GetBufferPointer() as *const u8, blob.GetBufferSize()),
     )?;
+    root_signature.SetName(w!("hudhook Compositor Root Signature"))?;
 
     const VS: &str = r#"
         struct VS_INPUT {
@@ -365,7 +377,7 @@ unsafe fn create_shader_program(
           return out_col;
         }"#;
 
-    let vtx_shader: ID3DBlob = util::try_out_err_blob(|v, err_blob| unsafe {
+    let vtx_shader: ID3DBlob = util::try_out_err_blob(|v, err_blob| {
         D3DCompile(
             VS.as_ptr() as _,
             VS.len(),
@@ -383,7 +395,7 @@ unsafe fn create_shader_program(
     .map_err(util::print_error_blob("Compiling vertex shader"))
     .expect("D3DCompile");
 
-    let pix_shader = util::try_out_err_blob(|v, err_blob| unsafe {
+    let pix_shader = util::try_out_err_blob(|v, err_blob| {
         D3DCompile(
             PS.as_ptr() as _,
             PS.len(),
@@ -407,7 +419,7 @@ unsafe fn create_shader_program(
             SemanticIndex: 0,
             Format: DXGI_FORMAT_R32G32_FLOAT,
             InputSlot: 0,
-            AlignedByteOffset: offset_of!(DrawVert, pos) as u32,
+            AlignedByteOffset: offset_of!(Vertex, pos) as u32,
             InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
             InstanceDataStepRate: 0,
         },
@@ -416,31 +428,22 @@ unsafe fn create_shader_program(
             SemanticIndex: 0,
             Format: DXGI_FORMAT_R32G32_FLOAT,
             InputSlot: 0,
-            AlignedByteOffset: offset_of!(DrawVert, uv) as u32,
-            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        },
-        D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: s!("COLOR"),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-            InputSlot: 0,
-            AlignedByteOffset: offset_of!(DrawVert, col) as u32,
+            AlignedByteOffset: offset_of!(Vertex, uv) as u32,
             InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
             InstanceDataStepRate: 0,
         },
     ];
 
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-        pRootSignature: mem::transmute_copy(&root_signature),
-        NodeMask: 1,
+        pRootSignature: ManuallyDrop::new(Some(root_signature.clone())),
+        NodeMask: 0,
         PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         SampleMask: u32::MAX,
         NumRenderTargets: 1,
         SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
         Flags: D3D12_PIPELINE_STATE_FLAG_NONE,
         RTVFormats: [
-            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
             Default::default(),
             Default::default(),
             Default::default(),
@@ -460,7 +463,7 @@ unsafe fn create_shader_program(
         },
         InputLayout: D3D12_INPUT_LAYOUT_DESC {
             pInputElementDescs: input_element_desc.as_ptr(),
-            NumElements: 3,
+            NumElements: 2,
         },
         BlendState: D3D12_BLEND_DESC {
             AlphaToCoverageEnable: false.into(),
@@ -503,7 +506,9 @@ unsafe fn create_shader_program(
         ..Default::default()
     };
 
-    let pipeline_state = unsafe { device.CreateGraphicsPipelineState(&pso_desc)? };
+    let pipeline_state: ID3D12PipelineState = device.CreateGraphicsPipelineState(&pso_desc)?;
+    pipeline_state.SetName(w!("hudhook Compositor Pipeline State"))?;
+    let _ = ManuallyDrop::into_inner(pso_desc.pRootSignature);
 
     Ok((root_signature, pipeline_state))
 }

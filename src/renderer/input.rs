@@ -250,74 +250,76 @@ pub fn imgui_wnd_proc_impl<T>(
 where
     T: AsRef<dyn Send + Sync + ImguiRenderLoop + 'static>,
 {
-    let ctx = render_engine.ctx();
-    let mut ctx = ctx.borrow_mut();
-    let io = ctx.io_mut();
-    match umsg {
-        WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
-        state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam < 256 => {
-            handle_input(io, state, WPARAM(wparam), LPARAM(lparam))
-        },
-        WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-            io.mouse_down[0] = true;
-        },
-        WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-            io.mouse_down[1] = true;
-        },
-        WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-            io.mouse_down[2] = true;
-        },
-        WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
-            io.mouse_down[btn] = true;
-        },
-        WM_LBUTTONUP => {
-            io.mouse_down[0] = false;
-        },
-        WM_RBUTTONUP => {
-            io.mouse_down[1] = false;
-        },
-        WM_MBUTTONUP => {
-            io.mouse_down[2] = false;
-        },
-        WM_XBUTTONUP => {
-            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
-            io.mouse_down[btn] = false;
-        },
-        WM_MOUSEWHEEL => {
-            // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
-            let wheel_delta_wparam = hiword(wparam as _);
-            let wheel_delta = WHEEL_DELTA as f32;
-            io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
-        },
-        WM_MOUSEHWHEEL => {
-            // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
-            let wheel_delta_wparam = hiword(wparam as _);
-            let wheel_delta = WHEEL_DELTA as f32;
-            io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
-        },
-        WM_CHAR => io.add_input_character(wparam as u8 as char),
-        WM_SIZE => {
-            drop(ctx);
-            drop(render_engine);
-            RenderState::resize();
-            return unsafe {
-                CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam))
-            };
-        },
-        _ => {},
-    };
-
-    let should_block_messages = imgui_render_loop.as_ref().should_block_messages(io);
-
-    imgui_render_loop.as_ref().on_wnd_proc(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
-
-    drop(ctx);
-    drop(render_engine);
-
-    if should_block_messages {
-        return LRESULT(1);
-    }
+    // let ctx = render_engine.ctx();
+    // let mut ctx = ctx.borrow_mut();
+    // let io = ctx.io_mut();
+    // match umsg {
+    //     WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
+    //     state @ (WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP) if wparam <
+    // 256 => {         handle_input(io, state, WPARAM(wparam), LPARAM(lparam))
+    //     },
+    //     WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+    //         io.mouse_down[0] = true;
+    //     },
+    //     WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+    //         io.mouse_down[1] = true;
+    //     },
+    //     WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
+    //         io.mouse_down[2] = true;
+    //     },
+    //     WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+    //         let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
+    //         io.mouse_down[btn] = true;
+    //     },
+    //     WM_LBUTTONUP => {
+    //         io.mouse_down[0] = false;
+    //     },
+    //     WM_RBUTTONUP => {
+    //         io.mouse_down[1] = false;
+    //     },
+    //     WM_MBUTTONUP => {
+    //         io.mouse_down[2] = false;
+    //     },
+    //     WM_XBUTTONUP => {
+    //         let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
+    //         io.mouse_down[btn] = false;
+    //     },
+    //     WM_MOUSEWHEEL => {
+    //         // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
+    //         let wheel_delta_wparam = hiword(wparam as _);
+    //         let wheel_delta = WHEEL_DELTA as f32;
+    //         io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
+    //     },
+    //     WM_MOUSEHWHEEL => {
+    //         // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
+    //         let wheel_delta_wparam = hiword(wparam as _);
+    //         let wheel_delta = WHEEL_DELTA as f32;
+    //         io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
+    //     },
+    //     WM_CHAR => io.add_input_character(wparam as u8 as char),
+    //     WM_SIZE => {
+    //         drop(ctx);
+    //         drop(render_engine);
+    //         RenderState::resize();
+    //         return unsafe {
+    //             CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam),
+    // LPARAM(lparam))         };
+    //     },
+    //     _ => {},
+    // };
+    //
+    // let should_block_messages =
+    // imgui_render_loop.as_ref().should_block_messages(io);
+    //
+    // imgui_render_loop.as_ref().on_wnd_proc(hwnd, umsg, WPARAM(wparam),
+    // LPARAM(lparam));
+    //
+    // drop(ctx);
+    // drop(render_engine);
+    //
+    // if should_block_messages {
+    //     return LRESULT(1);
+    // }
 
     unsafe { CallWindowProcW(Some(wnd_proc), hwnd, umsg, WPARAM(wparam), LPARAM(lparam)) }
 }

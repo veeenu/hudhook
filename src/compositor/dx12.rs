@@ -301,29 +301,16 @@ impl CompositorInner {
             OffsetInDescriptorsFromTableStart: D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
         };
 
-        let params = [
-            D3D12_ROOT_PARAMETER {
-                ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
-                Anonymous: D3D12_ROOT_PARAMETER_0 {
-                    Constants: D3D12_ROOT_CONSTANTS {
-                        ShaderRegister: 0,
-                        RegisterSpace: 0,
-                        Num32BitValues: 16,
-                    },
+        let params = [D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                    NumDescriptorRanges: 1,
+                    pDescriptorRanges: &desc_range,
                 },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_VERTEX,
             },
-            D3D12_ROOT_PARAMETER {
-                ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-                Anonymous: D3D12_ROOT_PARAMETER_0 {
-                    DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                        NumDescriptorRanges: 1,
-                        pDescriptorRanges: &desc_range,
-                    },
-                },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-            },
-        ];
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+        }];
 
         let sampler = D3D12_STATIC_SAMPLER_DESC {
             Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
@@ -342,7 +329,7 @@ impl CompositorInner {
         };
 
         let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
-            NumParameters: 2,
+            NumParameters: 1,
             pParameters: params.as_ptr(),
             NumStaticSamplers: 1,
             pStaticSamplers: &sampler,
