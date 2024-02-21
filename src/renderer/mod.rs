@@ -1,6 +1,6 @@
 //! The [`hudhook`](crate) overlay rendering engine.
 mod engine;
-mod engine_new;
+pub(crate) mod engine_new;
 mod input;
 mod keys;
 mod state;

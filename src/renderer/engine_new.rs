@@ -1,6 +1,7 @@
 // NOTE: see this for ManuallyDrop instanceshttps://github.com/microsoft/windows-rs/issues/2386
 
 use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::{mem, ptr, slice};
 
 use imgui::internal::RawWrapper;
@@ -102,15 +103,8 @@ impl RenderEngine {
         unsafe { self.texture_heap.create_texture(data, width, height) }
     }
 
-    pub fn render(
-        &mut self,
-        hwnd: HWND,
-        ctx: &mut Context,
-        draw_data: DrawData,
-    ) -> Result<ID3D12Resource> {
+    pub fn render(&mut self, hwnd: HWND, draw_data: &DrawData) -> Result<ID3D12Resource> {
         unsafe {
-            self.render_setup(hwnd, ctx)?;
-
             self.command_allocator.Reset()?;
             self.command_list.Reset(&self.command_allocator, None)?;
 
@@ -129,7 +123,13 @@ impl RenderEngine {
             self.command_list.ResourceBarrier(&present_to_rtv_barriers);
             self.command_list.OMSetRenderTargets(1, Some(&self.rtv_heap_start), false, None);
             self.command_list.SetDescriptorHeaps(&[Some(self.texture_heap.srv_heap.clone())]);
-            self.command_list.ClearRenderTargetView(self.rtv_heap_start, &[0.0; 4], None);
+            trace!("a");
+            self.command_list.ClearRenderTargetView(
+                self.rtv_heap_start,
+                &[0.0, 0.0, 0.0, 0.0],
+                None,
+            );
+            trace!("a");
 
             self.render_draw_data(draw_data)?;
 
@@ -138,6 +138,7 @@ impl RenderEngine {
             self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
             self.fence.wait()?;
             self.fence.incr();
+            trace!("a");
 
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
@@ -146,39 +147,41 @@ impl RenderEngine {
         Ok(self.rtv_target.clone())
     }
 
-    unsafe fn render_setup(&mut self, hwnd: HWND, ctx: &mut Context) -> Result<()> {
-        let desc = self.rtv_target.GetDesc();
-        let (width, height) = util::win_size(hwnd);
-        let (width, height) = (width as u32, height as u32);
+    pub fn render_setup(&mut self, hwnd: HWND, ctx: &mut Context) -> Result<()> {
+        unsafe {
+            let desc = self.rtv_target.GetDesc();
+            let (width, height) = util::win_size(hwnd);
+            let (width, height) = (width as u32, height as u32);
 
-        let io = ctx.io_mut();
+            let io = ctx.io_mut();
 
-        if width as u64 != desc.Width || height != desc.Height {
-            self.resize(width, height)?;
-            io.display_size = [width as f32, height as f32];
-        }
-
-        let active_window = GetForegroundWindow();
-        if active_window == hwnd
-            || (!HANDLE(active_window.0).is_invalid() && IsChild(active_window, hwnd).as_bool())
-        {
-            let mut pos = util::try_out_param(|v| GetCursorPos(v))?;
-            if ScreenToClient(hwnd, &mut pos).as_bool() {
-                io.mouse_pos = [pos.x as f32, pos.y as f32];
+            if width as u64 != desc.Width || height != desc.Height {
+                self.resize(width, height)?;
+                io.display_size = [width as f32, height as f32];
             }
-        }
 
-        io.nav_active = true;
-        io.nav_visible = true;
+            let active_window = GetForegroundWindow();
+            if active_window == hwnd
+                || (!HANDLE(active_window.0).is_invalid() && IsChild(active_window, hwnd).as_bool())
+            {
+                let mut pos = util::try_out_param(|v| GetCursorPos(v))?;
+                if ScreenToClient(hwnd, &mut pos).as_bool() {
+                    io.mouse_pos = [pos.x as f32, pos.y as f32];
+                }
+            }
 
-        for (key, virtual_key) in keys::KEYS {
-            io[key] = virtual_key.0 as u32;
+            io.nav_active = true;
+            io.nav_visible = true;
+
+            for (key, virtual_key) in keys::KEYS {
+                io[key] = virtual_key.0 as u32;
+            }
         }
 
         Ok(())
     }
 
-    unsafe fn render_draw_data(&mut self, draw_data: DrawData) -> Result<()> {
+    unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
         if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
             trace!(
                 "Insufficent display size {}x{}, skip rendering",
@@ -253,7 +256,7 @@ impl RenderEngine {
                         }
                     },
                     DrawCmd::ResetRenderState => {
-                        self.setup_render_state(&draw_data);
+                        self.setup_render_state(draw_data);
                     },
                     DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
                         callback(cl.raw(), raw_cmd)
@@ -404,38 +407,39 @@ unsafe fn create_heaps(device: &ID3D12Device) -> Result<(ID3D12DescriptorHeap, T
 unsafe fn create_shader_program(
     device: &ID3D12Device,
 ) -> Result<(ID3D12RootSignature, ID3D12PipelineState)> {
+    let parameters = [
+        D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                Constants: D3D12_ROOT_CONSTANTS {
+                    ShaderRegister: 0,
+                    RegisterSpace: 0,
+                    Num32BitValues: 16,
+                },
+            },
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_VERTEX,
+        },
+        D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                    NumDescriptorRanges: 1,
+                    pDescriptorRanges: &D3D12_DESCRIPTOR_RANGE {
+                        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                        NumDescriptors: 1,
+                        BaseShaderRegister: 0,
+                        RegisterSpace: 0,
+                        OffsetInDescriptorsFromTableStart: 0,
+                    },
+                },
+            },
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+        },
+    ];
+
     let root_signature_desc = D3D12_ROOT_SIGNATURE_DESC {
         NumParameters: 2,
-        pParameters: [
-            D3D12_ROOT_PARAMETER {
-                ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
-                Anonymous: D3D12_ROOT_PARAMETER_0 {
-                    Constants: D3D12_ROOT_CONSTANTS {
-                        ShaderRegister: 0,
-                        RegisterSpace: 0,
-                        Num32BitValues: 16,
-                    },
-                },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_VERTEX,
-            },
-            D3D12_ROOT_PARAMETER {
-                ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-                Anonymous: D3D12_ROOT_PARAMETER_0 {
-                    DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                        NumDescriptorRanges: 1,
-                        pDescriptorRanges: &D3D12_DESCRIPTOR_RANGE {
-                            RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-                            NumDescriptors: 1,
-                            BaseShaderRegister: 0,
-                            RegisterSpace: 0,
-                            OffsetInDescriptorsFromTableStart: 0,
-                        },
-                    },
-                },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-            },
-        ]
-        .as_ptr(),
+        pParameters: parameters.as_ptr(),
         NumStaticSamplers: 1,
         pStaticSamplers: &D3D12_STATIC_SAMPLER_DESC {
             Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
@@ -457,58 +461,67 @@ unsafe fn create_shader_program(
             | D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS
             | D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS,
     };
-    let mut blob: Option<ID3DBlob> = None;
-    let mut err_blob: Option<ID3DBlob> = None;
-    if let Err(e) = D3D12SerializeRootSignature(
-        &root_signature_desc,
-        D3D_ROOT_SIGNATURE_VERSION_1_0,
-        &mut blob,
-        Some(&mut err_blob),
-    ) {
-        if let Some(err_blob) = err_blob {
-            let buf_ptr = err_blob.GetBufferPointer() as *mut u8;
-            let buf_size = err_blob.GetBufferSize();
-            let s = String::from_raw_parts(buf_ptr, buf_size, buf_size + 1);
-            error!("Serializing root signature: {}: {}", e, s);
-        }
-        return Err(e);
-    }
 
-    let blob = blob.unwrap();
+    let blob: ID3DBlob = util::try_out_err_blob(|v, err_blob| {
+        D3D12SerializeRootSignature(
+            &root_signature_desc,
+            D3D_ROOT_SIGNATURE_VERSION_1_0,
+            v,
+            Some(err_blob),
+        )
+    })
+    .map_err(util::print_error_blob("Serializing root signature"))
+    .expect("D3D12SerializeRootSignature");
+
     let root_signature: ID3D12RootSignature = device.CreateRootSignature(
         0,
         slice::from_raw_parts(blob.GetBufferPointer() as *const u8, blob.GetBufferSize()),
     )?;
 
-    let vs = r#"
-            cbuffer vertexBuffer : register(b0) {
-              float4x4 ProjectionMatrix;
-            };
+    const VS: &str = r#"
+        cbuffer vertexBuffer : register(b0) {
+          float4x4 ProjectionMatrix;
+        };
 
-            struct VS_INPUT {
-              float2 pos: POSITION;
-              float4 col: COLOR0;
-              float2 uv: TEXCOORD0;
-            };
+        struct VS_INPUT {
+          float2 pos: POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
 
-            struct PS_INPUT {
-              float4 pos: SV_POSITION;
-              float4 col: COLOR0;
-              float2 uv: TEXCOORD0;
-            };
+        struct PS_INPUT {
+          float4 pos: SV_POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
 
-            PS_INPUT main(VS_INPUT input) {
-              PS_INPUT output;
-              output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));
-              output.col = input.col;
-              output.uv = input.uv;
-              return output;
-            }"#;
+        PS_INPUT main(VS_INPUT input) {
+          PS_INPUT output;
+          output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));
+          output.col = input.col;
+          output.uv = input.uv;
+          return output;
+        }"#;
 
-    let vtx_shader: ID3DBlob = util::try_out_ptr(|v| unsafe {
+    const PS: &str = r#"
+        struct PS_INPUT {
+          float4 pos: SV_POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
+
+        SamplerState sampler0: register(s0);
+        Texture2D texture0: register(t0);
+
+        float4 main(PS_INPUT input): SV_Target {
+          float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
+          return out_col;
+        }"#;
+
+    let vtx_shader: ID3DBlob = util::try_out_err_blob(|v, err_blob| unsafe {
         D3DCompile(
-            vs.as_ptr() as _,
-            vs.len(),
+            VS.as_ptr() as _,
+            VS.len(),
             None,
             None,
             None::<&ID3DInclude>,
@@ -517,30 +530,16 @@ unsafe fn create_shader_program(
             0,
             0,
             v,
-            None,
+            Some(err_blob),
         )
     })
-    .expect("D3DCompile vertex shader");
+    .map_err(util::print_error_blob("Compiling vertex shader"))
+    .expect("D3DCompile");
 
-    let ps = r#"
-            struct PS_INPUT {
-              float4 pos: SV_POSITION;
-              float4 col: COLOR0;
-              float2 uv: TEXCOORD0;
-            };
-
-            SamplerState sampler0: register(s0);
-            Texture2D texture0: register(t0);
-
-            float4 main(PS_INPUT input): SV_Target {
-              float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
-              return out_col;
-            }"#;
-
-    let pix_shader = util::try_out_ptr(|v| unsafe {
+    let pix_shader = util::try_out_err_blob(|v, err_blob| unsafe {
         D3DCompile(
-            ps.as_ptr() as _,
-            ps.len(),
+            PS.as_ptr() as _,
+            PS.len(),
             None,
             None,
             None::<&ID3DInclude>,
@@ -549,13 +548,44 @@ unsafe fn create_shader_program(
             0,
             0,
             v,
-            None,
+            Some(err_blob),
         )
     })
-    .expect("D3DCompile pixel shader");
+    .map_err(util::print_error_blob("Compiling pixel shader"))
+    .expect("D3DCompile");
+
+    let input_elements = [
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: s!("POSITION"),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: offset_of!(DrawVert, pos) as u32,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: s!("TEXCOORD"),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: offset_of!(DrawVert, uv) as u32,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: s!("COLOR"),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            InputSlot: 0,
+            AlignedByteOffset: offset_of!(DrawVert, col) as u32,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+    ];
 
     let pso_desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-        pRootSignature: mem::transmute_copy(&root_signature),
+        pRootSignature: ManuallyDrop::new(Some(root_signature.clone())),
         NodeMask: 1,
         PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
         SampleMask: u32::MAX,
@@ -582,36 +612,7 @@ unsafe fn create_shader_program(
             BytecodeLength: unsafe { pix_shader.GetBufferSize() },
         },
         InputLayout: D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: [
-                D3D12_INPUT_ELEMENT_DESC {
-                    SemanticName: s!("POSITION"),
-                    SemanticIndex: 0,
-                    Format: DXGI_FORMAT_R32G32_FLOAT,
-                    InputSlot: 0,
-                    AlignedByteOffset: offset_of!(DrawVert, pos) as u32,
-                    InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                    InstanceDataStepRate: 0,
-                },
-                D3D12_INPUT_ELEMENT_DESC {
-                    SemanticName: s!("TEXCOORD"),
-                    SemanticIndex: 0,
-                    Format: DXGI_FORMAT_R32G32_FLOAT,
-                    InputSlot: 0,
-                    AlignedByteOffset: offset_of!(DrawVert, uv) as u32,
-                    InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                    InstanceDataStepRate: 0,
-                },
-                D3D12_INPUT_ELEMENT_DESC {
-                    SemanticName: s!("COLOR"),
-                    SemanticIndex: 0,
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                    InputSlot: 0,
-                    AlignedByteOffset: offset_of!(DrawVert, col) as u32,
-                    InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                    InstanceDataStepRate: 0,
-                },
-            ]
-            .as_ptr(),
+            pInputElementDescs: input_elements.as_ptr(),
             NumElements: 3,
         },
         BlendState: D3D12_BLEND_DESC {
@@ -876,7 +877,8 @@ impl TextureHeap {
         self.command_list.Reset(&self.command_allocator, None)?;
         self.command_list.CopyTextureRegion(
             &D3D12_TEXTURE_COPY_LOCATION {
-                pResource: mem::transmute_copy(&texture),
+                pResource: ManuallyDrop::new(Some(texture.clone())), /* mem::transmute_copy(&
+                                                                      * texture), */
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                 Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
             },
@@ -884,7 +886,7 @@ impl TextureHeap {
             0,
             0,
             &D3D12_TEXTURE_COPY_LOCATION {
-                pResource: mem::transmute_copy(&upload_buffer),
+                pResource: ManuallyDrop::new(Some(upload_buffer.clone())),
                 Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                 Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                     PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {

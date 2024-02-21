@@ -1,7 +1,10 @@
+use std::fmt::Display;
 use std::mem::{self, ManuallyDrop};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tracing::error;
 use windows::Win32::Foundation::{HANDLE, HWND, RECT};
+use windows::Win32::Graphics::Direct3D::ID3DBlob;
 use windows::Win32::Graphics::Direct3D12::{
     ID3D12Device, ID3D12Fence, ID3D12Resource, D3D12_FENCE_FLAG_NONE, D3D12_RESOURCE_BARRIER,
     D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
@@ -49,6 +52,45 @@ where
     match f(&mut t) {
         Ok(_) => Ok(t.unwrap()),
         Err(e) => Err(e),
+    }
+}
+
+/// Helper for fallible [`windows`] APIs that have an optional pointer
+/// out-param and an optional pointer err-param.
+///
+/// # Example
+///
+/// ```
+/// let blob: ID3DBlob = util::try_out_err_blob(|v, err_blob| {
+///     D3D12SerializeRootSignature(
+///         &root_signature_desc,
+///         D3D_ROOT_SIGNATURE_VERSION_1_0,
+///         v,
+///         Some(err_blob),
+///     )
+/// })
+/// .map_err(print_err_blob("Compiling vertex shader"))?;
+/// ```
+pub fn try_out_err_blob<T1, T2, F, E, O>(mut f: F) -> Result<T1, (E, T2)>
+where
+    F: FnMut(&mut Option<T1>, &mut Option<T2>) -> Result<O, E>,
+{
+    let mut t1: Option<T1> = None;
+    let mut t2: Option<T2> = None;
+    match f(&mut t1, &mut t2) {
+        Ok(_) => Ok(t1.unwrap()),
+        Err(e) => Err((e, t2.unwrap())),
+    }
+}
+
+/// Use together with [`try_out_err_blob`] for printing Direct3D error blobs.
+pub fn print_error_blob<D: Display, E>(msg: D) -> impl Fn((E, ID3DBlob)) -> E {
+    move |(e, err_blob): (E, ID3DBlob)| {
+        let buf_ptr = unsafe { err_blob.GetBufferPointer() } as *mut u8;
+        let buf_size = unsafe { err_blob.GetBufferSize() };
+        let s = unsafe { String::from_raw_parts(buf_ptr, buf_size, buf_size + 1) };
+        error!("{msg}: {s}");
+        e
     }
 }
 
