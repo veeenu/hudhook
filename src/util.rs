@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use std::mem::{self, ManuallyDrop};
+use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::error;
@@ -11,9 +11,7 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
     D3D12_RESOURCE_STATES, D3D12_RESOURCE_TRANSITION_BARRIER,
 };
-use windows::Win32::System::Threading::{
-    CreateEventExW, CreateEventW, WaitForSingleObjectEx, CREATE_EVENT,
-};
+use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 
 /// Helper for fallible [`windows`] APIs that have an out-param with a default
@@ -102,61 +100,6 @@ pub fn win_size(hwnd: HWND) -> (i32, i32) {
     let mut rect = RECT::default();
     unsafe { GetClientRect(hwnd, &mut rect).unwrap() };
     (rect.right - rect.left, rect.bottom - rect.top)
-}
-
-// RAII wrapper around a [`std::mem::ManuallyDrop`] for a D3D12 resource
-// barrier.
-#[deprecated]
-pub struct Barrier([D3D12_RESOURCE_BARRIER; 1]);
-
-#[deprecated]
-impl Barrier {
-    pub fn new(
-        buf: ID3D12Resource,
-        before: D3D12_RESOURCE_STATES,
-        after: D3D12_RESOURCE_STATES,
-    ) -> Self {
-        let transition_barrier = ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-            pResource: ManuallyDrop::new(Some(buf)),
-            Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-            StateBefore: before,
-            StateAfter: after,
-        });
-
-        let barrier = D3D12_RESOURCE_BARRIER {
-            Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: transition_barrier },
-        };
-
-        Self::from(barrier)
-    }
-
-    pub fn into_inner(mut self) -> D3D12_RESOURCE_BARRIER {
-        mem::take(&mut self.0[0])
-    }
-}
-
-impl From<D3D12_RESOURCE_BARRIER> for Barrier {
-    fn from(value: D3D12_RESOURCE_BARRIER) -> Self {
-        Self([value])
-    }
-}
-
-impl AsRef<[D3D12_RESOURCE_BARRIER]> for Barrier {
-    fn as_ref(&self) -> &[D3D12_RESOURCE_BARRIER] {
-        &self.0
-    }
-}
-
-impl Drop for Barrier {
-    fn drop(&mut self) {
-        let barrier = mem::take(&mut self.0);
-        for barrier in barrier {
-            let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
-            let _ = ManuallyDrop::into_inner(transition.pResource);
-        }
-    }
 }
 
 pub(crate) fn create_barrier(

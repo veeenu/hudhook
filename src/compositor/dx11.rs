@@ -1,8 +1,8 @@
 use std::{mem, ptr, slice};
 
 use once_cell::sync::OnceCell;
-use windows::core::{s, w, ComInterface, Result};
-use windows::Win32::Foundation::{CloseHandle, BOOL, GENERIC_ALL, HANDLE, RECT};
+use windows::core::{s, ComInterface, Result};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
     ID3DBlob, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -22,13 +22,11 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP,
     D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
 };
-use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_UNKNOWN,
 };
 use windows::Win32::Graphics::Dxgi::{IDXGISwapChain, DXGI_SWAP_CHAIN_DESC};
 
-use crate::renderer::RenderedSurface;
 use crate::util::{try_out_param, try_out_ptr};
 
 pub struct Compositor {

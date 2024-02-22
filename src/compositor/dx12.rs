@@ -1,9 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::{mem, ptr, slice};
 
-use imgui::DrawVert;
 use memoffset::offset_of;
-use tracing::{error, trace};
 use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;

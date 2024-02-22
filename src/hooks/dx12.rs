@@ -87,8 +87,7 @@ unsafe fn init_pipeline(
 }
 
 fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
-    let (pipeline, shared_state) =
-        unsafe { PIPELINE.get_or_try_init(|| init_pipeline(swap_chain)) }?;
+    let (pipeline, _) = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(swap_chain)) }?;
 
     let Some(mut pipeline) = pipeline.try_lock() else {
         return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
@@ -109,7 +108,7 @@ unsafe extern "system" fn imgui_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let Some(shared_state) = PIPELINE.get().map(|(_, shared_state)| shared_state) else {
+    let Some((_, shared_state)) = PIPELINE.get() else {
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     };
 

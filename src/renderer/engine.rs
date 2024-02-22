@@ -28,6 +28,7 @@ pub struct RenderEngine {
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
 
+    #[allow(unused)]
     rtv_heap: ID3D12DescriptorHeap,
     rtv_heap_start: D3D12_CPU_DESCRIPTOR_HANDLE,
     rtv_target: ID3D12Resource,
@@ -119,7 +120,7 @@ impl RenderEngine {
         }
     }
 
-    pub fn render(&mut self, hwnd: HWND, draw_data: &DrawData) -> Result<ID3D12Resource> {
+    pub fn render(&mut self, draw_data: &DrawData) -> Result<ID3D12Resource> {
         unsafe {
             self.command_allocator.Reset()?;
             self.command_list.Reset(&self.command_allocator, None)?;
@@ -219,12 +220,12 @@ impl RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         };
 
         self.setup_render_state(draw_data);
@@ -744,13 +745,10 @@ impl<T> Buffer<T> {
 
         Ok(())
     }
-
-    fn resource(&self) -> &ID3D12Resource {
-        &self.resource
-    }
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 struct Texture {
     resource: ID3D12Resource,
     id: TextureId,

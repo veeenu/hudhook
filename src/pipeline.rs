@@ -8,7 +8,9 @@ use tracing::error;
 use windows::core::{Error, Result, HRESULT};
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
-use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongA, SetWindowLongPtrA, GWLP_WNDPROC};
+#[cfg(target_arch = "x86")]
+use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
+use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrA, GWLP_WNDPROC};
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
@@ -56,6 +58,7 @@ impl<T> Pipeline<T> {
             mem::transmute(SetWindowLongPtrA(hwnd, GWLP_WNDPROC, wnd_proc as usize as isize))
         };
 
+        // TODO is this necessary? SetWindowLongPtrA should already decay to SetWindowLongA
         #[cfg(target_arch = "x86")]
         let wnd_proc =
             unsafe { mem::transmute(SetWindowLongA(hwnd, GWLP_WNDPROC, wnd_proc as usize as i32)) };
@@ -108,7 +111,7 @@ impl<T> Pipeline<T> {
         self.render_loop.render(ui);
         let draw_data = self.ctx.render();
 
-        self.engine.render(self.hwnd, draw_data)
+        self.engine.render(draw_data)
     }
 
     pub fn engine(&mut self) -> &mut RenderEngine {
