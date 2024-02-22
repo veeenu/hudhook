@@ -143,4 +143,23 @@ impl<T> Pipeline<T> {
         }
         io.display_size = [width as f32, height as f32];
     }
+
+    pub fn cleanup(&mut self) {
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        unsafe {
+            SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as isize)
+        };
+
+        // TODO is this necessary? SetWindowLongPtrA should already decay to SetWindowLongA
+        #[cfg(target_arch = "x86")]
+        unsafe {
+            SetWindowLongA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as i32)
+        };
+    }
+}
+
+impl<T> Drop for Pipeline<T> {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
 }

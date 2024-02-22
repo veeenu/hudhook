@@ -309,8 +309,9 @@ impl Hooks for ImguiDx12Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        // TODO
-        // RenderState::cleanup();
         TRAMPOLINES.take();
+        PIPELINE.take();
+        COMMAND_QUEUE.take();
+        RENDER_LOOP.take(); // should already be null
     }
 }

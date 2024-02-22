@@ -210,8 +210,8 @@ impl Hooks for ImguiDx11Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        // TODO
-        // RenderState::cleanup();
         TRAMPOLINES.take();
+        PIPELINE.take();
+        RENDER_LOOP.take(); // should already be null
     }
 }
