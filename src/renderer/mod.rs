@@ -1,13 +1,12 @@
 //! The [`hudhook`](crate) overlay rendering engine.
 mod engine;
-pub(crate) mod engine_new;
-mod input;
+pub(crate) mod input;
 mod keys;
-mod state;
+// mod state;
 
-pub use engine_new::RenderEngine;
-pub use state::RenderState;
-use tracing::{debug, trace};
+pub use engine::RenderEngine;
+// pub use state::RenderState;
+use tracing::debug;
 use windows::Win32::Graphics::Direct3D12::{
     ID3D12CommandAllocator, ID3D12CommandQueue, ID3D12Device, ID3D12GraphicsCommandList,
     ID3D12Resource,

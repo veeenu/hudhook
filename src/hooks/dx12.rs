@@ -1,19 +1,16 @@
-use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, OnceLock};
 
-use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{error, info, trace};
-use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::BOOL;
+use tracing::{error, trace};
+use windows::core::{Error, Interface, Result, HRESULT};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device,
+    D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device, ID3D12Resource,
     D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_QUEUE_DESC, D3D12_COMMAND_QUEUE_FLAG_NONE,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
@@ -25,14 +22,14 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
+use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
 use crate::compositor::dx12::Compositor;
-use crate::compositor::dx12_new;
 use crate::mh::MhHook;
-use crate::renderer::{engine_new, print_dxgi_debug_messages, RenderState};
-use crate::util::{self, try_out_ptr};
-use crate::{Hooks, ImguiRenderLoop};
+use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
+use crate::renderer::print_dxgi_debug_messages;
+use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
@@ -59,16 +56,74 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
 
+static mut PIPELINE: OnceCell<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> =
+    OnceCell::new();
 static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
-static mut PIPELINE: OnceCell<Mutex<Pipeline>> = OnceCell::new();
-static mut RENDER_LOOP: OnceCell<Mutex<Box<dyn ImguiRenderLoop + Send + Sync>>> = OnceCell::new();
+static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
-struct Pipeline {
-    ctx: Rc<RefCell<Context>>,
-    compositor: dx12_new::Compositor,
-    engine: engine_new::RenderEngine,
+unsafe fn init_pipeline(
+    swap_chain: &IDXGISwapChain3,
+) -> Result<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> {
+    let Some(command_queue) = COMMAND_QUEUE.get() else {
+        return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
+    };
+
+    let compositor = Compositor::new(command_queue.clone())?;
+
+    let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
+
+    let Some(render_loop) = RENDER_LOOP.take() else {
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+    };
+
+    let (pipeline, shared_state) = Pipeline::new(hwnd, imgui_wnd_proc, compositor, render_loop)
+        .map_err(|(e, render_loop)| {
+            RENDER_LOOP.get_or_init(move || render_loop);
+            e
+        })?;
+
+    Ok((Mutex::new(pipeline), shared_state))
+}
+
+fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
+    let (pipeline, shared_state) =
+        unsafe { PIPELINE.get_or_try_init(|| init_pipeline(swap_chain)) }?;
+
+    let Some(mut pipeline) = pipeline.try_lock() else {
+        return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+    };
+
+    let source = pipeline.render()?;
+    let target: ID3D12Resource =
+        unsafe { swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())? };
+
+    pipeline.compositor().composite(source, target)?;
+
+    Ok(())
+}
+
+unsafe extern "system" fn imgui_wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let Some(shared_state) = PIPELINE.get().map(|(_, shared_state)| shared_state) else {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    };
+
+    let _ = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam));
+
+    // CONCURRENCY: as the message interpretation now happens out of band, this
+    // expresses the intent as of *before* the current message was received.
+    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
+
+    if should_block_messages {
+        LRESULT(1)
+    } else {
+        CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
+    }
 }
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
@@ -79,129 +134,10 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    let Some(command_queue) = COMMAND_QUEUE.get() else {
-        trace!("No command queue yet");
+    if let Err(e) = render(&swap_chain) {
         print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-    };
-
-    trace!("RENDER LOOP");
-    let Some(mut render_loop) = RENDER_LOOP.get().and_then(Mutex::try_lock) else {
-        trace!("Could not lock render loop in Present");
-        print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-    };
-
-    trace!("PIPELINE INIT");
-    let pipeline = PIPELINE.get_or_try_init(|| -> windows::core::Result<_> {
-        trace!("Context create");
-        let mut ctx = Context::create();
-        ctx.io_mut().display_size = [800., 600.];
-        trace!("Render engine new");
-        let mut engine = engine_new::RenderEngine::new(&mut ctx, 800, 600)?;
-        trace!("Compositor new");
-        let compositor = dx12_new::Compositor::new(command_queue.clone())?;
-
-        render_loop.initialize(&mut engine);
-
-        Ok(Mutex::new(Pipeline { ctx: Rc::new(RefCell::new(ctx)), compositor, engine }))
-    });
-    let pipeline = match pipeline {
-        Ok(pipeline) => pipeline,
-        Err(e) => {
-            error!("Could not initialize rendering pipeline: {e:?}");
-            print_dxgi_debug_messages();
-            return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-        },
-    };
-
-    trace!("PIPELINE");
-    let Some(mut pipeline) = pipeline.try_lock() else {
-        trace!("Could not lock pipeline in Present");
-        print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-    };
-
-    // TODO store hwnd
-    let desc = util::try_out_param(|v| swap_chain.GetDesc(v)).unwrap();
-
-    // TODO wrong type
-    // render_loop.before_render(&mut pipeline.engine);
-
-    trace!("RENDER SETUP");
-    let ctx = Rc::clone(&pipeline.ctx);
-    if let Err(e) = pipeline.engine.render_setup(desc.OutputWindow, &mut ctx.borrow_mut()) {
-        error!("Render setup: {e:?}");
-        print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+        error!("Render error: {e:?}");
     }
-
-    render_loop.before_render(&mut pipeline.engine);
-
-    trace!("RENDER CTX");
-    let mut ctx = ctx.borrow_mut();
-
-    if ctx.io().display_size[0] <= 0.0 || ctx.io().display_size[1] <= 0.0 {
-        error!("{:?}", ctx.io().display_size);
-        print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-    }
-
-    let ui = ctx.frame();
-    render_loop.render(ui);
-    let draw_data = ctx.render();
-
-    trace!("RENDER");
-    let resource = match pipeline.engine.render(desc.OutputWindow, draw_data) {
-        Ok(resource) => resource,
-        Err(e) => {
-            print_dxgi_debug_messages();
-            error!("Render: {e:?}");
-            return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-        },
-    };
-
-    trace!("COMPOSITE");
-    if let Err(e) = pipeline
-        .compositor
-        .composite(resource, swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex()).unwrap())
-    {
-        error!("Composite: {e:?}");
-        print_dxgi_debug_messages();
-        return dxgi_swap_chain_present(swap_chain, sync_interval, flags);
-    }
-
-    // Don't attempt a render if one is already underway: it might be that the
-    // renderer itself is currently invoking `Present`.
-    // if RenderState::is_locked() {
-    //     return dxgi_swap_chain_present(p_this, sync_interval, flags);
-    // }
-    //
-    // let hwnd = RenderState::setup(|| {
-    //     let mut desc = Default::default();
-    //     p_this.GetDesc(&mut desc).unwrap();
-    //     info!("Output window: {:?}", p_this);
-    //     info!("Desc: {:?}", desc);
-    //     desc.OutputWindow
-    // });
-    //
-    // RenderState::lock();
-    // let surface = RenderState::render(hwnd);
-    // let mut compositor = COMPOSITOR.get_or_init(||
-    // Mutex::new(Compositor::new())).lock();
-    //
-    // if let Err(e) = compositor.with_swap_chain(&p_this) {
-    //     error!("Could not initialize compositor's swap chain: {e:?}");
-    // }
-    //
-    // if let Some(surface) = surface {
-    //     if let Err(e) = compositor.composite(surface.resource) {
-    //         error!("Could not composite: {e:?}");
-    //     }
-    // }
-    //
-    // drop(compositor);
-    // RenderState::unlock();
 
     trace!("Call IDXGISwapChain::Present trampoline");
     dxgi_swap_chain_present(swap_chain, sync_interval, flags)
@@ -235,24 +171,8 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
+    // TODO check command queue type
     COMMAND_QUEUE.get_or_init(|| command_queue.clone());
-
-    // if RenderState::is_locked() {
-    //     return d3d12_command_queue_execute_command_lists(
-    //         cmd_queue,
-    //         num_command_lists,
-    //         command_lists,
-    //     );
-    // }
-    //
-    // let mut compositor = COMPOSITOR.get_or_init(||
-    // Mutex::new(Compositor::new())).lock();
-    //
-    // if let Err(e) = compositor.with_command_queue(&cmd_queue) {
-    //     error!("Could not initialize compositor command queue: {e:?}");
-    // }
-    //
-    // drop(compositor);
 
     d3d12_command_queue_execute_command_lists(command_queue, num_command_lists, command_lists);
 }
@@ -268,7 +188,7 @@ fn get_target_addrs() -> (
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
     let dev: ID3D12Device =
-        try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
+        util::try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
             .expect("D3D12CreateDevice failed");
 
     let command_queue: ID3D12CommandQueue = unsafe {
@@ -281,7 +201,7 @@ fn get_target_addrs() -> (
     }
     .unwrap();
 
-    let swap_chain: IDXGISwapChain = match try_out_ptr(|v| unsafe {
+    let swap_chain: IDXGISwapChain = match util::try_out_ptr(|v| unsafe {
         factory
             .CreateSwapChain(
                 &command_queue,
@@ -332,6 +252,7 @@ impl ImguiDx12Hooks {
     /// The following functions are hooked:
     /// - `IDXGISwapChain3::Present`
     /// - `IDXGISwapChain3::ResizeBuffers`
+    /// - `ID3D12CommandQueue::ExecuteCommandLists`
     ///
     /// # Safety
     ///
@@ -363,10 +284,7 @@ impl ImguiDx12Hooks {
         )
         .expect("couldn't create ID3D12CommandQueue::ExecuteCommandLists hook");
 
-        // TODO
-        // RenderState::set_render_loop(t);
-
-        RENDER_LOOP.get_or_init(|| Mutex::new(Box::new(t)));
+        RENDER_LOOP.get_or_init(|| Box::new(t));
 
         TRAMPOLINES.get_or_init(|| Trampolines {
             dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
@@ -392,7 +310,8 @@ impl Hooks for ImguiDx12Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        RenderState::cleanup();
+        // TODO
+        // RenderState::cleanup();
         TRAMPOLINES.take();
     }
 }

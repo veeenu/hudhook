@@ -115,7 +115,7 @@ use std::thread;
 
 use imgui::{Io, Ui};
 use once_cell::sync::OnceCell;
-use renderer::engine_new::RenderEngine;
+use renderer::RenderEngine;
 use tracing::error;
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
@@ -133,6 +133,7 @@ pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
 pub mod mh;
+pub mod pipeline;
 pub mod renderer;
 
 mod util;
