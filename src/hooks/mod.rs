@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_OVERLAPPEDWINDOW, WS_OVERLAPPEDWINDOW,
 };
 
-// pub mod dx11;
+pub mod dx11;
 pub mod dx12;
 // pub mod dx9;
 // pub mod opengl3;

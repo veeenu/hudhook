@@ -111,6 +111,10 @@ impl<T> Pipeline<T> {
         self.engine.render(self.hwnd, draw_data)
     }
 
+    pub fn engine(&mut self) -> &mut RenderEngine {
+        &mut self.engine
+    }
+
     pub fn context(&mut self) -> &mut Context {
         &mut self.ctx
     }

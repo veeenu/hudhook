@@ -2,7 +2,7 @@ use std::{mem, ptr, slice};
 
 use once_cell::sync::OnceCell;
 use windows::core::{s, w, ComInterface, Result};
-use windows::Win32::Foundation::{CloseHandle, BOOL, GENERIC_ALL, RECT};
+use windows::Win32::Foundation::{CloseHandle, BOOL, GENERIC_ALL, HANDLE, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::{
     ID3DBlob, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -22,6 +22,7 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP,
     D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
 };
+use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_UNKNOWN,
 };
@@ -37,7 +38,7 @@ pub struct Compositor {
 }
 
 impl Compositor {
-    pub fn new(device: &ID3D11Device1, surface: &RenderedSurface) -> Result<Self> {
+    pub fn new(device: &ID3D11Device1) -> Result<Self> {
         Ok(Self {
             device: device.clone(),
             device_ctx: unsafe { device.GetImmediateContext()? },
@@ -45,16 +46,7 @@ impl Compositor {
         })
     }
 
-    pub fn composite(&mut self, surface: RenderedSurface, target: &IDXGISwapChain) -> Result<()> {
-        let handle = unsafe {
-            surface.device.CreateSharedHandle(
-                &surface.resource,
-                None,
-                GENERIC_ALL.0,
-                w!("hudhook-dx12-shared-handle"),
-            )?
-        };
-
+    pub fn composite(&mut self, handle: HANDLE, target: &IDXGISwapChain) -> Result<()> {
         let resource: ID3D11Texture2D = unsafe { self.device.OpenSharedResource1(handle) }?;
         unsafe { self.render_quad(resource, target) }?;
 

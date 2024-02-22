@@ -1,9 +1,9 @@
 use windows::core::Result;
 use windows::Win32::Foundation::{BOOL, HWND};
+use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
-use windows::Win32::Graphics::Dxgi::IDXGISwapChain3;
 
 // Holds and manages the lifetimes for the DirectComposition data structures.
 pub struct Compositor {
@@ -24,9 +24,9 @@ impl Compositor {
         Ok(Self { dcomp_dev, _dcomp_target: dcomp_target, root_visual })
     }
 
-    pub fn render(&self, swap_chain: &IDXGISwapChain3) -> Result<()> {
+    pub fn composite(&self, resource: ID3D12Resource) -> Result<()> {
         unsafe {
-            self.root_visual.SetContent(swap_chain)?;
+            self.root_visual.SetContent(resource)?;
             self.dcomp_dev.Commit()?;
         }
 

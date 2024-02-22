@@ -7,8 +7,8 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use tracing::{error, trace};
-use windows::core::{s, w, ComInterface, Interface, Result, PCWSTR};
+use tracing::trace;
+use windows::core::{s, w, ComInterface, Result, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
@@ -106,6 +106,17 @@ impl RenderEngine {
 
     pub fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(data, width, height) }
+    }
+
+    pub fn create_shared_handle(&self, resource: ID3D12Resource) -> Result<HANDLE> {
+        unsafe {
+            self.device.CreateSharedHandle(
+                &resource,
+                None,
+                GENERIC_ALL.0,
+                w!("hudhook Shared Resource"),
+            )
+        }
     }
 
     pub fn render(&mut self, hwnd: HWND, draw_data: &DrawData) -> Result<ID3D12Resource> {
