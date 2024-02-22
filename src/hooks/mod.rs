@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 pub mod dx11;
 pub mod dx12;
-// pub mod dx9;
+pub mod dx9;
 // pub mod opengl3;
 
 /// A utility function to retrieve the top level [`HWND`] belonging to this

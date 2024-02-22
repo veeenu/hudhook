@@ -97,7 +97,7 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
     let target: ID3D12Resource =
         unsafe { swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())? };
 
-    pipeline.compositor().composite(source, target)?;
+    pipeline.compositor_mut().composite(source, target)?;
 
     Ok(())
 }

@@ -70,9 +70,9 @@ fn render(swap_chain: &IDXGISwapChain) -> Result<()> {
     };
 
     let source = pipeline.render()?;
-    let handle = pipeline.engine().create_shared_handle(source)?;
+    let handle = pipeline.engine_mut().create_shared_handle(source)?;
 
-    pipeline.compositor().composite(handle, swap_chain)?;
+    pipeline.compositor_mut().composite(handle, swap_chain)?;
 
     Ok(())
 }

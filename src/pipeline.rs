@@ -114,7 +114,11 @@ impl<T> Pipeline<T> {
         self.engine.render(draw_data)
     }
 
-    pub fn engine(&mut self) -> &mut RenderEngine {
+    pub fn engine(&self) -> &RenderEngine {
+        &self.engine
+    }
+
+    pub fn engine_mut(&mut self) -> &mut RenderEngine {
         &mut self.engine
     }
 
@@ -122,7 +126,11 @@ impl<T> Pipeline<T> {
         &mut self.ctx
     }
 
-    pub fn compositor(&mut self) -> &mut T {
+    pub fn compositor(&self) -> &T {
+        &self.compositor
+    }
+
+    pub fn compositor_mut(&mut self) -> &mut T {
         &mut self.compositor
     }
 

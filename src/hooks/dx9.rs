@@ -1,22 +1,26 @@
 use std::ffi::c_void;
 use std::mem;
-use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, OnceLock};
 
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::trace;
-use windows::core::{Interface, HRESULT};
-use windows::Win32::Foundation::{BOOL, HWND, RECT};
+use tracing::{error, trace};
+use windows::core::{Error, Interface, Result, HRESULT};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
     D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD,
     D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::RGNDATA;
+use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
 use crate::compositor::dx9::Compositor;
 use crate::mh::MhHook;
-use crate::renderer::RenderState;
+use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
+use crate::renderer::print_dxgi_debug_messages;
 use crate::util::try_out_ptr;
 use crate::{Hooks, ImguiRenderLoop};
 
@@ -33,10 +37,71 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut COMPOSITOR: OnceLock<Mutex<Compositor>> = OnceLock::new();
+static mut PIPELINE: OnceCell<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> =
+    OnceCell::new();
+static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+
+unsafe fn init_pipeline(
+    device: &IDirect3DDevice9,
+) -> Result<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> {
+    let mut creation_parameters = Default::default();
+    let _ = device.GetCreationParameters(&mut creation_parameters);
+    let hwnd = creation_parameters.hFocusWindow;
+
+    let compositor = Compositor::new(device, hwnd)?;
+
+    let Some(render_loop) = RENDER_LOOP.take() else {
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+    };
+
+    let (pipeline, shared_state) = Pipeline::new(hwnd, imgui_wnd_proc, compositor, render_loop)
+        .map_err(|(e, render_loop)| {
+            RENDER_LOOP.get_or_init(move || render_loop);
+            e
+        })?;
+
+    Ok((Mutex::new(pipeline), shared_state))
+}
+
+fn render(device: &IDirect3DDevice9) -> Result<()> {
+    let (pipeline, _) = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
+
+    let Some(mut pipeline) = pipeline.try_lock() else {
+        return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+    };
+
+    let source = pipeline.render()?;
+
+    pipeline.compositor().composite(pipeline.engine(), source)?;
+
+    Ok(())
+}
+
+unsafe extern "system" fn imgui_wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let Some(shared_state) = PIPELINE.get().map(|(_, shared_state)| shared_state) else {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    };
+
+    let _ = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam));
+
+    // CONCURRENCY: as the message interpretation now happens out of band, this
+    // expresses the intent as of *before* the current message was received.
+    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
+
+    if should_block_messages {
+        LRESULT(1)
+    } else {
+        CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
+    }
+}
 
 unsafe extern "system" fn dx9_present_impl(
-    p_this: IDirect3DDevice9,
+    device: IDirect3DDevice9,
     psourcerect: *const RECT,
     pdestrect: *const RECT,
     hdestwindowoverride: HWND,
@@ -45,27 +110,32 @@ unsafe extern "system" fn dx9_present_impl(
     let Trampolines { dx9_present } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the
-    // renderer itself is currently invoking `Present`.
-    if RenderState::is_locked() {
-        return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
+    if let Err(e) = render(&device) {
+        print_dxgi_debug_messages();
+        error!("Render error: {e:?}");
     }
 
-    let hwnd = RenderState::setup(|| {
-        let mut creation_parameters = Default::default();
-        let _ = p_this.GetCreationParameters(&mut creation_parameters);
-        creation_parameters.hFocusWindow
-    });
-
-    RenderState::lock();
-    let surface = RenderState::render(hwnd).unwrap();
-    let mut compositor =
-        COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this, hwnd).unwrap())).lock();
-    compositor.composite(surface).unwrap();
-    RenderState::unlock();
+    // Don't attempt a render if one is already underway: it might be that the
+    // renderer itself is currently invoking `Present`.
+    // if RenderState::is_locked() {
+    //     return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
+    // }
+    //
+    // let hwnd = RenderState::setup(|| {
+    //     let mut creation_parameters = Default::default();
+    //     let _ = p_this.GetCreationParameters(&mut creation_parameters);
+    //     creation_parameters.hFocusWindow
+    // });
+    //
+    // RenderState::lock();
+    // let surface = RenderState::render(hwnd).unwrap();
+    // let mut compositor =
+    //     COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this, hwnd).unwrap())).lock();
+    // compositor.composite(surface).unwrap();
+    // RenderState::unlock();
 
     trace!("Call IDirect3DDevice9::Present trampoline");
-    dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
+    dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
 }
 
 fn get_target_addrs() -> Dx9PresentType {
@@ -124,7 +194,7 @@ impl ImguiDx9Hooks {
         let hook_present = MhHook::new(dx9_present_addr as *mut _, dx9_present_impl as *mut _)
             .expect("couldn't create IDirect3DDevice9::Present hook");
 
-        RenderState::set_render_loop(t);
+        RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINES
             .get_or_init(|| Trampolines { dx9_present: mem::transmute(hook_present.trampoline()) });
 
@@ -146,7 +216,8 @@ impl Hooks for ImguiDx9Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        RenderState::cleanup();
         TRAMPOLINES.take();
+        PIPELINE.take();
+        RENDER_LOOP.take();
     }
 }

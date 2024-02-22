@@ -19,7 +19,7 @@ use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{keys, print_dxgi_debug_messages};
-use crate::util::{self, Fence};
+use crate::util::{self, create_barrier, Fence};
 
 pub struct RenderEngine {
     device: ID3D12Device,
@@ -118,6 +118,22 @@ impl RenderEngine {
                 w!("hudhook Shared Resource"),
             )
         }
+    }
+
+    pub unsafe fn copy_texture(&self, resource: ID3D12Resource, data: *mut u8) -> Result<()> {
+        unsafe {
+            let desc = resource.GetDesc();
+            let size = desc.Width as usize * desc.Height as usize * 4;
+            resource.ReadFromSubresource(data as _, desc.Width as _, 0, 0, None)?;
+            // let mut resource_ptr = ptr::null_mut();
+            // resource
+            //     .Map(0, None, Some(&mut resource_ptr))
+            //     .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
+            // ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size);
+            // resource.Unmap(0, None);
+        }
+
+        Ok(())
     }
 
     pub fn render(&mut self, draw_data: &DrawData) -> Result<ID3D12Resource> {

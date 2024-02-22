@@ -1,10 +1,13 @@
 use std::mem;
 use std::ptr::{self, null_mut};
 
+use tracing::trace;
 use windows::core::Result;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
 use windows::Win32::Graphics::Direct3D9::*;
 
+use crate::renderer::RenderEngine;
 use crate::util::{self, try_out_param};
 
 #[repr(C)]
@@ -29,6 +32,7 @@ const VERTICES: [Vertex; 4] = [
 pub struct Compositor {
     device: IDirect3DDevice9,
     vertex_buffer: IDirect3DVertexBuffer9,
+    texture: IDirect3DTexture9,
     viewport: D3DVIEWPORT9,
 }
 
@@ -68,12 +72,32 @@ impl Compositor {
             MaxZ: 1.0,
         };
 
-        Ok(Self { device: device.clone(), vertex_buffer, viewport })
+        let texture = util::try_out_ptr(|v| unsafe {
+            device.CreateTexture(
+                width as u32,
+                height as u32,
+                1,
+                D3DUSAGE_DYNAMIC as _,
+                D3DFMT_A8R8G8B8,
+                D3DPOOL_DEFAULT,
+                v,
+                ptr::null_mut(),
+            )
+        })?;
+
+        Ok(Self { device: device.clone(), vertex_buffer, viewport, texture })
     }
 
-    pub fn composite(&mut self) -> Result<()> {
+    pub fn composite(&self, engine: &RenderEngine, resource: ID3D12Resource) -> Result<()> {
         unsafe {
-            // self.device.SetTexture(0, &texture)?;
+            trace!("Lock rect");
+            let rect = util::try_out_param(|v| self.texture.LockRect(0, v, ptr::null_mut(), 0))?;
+            trace!("Copy texture");
+            engine.copy_texture(resource, rect.pBits as *mut u8)?;
+            trace!("Unlock rect");
+            self.texture.UnlockRect(0)?;
+            trace!("Set texture");
+            self.device.SetTexture(0, &self.texture)?;
             self.device.SetViewport(&self.viewport)?;
             self.device.SetRenderState(D3DRS_ALPHABLENDENABLE, true.into())?;
             self.device.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA.0)?;
