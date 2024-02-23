@@ -2,9 +2,13 @@ use std::ffi::CString;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
+use hudhook::renderer::print_dxgi_debug_messages;
+use hudhook::util;
 use tracing::trace;
 use windows::core::{s, ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -22,12 +26,12 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_TRANSITION_BARRIER,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
-    DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC,
+    DXGI_MODE_SCALING_UNSPECIFIED, DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL,
+    DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, DXGIGetDebugInterface1, IDXGIFactory, IDXGIInfoQueue, IDXGISwapChain,
-    IDXGISwapChain3, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory, IDXGIFactory, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
@@ -39,9 +43,11 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
+    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WM_SIZE, WNDCLASSA,
     WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
+
+static RESIZE: OnceLock<Sender<(u32, u32)>> = OnceLock::new();
 
 pub struct Barrier;
 
@@ -124,10 +130,6 @@ impl Dx12Harness {
                         None,
                     )
                 }; // lpParam
-
-                let mut debug_interface: Option<ID3D12Debug> = None;
-                unsafe { D3D12GetDebugInterface(&mut debug_interface) }.unwrap();
-                unsafe { debug_interface.as_ref().unwrap().EnableDebugLayer() };
 
                 let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
                 let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
@@ -223,8 +225,6 @@ impl Dx12Harness {
                     }
                 }
 
-                let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
-
                 unsafe { SetTimer(hwnd, 0, 100, None) };
 
                 let fence: ID3D12Fence =
@@ -233,28 +233,17 @@ impl Dx12Harness {
                 let fence_event =
                     unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003) }.unwrap();
 
+                let (tx, rx) = mpsc::channel();
+
+                RESIZE.get_or_init(move || tx);
+
                 loop {
                     trace!("Debug");
                     unsafe {
-                        for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-                            let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-                            let diqm = vec![0u8; msg_len];
-                            let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
-                                .unwrap();
-                            let diqm = pdiqm.as_ref().unwrap();
-                            println!(
-                                "{}",
-                                String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription,
-                                    diqm.DescriptionByteLength
-                                ))
-                            );
-                        }
-                        diq.ClearStoredMessages(DXGI_DEBUG_ALL);
+                        print_dxgi_debug_messages();
                     }
 
+                    trace!("Clearing");
                     unsafe {
                         let rtv_barrier = Barrier::create(
                             swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex()).unwrap(),
@@ -271,12 +260,18 @@ impl Dx12Harness {
 
                         command_alloc.Reset().unwrap();
                         command_list.Reset(&command_alloc, None).unwrap();
+                        trace!("RB");
                         command_list.ResourceBarrier(&rtv_barrier);
+                        trace!("ClearRTV");
                         command_list.ClearRenderTargetView(rtv, &[0.3, 0.8, 0.3, 0.8], None);
+                        trace!("RB");
                         command_list.ResourceBarrier(&present_barrier);
                         command_list.Close().unwrap();
+                        trace!("ECL");
                         command_queue.ExecuteCommandLists(&[Some(command_list.cast().unwrap())]);
+                        trace!("ECL done");
                         command_queue.Signal(&fence, fence_val);
+                        trace!("Signal done");
 
                         trace!("Present");
                         swap_chain.Present(1, 0).unwrap();
@@ -296,6 +291,32 @@ impl Dx12Harness {
                     if !handle_message(hwnd) {
                         break;
                     }
+
+                    trace!("Resize");
+                    if let Some((width, height)) = rx.try_iter().last() {
+                        let desc =
+                            util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
+                        unsafe {
+                            swap_chain.ResizeBuffers(
+                                desc.BufferCount,
+                                width,
+                                height,
+                                DXGI_FORMAT_B8G8R8A8_UNORM,
+                                0,
+                            )
+                        };
+
+                        for i in 0..desc.BufferCount {
+                            unsafe {
+                                let buf: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
+                                let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
+                                    ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
+                                };
+                                dev.CreateRenderTargetView(&buf, None, rtv_handle);
+                                rtv_handles[i as usize] = rtv_handle;
+                            }
+                        }
+                    };
 
                     if done.load(Ordering::SeqCst) {
                         break;
@@ -339,6 +360,12 @@ pub unsafe extern "system" fn window_proc(
     match msg {
         WM_DESTROY => {
             PostQuitMessage(0);
+        },
+        WM_SIZE => {
+            let (width, height) = hudhook::util::win_size(hwnd);
+            if let Some(tx) = RESIZE.get() {
+                tx.send((width as _, height as _));
+            }
         },
         _ => {
             return DefWindowProcA(hwnd, msg, w_param, l_param);

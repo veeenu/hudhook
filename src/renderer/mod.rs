@@ -9,8 +9,10 @@ use windows::Win32::Graphics::Dxgi::{
     DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
 };
 
-pub(crate) unsafe fn print_dxgi_debug_messages() {
-    let diq: IDXGIInfoQueue = DXGIGetDebugInterface1(0).unwrap();
+pub unsafe fn print_dxgi_debug_messages() {
+    let Ok(diq): Result<IDXGIInfoQueue, _> = DXGIGetDebugInterface1(0) else {
+        return;
+    };
 
     for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
         let mut msg_len: usize = 0;

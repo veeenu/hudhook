@@ -29,6 +29,10 @@ crate-type = ["cdylib"]
 name = "hook_with_image"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "injector"
+crate-type = ["bin"]
+
 [dependencies]
 imgui = "0.11"
 imgui-opengl = "0.1"

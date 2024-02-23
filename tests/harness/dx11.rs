@@ -2,9 +2,12 @@ use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
+use hudhook::renderer::print_dxgi_debug_messages;
+use hudhook::util;
 use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
@@ -13,33 +16,22 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL,
+    DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    DXGIGetDebugInterface1, IDXGIInfoQueue, IDXGISwapChain, DXGI_DEBUG_ALL,
-    DXGI_INFO_QUEUE_MESSAGE, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
+    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WM_SIZE, WNDCLASSA,
     WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
-pub fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
-where
-    T: Default,
-    F: FnMut(&mut T) -> Result<O, E>,
-{
-    let mut t: T = Default::default();
-    match f(&mut t) {
-        Ok(_) => Ok(t),
-        Err(e) => Err(e),
-    }
-}
+static RESIZE: OnceLock<Sender<(u32, u32)>> = OnceLock::new();
 
 pub struct Dx11Harness {
     child: Option<JoinHandle<()>>,
@@ -93,8 +85,6 @@ impl Dx11Harness {
                     )
                 };
 
-                let diq: IDXGIInfoQueue = unsafe { DXGIGetDebugInterface1(0) }.unwrap();
-
                 let mut p_device: Option<ID3D11Device> = None;
                 let mut p_swap_chain: Option<IDXGISwapChain> = None;
                 let mut p_context: Option<ID3D11DeviceContext> = None;
@@ -136,35 +126,19 @@ impl Dx11Harness {
                 let backbuf: ID3D11Resource = unsafe { swap_chain.GetBuffer(0).unwrap() };
 
                 println!("here");
-                let rtv = try_out_param(|v| unsafe {
+                let mut rtv = util::try_out_ptr(|v| unsafe {
                     device.CreateRenderTargetView(&backbuf, None, Some(v))
                 })
-                .unwrap()
                 .unwrap();
 
                 unsafe { SetTimer(handle, 0, 100, None) };
 
+                let (tx, rx) = mpsc::channel();
+
+                RESIZE.get_or_init(move || tx);
+
                 loop {
-                    unsafe {
-                        for i in 0..diq.GetNumStoredMessages(DXGI_DEBUG_ALL) {
-                            eprintln!("Debug Message {i}");
-                            let mut msg_len: usize = 0;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap();
-                            let diqm = vec![0u8; msg_len];
-                            let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
-                            diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _)
-                                .unwrap();
-                            let diqm = pdiqm.as_ref().unwrap();
-                            eprintln!(
-                                "{}",
-                                String::from_utf8_lossy(std::slice::from_raw_parts(
-                                    diqm.pDescription,
-                                    diqm.DescriptionByteLength
-                                ))
-                            );
-                        }
-                        diq.ClearStoredMessages(DXGI_DEBUG_ALL);
-                    }
+                    unsafe { print_dxgi_debug_messages() };
 
                     unsafe { context.ClearRenderTargetView(&rtv, &[0.2, 0.8, 0.2, 0.8]) };
 
@@ -175,6 +149,27 @@ impl Dx11Harness {
                     if !handle_message(handle) {
                         break;
                     }
+
+                    if let Some((width, height)) = rx.try_iter().last() {
+                        let desc =
+                            util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
+                        // unsafe {
+                        //     swap_chain.ResizeBuffers(
+                        //         desc.BufferCount,
+                        //         width,
+                        //         height,
+                        //         DXGI_FORMAT_R8G8B8A8_UNORM,
+                        //         0,
+                        //     )
+                        // };
+
+                        // for i in 0..desc.BufferCount {
+                        //     rtv = util::try_out_ptr(|v| unsafe {
+                        //         device.CreateRenderTargetView(&backbuf, None, Some(v))
+                        //     })
+                        //     .unwrap();
+                        // }
+                    };
 
                     if done.load(Ordering::SeqCst) {
                         break;
@@ -218,6 +213,12 @@ pub unsafe extern "system" fn window_proc(
     match msg {
         WM_DESTROY => {
             PostQuitMessage(0);
+        },
+        WM_SIZE => {
+            let (width, height) = hudhook::util::win_size(hwnd);
+            if let Some(tx) = RESIZE.get() {
+                tx.send((width as _, height as _));
+            }
         },
         _ => {
             return DefWindowProcA(hwnd, msg, wparam, lparam);

@@ -136,7 +136,7 @@ pub mod mh;
 pub mod pipeline;
 pub mod renderer;
 
-mod util;
+pub mod util;
 
 // Global state objects.
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
