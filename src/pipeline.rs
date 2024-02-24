@@ -48,12 +48,12 @@ impl<T> Pipeline<T> {
         let mut ctx = Context::create();
         ctx.io_mut().display_size = [width as f32, height as f32];
 
-        render_loop.initialize(&mut ctx);
-
-        let engine = match RenderEngine::new(&mut ctx, width as u32, height as u32) {
+        let mut engine = match RenderEngine::new(&mut ctx, width as u32, height as u32) {
             Ok(engine) => engine,
             Err(e) => return Err((e, render_loop)),
         };
+
+        render_loop.initialize(&mut ctx, &mut engine);
 
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = unsafe {

@@ -215,7 +215,7 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
-    fn initialize(&mut self, _ctx: &mut Context) {}
+    fn initialize(&mut self, _ctx: &mut Context, _render_engine: &mut RenderEngine) {}
 
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);

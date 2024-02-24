@@ -4,7 +4,7 @@ use hudhook::renderer::RenderEngine;
 use hudhook::ImguiRenderLoop;
 use image::io::Reader as ImageReader;
 use image::{EncodableLayout, RgbaImage};
-use imgui::{Condition, Image, TextureId};
+use imgui::{Condition, Context, Image, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -49,7 +49,7 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize(&mut self, render_engine: &mut RenderEngine) {
+    fn initialize(&mut self, _ctx: &mut Context, render_engine: &mut RenderEngine) {
         self.image_id = render_engine
             .load_image(self.image.as_bytes(), self.image.width() as _, self.image.height() as _)
             .ok();
