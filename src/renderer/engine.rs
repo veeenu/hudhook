@@ -115,107 +115,116 @@ impl RenderEngine {
         }
     }
 
+    /// # Safety
+    ///
+    /// This method copies bytes from the target resource, assumed BGRA, to the
+    /// address `data` points to. The resource should always be the one
+    /// emitted by this renderer's `render` method.
+    ///
+    /// `data` must be a valid pointer to a region of memory that has at least
+    /// `width` * `height` * 4 bytes available.
     pub unsafe fn copy_texture(&self, resource: ID3D12Resource, data: *mut u8) -> Result<()> {
-        unsafe {
-            let desc = resource.GetDesc();
-            let size = desc.Width as u64 * desc.Height as u64 * 4;
+        let desc = resource.GetDesc();
 
-            let mut placed_footprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT = Default::default();
-            self.device.GetCopyableFootprints(
-                &desc,
-                0,
-                1,
-                0,
-                Some(&mut placed_footprint),
+        let mut placed_footprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT = Default::default();
+        self.device.GetCopyableFootprints(
+            &desc,
+            0,
+            1,
+            0,
+            Some(&mut placed_footprint),
+            None,
+            None,
+            None,
+        );
+
+        let size_aligned = placed_footprint.Footprint.RowPitch * placed_footprint.Footprint.Height;
+
+        let staging_resource: ID3D12Resource = util::try_out_ptr(|v| {
+            self.device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_READBACK,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                    CreationNodeMask: 0,
+                    VisibleNodeMask: 0,
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 65536,
+                    Width: size_aligned as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_PRESENT,
                 None,
-                None,
-                None,
+                v,
+            )
+        })?;
+
+        let staging_location = D3D12_TEXTURE_COPY_LOCATION {
+            pResource: ManuallyDrop::new(Some(staging_resource.clone())),
+            Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { PlacedFootprint: placed_footprint },
+        };
+
+        let source_location = D3D12_TEXTURE_COPY_LOCATION {
+            pResource: ManuallyDrop::new(Some(resource.clone())),
+            Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+            Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+        };
+
+        self.command_allocator.Reset()?;
+        self.command_list.Reset(&self.command_allocator, None)?;
+
+        self.command_list.CopyTextureRegion(&staging_location, 0, 0, 0, &source_location, None);
+
+        self.command_list.Close()?;
+        self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
+        self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
+        self.fence.wait()?;
+        self.fence.incr();
+
+        let mut resource_ptr = ptr::null_mut();
+        staging_resource
+            .Map(0, None, Some(&mut resource_ptr))
+            .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
+
+        // The row pitch has a larger alignment than the width. E.g. a width of 800
+        // would occupy 800 * 4 = 3200 bytes but the pitch will be 3328 which is
+        // aligned to 256.
+        //
+        // We must then copy each row individually. This is most likely slower than
+        // copying the entire thing in one go, but the whole operation
+        // surprisingly doesn't let the frame rate ever dip below 100fps on my
+        // machine. Considering that D3D9 applications expect much weaker
+        // hardware than is available today, this is unlikely to be a bottleneck
+        // for users.
+        //
+        // Please open an issue with benchmarks if this hampers your application in any
+        // way.
+        let resource_ptr = resource_ptr as *mut u8;
+        let height = desc.Height as isize;
+        let width = 4 * placed_footprint.Footprint.Width as isize;
+        let pitch = placed_footprint.Footprint.RowPitch as isize;
+        for y in 0..height {
+            ptr::copy_nonoverlapping(
+                resource_ptr.offset(y * pitch),
+                data.offset(y * width),
+                width as usize,
             );
-
-            let size_aligned =
-                placed_footprint.Footprint.RowPitch * placed_footprint.Footprint.Height;
-
-            trace!(
-                "Size {size} aligned {size_aligned} {}x{} {placed_footprint:#?}",
-                desc.Width,
-                desc.Height
-            );
-
-            let staging_resource: ID3D12Resource = util::try_out_ptr(|v| {
-                self.device.CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_READBACK,
-                        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                        CreationNodeMask: 0,
-                        VisibleNodeMask: 0,
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 65536,
-                        Width: size_aligned as u64,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_PRESENT,
-                    None,
-                    v,
-                )
-            })?;
-
-            let staging_location = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: ManuallyDrop::new(Some(staging_resource.clone())),
-                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { PlacedFootprint: placed_footprint },
-            };
-
-            let source_location = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: ManuallyDrop::new(Some(resource.clone())),
-                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
-            };
-
-            self.command_allocator.Reset()?;
-            self.command_list.Reset(&self.command_allocator, None)?;
-
-            self.command_list.CopyTextureRegion(&staging_location, 0, 0, 0, &source_location, None);
-
-            self.command_list.Close()?;
-            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
-            self.fence.wait()?;
-            self.fence.incr();
-
-            // staging_resource.ReadFromSubresource(data as _, size as u32, 0, 0, None)?;
-            let mut resource_ptr = ptr::null_mut();
-            staging_resource
-                .Map(0, None, Some(&mut resource_ptr))
-                .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
-
-            let resource_ptr = resource_ptr as *mut u8;
-            let height = desc.Height as isize;
-            let width = 4 * placed_footprint.Footprint.Width as isize;
-            let pitch = placed_footprint.Footprint.RowPitch as isize;
-            for y in 0..height {
-                ptr::copy_nonoverlapping(
-                    resource_ptr.offset(y * pitch),
-                    data.offset(y * width),
-                    width as usize,
-                );
-            }
-
-            // ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size as usize);
-            staging_resource.Unmap(0, None);
-
-            ManuallyDrop::into_inner(staging_location.pResource);
-            ManuallyDrop::into_inner(source_location.pResource);
         }
+
+        staging_resource.Unmap(0, None);
+
+        ManuallyDrop::into_inner(staging_location.pResource);
+        ManuallyDrop::into_inner(source_location.pResource);
 
         Ok(())
     }
@@ -985,11 +994,13 @@ impl TextureHeap {
 
         self.command_allocator.Reset()?;
         self.command_list.Reset(&self.command_allocator, None)?;
+
         let dst_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: ManuallyDrop::new(Some(texture.clone())),
             Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
             Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
         };
+
         let src_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: ManuallyDrop::new(Some(upload_buffer.clone())),
             Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
@@ -1043,9 +1054,13 @@ impl TextureHeap {
         self.textures.push(Texture { resource: texture.clone(), id: texture_id });
 
         barriers.into_iter().for_each(util::drop_barrier);
-        // TODO
+
+        // Apparently, leaking the upload buffer into the location is necessary.
+        // Uncommenting the following line consistently leads to a crash, which
+        // points to a double-free, but I don't know why: upload_buffer should
+        // stay alive with a positive refcount until the end of this block.
         // let _ = ManuallyDrop::into_inner(src_location.pResource);
-        // let _ = ManuallyDrop::into_inner(dst_location.pResource);
+        let _ = ManuallyDrop::into_inner(dst_location.pResource);
 
         Ok(texture_id)
     }
