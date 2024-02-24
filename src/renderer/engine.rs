@@ -135,7 +135,11 @@ impl RenderEngine {
             let size_aligned =
                 placed_footprint.Footprint.RowPitch * placed_footprint.Footprint.Height;
 
-            trace!("Size {size} aligned {size_aligned} {}x{}", desc.Width, desc.Height);
+            trace!(
+                "Size {size} aligned {size_aligned} {}x{} {placed_footprint:#?}",
+                desc.Width,
+                desc.Height
+            );
 
             let staging_resource: ID3D12Resource = util::try_out_ptr(|v| {
                 self.device.CreateCommittedResource(
@@ -193,7 +197,20 @@ impl RenderEngine {
             staging_resource
                 .Map(0, None, Some(&mut resource_ptr))
                 .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
-            ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size as usize);
+
+            let resource_ptr = resource_ptr as *mut u8;
+            let height = desc.Height as isize;
+            let width = 4 * placed_footprint.Footprint.Width as isize;
+            let pitch = placed_footprint.Footprint.RowPitch as isize;
+            for y in 0..height {
+                ptr::copy_nonoverlapping(
+                    resource_ptr.offset(y * pitch),
+                    data.offset(y * width),
+                    width as usize,
+                );
+            }
+
+            // ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size as usize);
             staging_resource.Unmap(0, None);
 
             ManuallyDrop::into_inner(staging_location.pResource);
