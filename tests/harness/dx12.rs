@@ -299,10 +299,12 @@ impl Dx12Harness {
                         let desc =
                             util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
                         unsafe {
-                            // TODO investigate why this crashes. Are there outstanding references
+                            // TODO investigate why this crashes. Are there
+                            // outstanding references
                             // to backbuffers?
                             // swap_chain
-                            //     .ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, desc.Flags)
+                            //     .ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN,
+                            // desc.Flags)
                             //     .unwrap()
                         };
 
