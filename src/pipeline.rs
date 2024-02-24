@@ -143,13 +143,12 @@ impl<T> Pipeline<T> {
         let (width, height) = util::win_size(self.hwnd);
         let (width, height) = (width as u32, height as u32);
 
-        error!("RESIZINGGG {width}x{height}");
-
         let io = self.ctx.io_mut();
 
         if let Err(e) = self.engine.resize(width, height) {
-            error!("Couldn't resize hwnd: {e:?}");
+            error!("Couldn't resize engine: {e:?}");
         }
+
         io.display_size = [width as f32, height as f32];
     }
 

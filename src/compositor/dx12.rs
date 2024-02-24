@@ -38,9 +38,10 @@ pub struct Compositor {
 }
 
 impl Compositor {
-    pub fn new(command_queue: ID3D12CommandQueue) -> Result<Self> {
+    pub fn new(command_queue: &ID3D12CommandQueue) -> Result<Self> {
         let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
 
+        let command_queue = command_queue.clone();
         let command_allocator: ID3D12CommandAllocator =
             unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
         let command_list: ID3D12GraphicsCommandList = unsafe {

@@ -25,7 +25,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
-use crate::compositor::dx12_compute::Compositor;
+use crate::compositor::dx12::Compositor;
 use crate::mh::MhHook;
 use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
 use crate::renderer::print_dxgi_debug_messages;
@@ -69,9 +69,7 @@ unsafe fn init_pipeline(
         return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
     };
 
-    let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
-
-    let compositor = Compositor::new(&device)?;
+    let compositor = Compositor::new(command_queue)?;
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
 
@@ -99,11 +97,7 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
     let target: ID3D12Resource =
         unsafe { swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())? };
 
-    let Some(command_queue) = (unsafe { COMMAND_QUEUE.get() }) else {
-        return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
-    };
-
-    let resource = pipeline.compositor_mut().composite(source, target, command_queue)?;
+    pipeline.compositor_mut().composite(source, target)?;
 
     Ok(())
 }
@@ -142,7 +136,6 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     if let Err(e) = render(&swap_chain) {
         print_dxgi_debug_messages();
         error!("Render error: {e:?}");
-        panic!();
     }
 
     trace!("Call IDXGISwapChain::Present trampoline");
@@ -234,7 +227,7 @@ fn get_target_addrs() -> (
     }) {
         Ok(swap_chain) => swap_chain,
         Err(e) => {
-            unsafe { print_dxgi_debug_messages() };
+            print_dxgi_debug_messages();
             panic!("{e:?}");
         },
     };

@@ -8,7 +8,7 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use tracing::trace;
-use windows::core::{s, w, ComInterface, Result, PCWSTR};
+use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
@@ -19,7 +19,7 @@ use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{keys, print_dxgi_debug_messages};
-use crate::util::{self, create_barrier, Fence};
+use crate::util::{self, Fence};
 
 pub struct RenderEngine {
     device: ID3D12Device,
