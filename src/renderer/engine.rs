@@ -54,13 +54,8 @@ impl RenderEngine {
             D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
         })?;
 
-        let (command_queue, command_allocator, command_list) = unsafe {
-            create_command_objects(
-                &device,
-                w!("hudhook Render Engine Command Queue"),
-                w!("hudhook Render Engine Command List"),
-            )
-        }?;
+        let (command_queue, command_allocator, command_list) =
+            unsafe { create_command_objects(&device) }?;
 
         let (rtv_heap, mut texture_heap) = unsafe { create_heaps(&device) }?;
         let rtv_heap_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
@@ -349,8 +344,6 @@ impl RenderEngine {
 
 unsafe fn create_command_objects(
     device: &ID3D12Device,
-    command_queue_name: PCWSTR,
-    command_list_name: PCWSTR,
 ) -> Result<(ID3D12CommandQueue, ID3D12CommandAllocator, ID3D12GraphicsCommandList)> {
     let command_queue: ID3D12CommandQueue =
         device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
@@ -359,15 +352,17 @@ unsafe fn create_command_objects(
             Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,
             NodeMask: 0,
         })?;
-    command_queue.SetName(command_queue_name)?;
 
     let command_allocator: ID3D12CommandAllocator =
         device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
 
     let command_list: ID3D12GraphicsCommandList =
         device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)?;
-    command_list.Close().unwrap();
-    command_list.SetName(command_list_name)?;
+    command_list.Close()?;
+
+    command_queue.SetName(w!("hudhook Render Engine Command Queue"))?;
+    command_allocator.SetName(w!("hudhook Render Engine Command Allocator"))?;
+    command_list.SetName(w!("hudhook Render Engine Command List"))?;
 
     Ok((command_queue, command_allocator, command_list))
 }
@@ -782,13 +777,8 @@ struct TextureHeap {
 
 impl TextureHeap {
     fn new(device: &ID3D12Device, srv_heap: ID3D12DescriptorHeap) -> Result<Self> {
-        let (command_queue, command_allocator, command_list) = unsafe {
-            create_command_objects(
-                device,
-                w!("hudhook Texture Heap Command Queue"),
-                w!("hudhook Texture Heap Command List"),
-            )
-        }?;
+        let (command_queue, command_allocator, command_list) =
+            unsafe { create_command_objects(device) }?;
 
         let fence = Fence::new(device)?;
 

@@ -25,7 +25,7 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
-use crate::compositor::dx12::Compositor;
+use crate::compositor::dx12_compute::Compositor;
 use crate::mh::MhHook;
 use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
 use crate::renderer::print_dxgi_debug_messages;
@@ -69,7 +69,8 @@ unsafe fn init_pipeline(
         return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
     };
 
-    let compositor = Compositor::new(command_queue.clone())?;
+    let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
+    let compositor = Compositor::new(&device)?;
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
 
