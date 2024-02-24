@@ -113,7 +113,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use imgui::{Io, Ui};
+use imgui::{Context, Io, Ui};
 use once_cell::sync::OnceCell;
 use renderer::RenderEngine;
 use tracing::error;
@@ -215,7 +215,7 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
-    fn initialize(&mut self, _render_engine: &mut RenderEngine) {}
+    fn initialize(&mut self, _ctx: &mut Context) {}
 
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);

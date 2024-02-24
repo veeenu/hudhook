@@ -48,7 +48,9 @@ impl<T> Pipeline<T> {
         let mut ctx = Context::create();
         ctx.io_mut().display_size = [width as f32, height as f32];
 
-        let mut engine = match RenderEngine::new(&mut ctx, width as u32, height as u32) {
+        render_loop.initialize(&mut ctx);
+
+        let engine = match RenderEngine::new(&mut ctx, width as u32, height as u32) {
             Ok(engine) => engine,
             Err(e) => return Err((e, render_loop)),
         };
@@ -63,8 +65,6 @@ impl<T> Pipeline<T> {
         #[cfg(target_arch = "x86")]
         let wnd_proc =
             unsafe { mem::transmute(SetWindowLongA(hwnd, GWLP_WNDPROC, wnd_proc as usize as i32)) };
-
-        render_loop.initialize(&mut engine);
 
         let (tx, rx) = mpsc::channel();
         let shared_state = Arc::new(PipelineSharedState {
