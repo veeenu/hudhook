@@ -33,6 +33,14 @@ crate-type = ["cdylib"]
 name = "injector"
 crate-type = ["bin"]
 
+[[example]]
+name = "demo_hook_dx12"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "demo_hook_dx11"
+crate-type = ["cdylib"]
+
 [dependencies]
 imgui = "0.11"
 imgui-opengl = "0.1"
