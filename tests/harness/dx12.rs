@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 
 use hudhook::util;
 use tracing::{error, trace};
-use windows::core::{s, ComInterface, PCSTR};
+use windows::core::{s, w, ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
@@ -24,7 +24,7 @@ use windows::Win32::Graphics::Direct3D12::{
     D3D12_RESOURCE_TRANSITION_BARRIER,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_UNKNOWN, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
@@ -217,6 +217,7 @@ impl Dx12Harness {
                 for i in 0..desc.BufferCount {
                     unsafe {
                         let buf: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
+                        buf.SetName(w!("Harness swap chain back buffer"));
                         let rtv_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
                             ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
                         };
@@ -260,18 +261,12 @@ impl Dx12Harness {
 
                         command_alloc.Reset().unwrap();
                         command_list.Reset(&command_alloc, None).unwrap();
-                        trace!("RB");
                         command_list.ResourceBarrier(&rtv_barrier);
-                        trace!("ClearRTV");
                         command_list.ClearRenderTargetView(rtv, &[0.3, 0.8, 0.3, 0.8], None);
-                        trace!("RB");
                         command_list.ResourceBarrier(&present_barrier);
                         command_list.Close().unwrap();
-                        trace!("ECL");
                         command_queue.ExecuteCommandLists(&[Some(command_list.cast().unwrap())]);
-                        trace!("ECL done");
                         command_queue.Signal(&fence, fence_val);
-                        trace!("Signal done");
 
                         trace!("Present");
                         if let Err(e) = swap_chain.Present(1, 0).ok() {
@@ -300,16 +295,15 @@ impl Dx12Harness {
 
                     trace!("Resize");
                     if let Some((width, height)) = rx.try_iter().last() {
+                        rtv_handles.drain(..).for_each(drop);
                         let desc =
                             util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
                         unsafe {
-                            swap_chain.ResizeBuffers(
-                                desc.BufferCount,
-                                width,
-                                height,
-                                DXGI_FORMAT_B8G8R8A8_UNORM,
-                                0,
-                            )
+                            // TODO investigate why this crashes. Are there outstanding references
+                            // to backbuffers?
+                            // swap_chain
+                            //     .ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, desc.Flags)
+                            //     .unwrap()
                         };
 
                         for i in 0..desc.BufferCount {
@@ -319,7 +313,7 @@ impl Dx12Harness {
                                     ptr: rtv_start.ptr + (i * rtv_heap_inc_size) as usize,
                                 };
                                 dev.CreateRenderTargetView(&buf, None, rtv_handle);
-                                rtv_handles[i as usize] = rtv_handle;
+                                rtv_handles.push(rtv_handle);
                             }
                         }
                     };
