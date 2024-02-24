@@ -9,7 +9,6 @@ use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 
-use crate::renderer::print_dxgi_debug_messages;
 use crate::util::{self, Fence};
 
 #[repr(C)]
@@ -39,117 +38,11 @@ pub struct Compositor {
 
 impl Compositor {
     pub fn new(command_queue: &ID3D12CommandQueue) -> Result<Self> {
-        let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
+        let (device, command_queue, command_allocator, command_list) =
+            unsafe { create_command_objects(command_queue) }?;
 
-        let command_queue = command_queue.clone();
-        let command_allocator: ID3D12CommandAllocator =
-            unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
-        let command_list: ID3D12GraphicsCommandList = unsafe {
-            device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
-        }?;
-        unsafe {
-            command_list.SetName(w!("hudhook Compositor Command List"))?;
-            command_list.Close()?;
-        }
-
-        let rtv_heap: ID3D12DescriptorHeap = unsafe {
-            device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                NumDescriptors: 1,
-                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
-                NodeMask: 0,
-            })
-        }?;
-        unsafe { rtv_heap.SetName(w!("hudhook Compositor RTV Heap"))? };
-
-        let srv_heap: ID3D12DescriptorHeap = unsafe {
-            device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                NumDescriptors: 1,
-                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
-                NodeMask: 0,
-            })
-        }?;
-        unsafe { srv_heap.SetName(w!("hudhook Compositor SRV Heap"))? };
-
-        let vertex_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
-            device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_UPLOAD,
-                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                    CreationNodeMask: 0,
-                    VisibleNodeMask: 0,
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Alignment: 65536,
-                    Width: (64 * mem::size_of::<Vertex>()) as u64,
-                    Height: 1,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    Format: DXGI_FORMAT_UNKNOWN,
-                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                    Flags: D3D12_RESOURCE_FLAG_NONE,
-                },
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                None,
-                v,
-            )
-        })?;
-        unsafe { vertex_buffer.SetName(w!("hudhook Compositor Vertex Buffer"))? };
-
-        let index_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
-            device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_UPLOAD,
-                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-                    MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
-                    CreationNodeMask: 0,
-                    VisibleNodeMask: 0,
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Alignment: 0,
-                    Width: (64 * mem::size_of::<u16>()) as u64,
-                    Height: 1,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    Format: DXGI_FORMAT_UNKNOWN,
-                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                    Flags: D3D12_RESOURCE_FLAG_NONE,
-                },
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                None,
-                v,
-            )
-        })?;
-        unsafe { index_buffer.SetName(w!("hudhook Compositor Index Buffer"))? };
-
-        const VERTICES: [Vertex; 4] = [
-            Vertex { pos: [-1., -1.], uv: [0., 1.] },
-            Vertex { pos: [1., -1.], uv: [1., 1.] },
-            Vertex { pos: [-1., 1.], uv: [0., 0.] },
-            Vertex { pos: [1., 1.], uv: [1., 0.] },
-        ];
-        const INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
-
-        unsafe {
-            let mut resource = ptr::null_mut();
-            vertex_buffer.Map(0, None, Some(&mut resource))?;
-            ptr::copy_nonoverlapping(VERTICES.as_ptr(), resource as *mut Vertex, VERTICES.len());
-            vertex_buffer.Unmap(0, None);
-
-            let mut resource = ptr::null_mut();
-            index_buffer.Map(0, None, Some(&mut resource))?;
-            ptr::copy_nonoverlapping(INDICES.as_ptr(), resource as *mut u16, INDICES.len());
-            index_buffer.Unmap(0, None);
-        }
-
+        let (rtv_heap, srv_heap) = unsafe { create_heaps(&device) }?;
+        let (vertex_buffer, index_buffer) = unsafe { create_buffers(&device) }?;
         let (root_signature, pipeline_state) = unsafe { create_shader_program(&device) }?;
         let fence = Fence::new(&device)?;
 
@@ -257,7 +150,6 @@ impl Compositor {
             self.command_list.SetPipelineState(&self.pipeline_state);
             self.command_list.SetGraphicsRootSignature(&self.root_signature);
             self.command_list.SetDescriptorHeaps(&[Some(self.srv_heap.clone())]);
-            print_dxgi_debug_messages();
 
             self.command_list.SetGraphicsRootDescriptorTable(
                 0,
@@ -276,6 +168,128 @@ impl Compositor {
 
         Ok(())
     }
+}
+
+unsafe fn create_command_objects(
+    command_queue: &ID3D12CommandQueue,
+) -> Result<(ID3D12Device, ID3D12CommandQueue, ID3D12CommandAllocator, ID3D12GraphicsCommandList)> {
+    let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
+    let command_queue = command_queue.clone();
+    let command_allocator: ID3D12CommandAllocator =
+        unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
+    let command_list: ID3D12GraphicsCommandList = unsafe {
+        device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
+    }?;
+
+    command_list.Close()?;
+    command_allocator.SetName(w!("hudhook Compositor Command List"))?;
+    command_list.SetName(w!("hudhook Compositor Command List"))?;
+
+    Ok((device, command_queue, command_allocator, command_list))
+}
+
+unsafe fn create_heaps(
+    device: &ID3D12Device,
+) -> Result<(ID3D12DescriptorHeap, ID3D12DescriptorHeap)> {
+    let rtv_heap: ID3D12DescriptorHeap =
+        device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+            Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+            NumDescriptors: 1,
+            Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+            NodeMask: 0,
+        })?;
+    rtv_heap.SetName(w!("hudhook Compositor RTV Heap"))?;
+
+    let srv_heap: ID3D12DescriptorHeap =
+        device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+            Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+            NumDescriptors: 1,
+            Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+            NodeMask: 0,
+        })?;
+    srv_heap.SetName(w!("hudhook Compositor SRV Heap"))?;
+    Ok((rtv_heap, srv_heap))
+}
+
+unsafe fn create_buffers(device: &ID3D12Device) -> Result<(ID3D12Resource, ID3D12Resource)> {
+    let vertex_buffer: ID3D12Resource = util::try_out_ptr(|v| {
+        device.CreateCommittedResource(
+            &D3D12_HEAP_PROPERTIES {
+                Type: D3D12_HEAP_TYPE_UPLOAD,
+                CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                CreationNodeMask: 0,
+                VisibleNodeMask: 0,
+            },
+            D3D12_HEAP_FLAG_NONE,
+            &D3D12_RESOURCE_DESC {
+                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                Alignment: 65536,
+                Width: (64 * mem::size_of::<Vertex>()) as u64,
+                Height: 1,
+                DepthOrArraySize: 1,
+                MipLevels: 1,
+                Format: DXGI_FORMAT_UNKNOWN,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                Flags: D3D12_RESOURCE_FLAG_NONE,
+            },
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            None,
+            v,
+        )
+    })?;
+
+    let index_buffer: ID3D12Resource = util::try_out_ptr(|v| {
+        device.CreateCommittedResource(
+            &D3D12_HEAP_PROPERTIES {
+                Type: D3D12_HEAP_TYPE_UPLOAD,
+                CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                CreationNodeMask: 0,
+                VisibleNodeMask: 0,
+            },
+            D3D12_HEAP_FLAG_NONE,
+            &D3D12_RESOURCE_DESC {
+                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                Alignment: 0,
+                Width: (64 * mem::size_of::<u16>()) as u64,
+                Height: 1,
+                DepthOrArraySize: 1,
+                MipLevels: 1,
+                Format: DXGI_FORMAT_UNKNOWN,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                Flags: D3D12_RESOURCE_FLAG_NONE,
+            },
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            None,
+            v,
+        )
+    })?;
+
+    vertex_buffer.SetName(w!("hudhook Compositor Vertex Buffer"))?;
+    index_buffer.SetName(w!("hudhook Compositor Index Buffer"))?;
+
+    const VERTICES: [Vertex; 4] = [
+        Vertex { pos: [-1., -1.], uv: [0., 1.] },
+        Vertex { pos: [1., -1.], uv: [1., 1.] },
+        Vertex { pos: [-1., 1.], uv: [0., 0.] },
+        Vertex { pos: [1., 1.], uv: [1., 0.] },
+    ];
+    const INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
+
+    let mut resource = ptr::null_mut();
+    vertex_buffer.Map(0, None, Some(&mut resource))?;
+    ptr::copy_nonoverlapping(VERTICES.as_ptr(), resource as *mut Vertex, VERTICES.len());
+    vertex_buffer.Unmap(0, None);
+
+    let mut resource = ptr::null_mut();
+    index_buffer.Map(0, None, Some(&mut resource))?;
+    ptr::copy_nonoverlapping(INDICES.as_ptr(), resource as *mut u16, INDICES.len());
+    index_buffer.Unmap(0, None);
+
+    Ok((vertex_buffer, index_buffer))
 }
 
 unsafe fn create_shader_program(

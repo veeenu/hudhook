@@ -4,30 +4,12 @@ use once_cell::sync::OnceCell;
 use windows::core::{s, ComInterface, Result};
 use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, RECT};
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
-use windows::Win32::Graphics::Direct3D::{
-    ID3DBlob, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D,
-};
-use windows::Win32::Graphics::Direct3D11::{
-    ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device1, ID3D11DeviceContext,
-    ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
-    ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
-    ID3D11VertexShader, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_BIND_INDEX_BUFFER,
-    D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD,
-    D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
-    D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCILOP_DESC,
-    D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID,
-    D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA,
-    D3D11_MAP_WRITE_DISCARD, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
-    D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-    D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEX2D_SRV, D3D11_TEXTURE_ADDRESS_WRAP,
-    D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
-};
-use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_UNKNOWN,
-};
-use windows::Win32::Graphics::Dxgi::{IDXGISwapChain, DXGI_SWAP_CHAIN_DESC};
+use windows::Win32::Graphics::Direct3D::*;
+use windows::Win32::Graphics::Direct3D11::*;
+use windows::Win32::Graphics::Dxgi::Common::*;
+use windows::Win32::Graphics::Dxgi::*;
 
-use crate::util::{try_out_param, try_out_ptr};
+use crate::util;
 
 pub struct Compositor {
     device: ID3D11Device1,
@@ -140,7 +122,7 @@ impl QuadRenderer {
             }
         ";
 
-        let vs_blob: ID3DBlob = try_out_ptr(|v| unsafe {
+        let vs_blob: ID3DBlob = util::try_out_ptr(|v| unsafe {
             D3DCompile(
                 VERTEX_SHADER_SRC.as_ptr() as _,
                 VERTEX_SHADER_SRC.len(),
@@ -156,7 +138,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let ps_blob = try_out_ptr(|v| unsafe {
+        let ps_blob = util::try_out_ptr(|v| unsafe {
             D3DCompile(
                 PIXEL_SHADER_SRC.as_ptr() as _,
                 PIXEL_SHADER_SRC.len(),
@@ -172,19 +154,19 @@ impl QuadRenderer {
             )
         })?;
 
-        let vtx_shader = try_out_ptr(|v| unsafe {
+        let vtx_shader = util::try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
             d3d11.CreateVertexShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
         })?;
 
-        let pix_shader = try_out_ptr(|v| unsafe {
+        let pix_shader = util::try_out_ptr(|v| unsafe {
             let ptr = ps_blob.GetBufferPointer();
             let size = ps_blob.GetBufferSize();
             d3d11.CreatePixelShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
         })?;
 
-        let layout = try_out_ptr(|v| unsafe {
+        let layout = util::try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
             d3d11.CreateInputLayout(
@@ -213,7 +195,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let sampler = try_out_ptr(|v| unsafe {
+        let sampler = util::try_out_ptr(|v| unsafe {
             d3d11.CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
                     Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
@@ -230,7 +212,7 @@ impl QuadRenderer {
                 Some(v),
             )
         })?;
-        let blend_state = try_out_ptr(|v| unsafe {
+        let blend_state = util::try_out_ptr(|v| unsafe {
             d3d11.CreateBlendState(
                 &D3D11_BLEND_DESC {
                     AlphaToCoverageEnable: BOOL(0),
@@ -259,7 +241,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let rasterizer_state = try_out_ptr(|v| unsafe {
+        let rasterizer_state = util::try_out_ptr(|v| unsafe {
             d3d11.CreateRasterizerState(
                 &D3D11_RASTERIZER_DESC {
                     FillMode: D3D11_FILL_SOLID,
@@ -277,7 +259,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let depth_stencil_state = try_out_ptr(|v| unsafe {
+        let depth_stencil_state = util::try_out_ptr(|v| unsafe {
             d3d11.CreateDepthStencilState(
                 &D3D11_DEPTH_STENCIL_DESC {
                     DepthEnable: BOOL(0),
@@ -303,7 +285,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let vertex_buffer: ID3D11Buffer = try_out_ptr(|v| {
+        let vertex_buffer: ID3D11Buffer = util::try_out_ptr(|v| {
             d3d11.CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: mem::size_of_val(&VERTICES) as _,
@@ -322,7 +304,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let index_buffer: ID3D11Buffer = try_out_ptr(|v| {
+        let index_buffer: ID3D11Buffer = util::try_out_ptr(|v| {
             d3d11.CreateBuffer(
                 &D3D11_BUFFER_DESC {
                     ByteWidth: mem::size_of_val(&INDICES) as _,
@@ -386,10 +368,10 @@ impl QuadRenderer {
     ) -> Result<()> {
         let back_buffer: ID3D11Resource = target.GetBuffer(0)?;
         let back_buffer: ID3D11RenderTargetView =
-            try_out_ptr(|v| d3d11.CreateRenderTargetView(&back_buffer, None, Some(v)))?;
+            util::try_out_ptr(|v| d3d11.CreateRenderTargetView(&back_buffer, None, Some(v)))?;
 
         let texture = texture.cast::<ID3D11Resource>()?;
-        let srv: ID3D11ShaderResourceView = try_out_ptr(|v| {
+        let srv: ID3D11ShaderResourceView = util::try_out_ptr(|v| {
             d3d11.CreateShaderResourceView(
                 &texture,
                 Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
@@ -403,7 +385,7 @@ impl QuadRenderer {
             )
         })?;
 
-        let desc: DXGI_SWAP_CHAIN_DESC = try_out_param(|v| target.GetDesc(v))?;
+        let desc: DXGI_SWAP_CHAIN_DESC = util::try_out_param(|v| target.GetDesc(v))?;
 
         d3d11_ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
             TopLeftX: 0.,

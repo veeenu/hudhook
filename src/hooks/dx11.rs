@@ -28,7 +28,6 @@ use super::DummyHwnd;
 use crate::compositor::dx11::Compositor;
 use crate::mh::MhHook;
 use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
-use crate::renderer::print_dxgi_debug_messages;
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
@@ -109,7 +108,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
 
     if let Err(e) = render(&swap_chain) {
-        print_dxgi_debug_messages();
+        util::print_dxgi_debug_messages();
         error!("Render error: {e:?}");
     }
 

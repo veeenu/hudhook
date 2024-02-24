@@ -28,7 +28,6 @@ use super::DummyHwnd;
 use crate::compositor::dx12::Compositor;
 use crate::mh::MhHook;
 use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
-use crate::renderer::print_dxgi_debug_messages;
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
@@ -134,7 +133,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
     if let Err(e) = render(&swap_chain) {
-        print_dxgi_debug_messages();
+        util::print_dxgi_debug_messages();
         error!("Render error: {e:?}");
     }
 
@@ -227,7 +226,7 @@ fn get_target_addrs() -> (
     }) {
         Ok(swap_chain) => swap_chain,
         Err(e) => {
-            print_dxgi_debug_messages();
+            util::print_dxgi_debug_messages();
             panic!("{e:?}");
         },
     };

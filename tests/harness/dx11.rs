@@ -6,7 +6,6 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
-use hudhook::renderer::print_dxgi_debug_messages;
 use hudhook::util;
 use windows::core::{s, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -66,7 +65,7 @@ impl Dx11Harness {
                 unsafe {
                     AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))
                 };
-                let handle = unsafe {
+                let hwnd = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE(0),
                         s!("MyClass\0"),
@@ -83,6 +82,8 @@ impl Dx11Harness {
                         None,
                     )
                 };
+
+                unsafe { util::enable_debug_interface() };
 
                 let mut p_device: Option<ID3D11Device> = None;
                 let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -105,7 +106,7 @@ impl Dx11Harness {
                             },
                             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                             BufferCount: 1,
-                            OutputWindow: handle,
+                            OutputWindow: hwnd,
                             Windowed: BOOL::from(true),
                             SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
                             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
@@ -124,20 +125,19 @@ impl Dx11Harness {
 
                 let backbuf: ID3D11Resource = unsafe { swap_chain.GetBuffer(0).unwrap() };
 
-                println!("here");
                 let mut rtv = util::try_out_ptr(|v| unsafe {
                     device.CreateRenderTargetView(&backbuf, None, Some(v))
                 })
                 .unwrap();
 
-                unsafe { SetTimer(handle, 0, 100, None) };
+                unsafe { SetTimer(hwnd, 0, 100, None) };
 
                 let (tx, rx) = mpsc::channel();
 
                 RESIZE.get_or_init(move || tx);
 
                 loop {
-                    unsafe { print_dxgi_debug_messages() };
+                    unsafe { util::print_dxgi_debug_messages() };
 
                     unsafe { context.ClearRenderTargetView(&rtv, &[0.2, 0.8, 0.2, 0.8]) };
 
@@ -145,29 +145,13 @@ impl Dx11Harness {
                     unsafe { swap_chain.Present(1, 0).unwrap() };
 
                     eprintln!("Handle message");
-                    if !handle_message(handle) {
+                    if !handle_message(hwnd) {
                         break;
                     }
 
                     if let Some((width, height)) = rx.try_iter().last() {
                         let desc =
                             util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
-                        // unsafe {
-                        //     swap_chain.ResizeBuffers(
-                        //         desc.BufferCount,
-                        //         width,
-                        //         height,
-                        //         DXGI_FORMAT_R8G8B8A8_UNORM,
-                        //         0,
-                        //     )
-                        // };
-
-                        // for i in 0..desc.BufferCount {
-                        //     rtv = util::try_out_ptr(|v| unsafe {
-                        //         device.CreateRenderTargetView(&backbuf, None,
-                        // Some(v))     })
-                        //     .unwrap();
-                        // }
                     };
 
                     if done.load(Ordering::SeqCst) {

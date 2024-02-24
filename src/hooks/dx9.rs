@@ -20,9 +20,7 @@ use super::DummyHwnd;
 use crate::compositor::dx9::Compositor;
 use crate::mh::MhHook;
 use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
-use crate::renderer::print_dxgi_debug_messages;
-use crate::util::try_out_ptr;
-use crate::{Hooks, ImguiRenderLoop};
+use crate::{util, Hooks, ImguiRenderLoop};
 
 type Dx9PresentType = unsafe extern "system" fn(
     this: IDirect3DDevice9,
@@ -111,28 +109,9 @@ unsafe extern "system" fn dx9_present_impl(
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
     if let Err(e) = render(&device) {
-        print_dxgi_debug_messages();
+        util::print_dxgi_debug_messages();
         error!("Render error: {e:?}");
     }
-
-    // Don't attempt a render if one is already underway: it might be that the
-    // renderer itself is currently invoking `Present`.
-    // if RenderState::is_locked() {
-    //     return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride,
-    // pdirtyregion); }
-    //
-    // let hwnd = RenderState::setup(|| {
-    //     let mut creation_parameters = Default::default();
-    //     let _ = p_this.GetCreationParameters(&mut creation_parameters);
-    //     creation_parameters.hFocusWindow
-    // });
-    //
-    // RenderState::lock();
-    // let surface = RenderState::render(hwnd).unwrap();
-    // let mut compositor =
-    //     COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this,
-    // hwnd).unwrap())).lock(); compositor.composite(surface).unwrap();
-    // RenderState::unlock();
 
     trace!("Call IDirect3DDevice9::Present trampoline");
     dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
@@ -153,7 +132,7 @@ fn get_target_addrs() -> Dx9PresentType {
     };
 
     let dummy_hwnd = DummyHwnd::new();
-    let device: IDirect3DDevice9 = try_out_ptr(|v| {
+    let device: IDirect3DDevice9 = util::try_out_ptr(|v| {
         unsafe {
             d9.CreateDevice(
                 D3DADAPTER_DEFAULT,

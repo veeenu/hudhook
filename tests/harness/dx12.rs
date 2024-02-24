@@ -6,7 +6,6 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
-use hudhook::renderer::{enable_debug_interface, print_dxgi_debug_messages};
 use hudhook::util;
 use tracing::{error, trace};
 use windows::core::{s, ComInterface, PCSTR};
@@ -129,7 +128,7 @@ impl Dx12Harness {
                     )
                 }; // lpParam
 
-                unsafe { enable_debug_interface() };
+                unsafe { util::enable_debug_interface() };
 
                 let factory: IDXGIFactory2 =
                     unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }.unwrap();
@@ -241,7 +240,7 @@ impl Dx12Harness {
                 loop {
                     trace!("Debug");
                     unsafe {
-                        print_dxgi_debug_messages();
+                        util::print_dxgi_debug_messages();
                     }
 
                     trace!("Clearing");
@@ -279,7 +278,7 @@ impl Dx12Harness {
                             if let Err(e) = dev.GetDeviceRemovedReason() {
                                 error!("Device removed: {e:?}");
                             }
-                            print_dxgi_debug_messages();
+                            util::print_dxgi_debug_messages();
                             panic!("{e:?}");
                         }
 

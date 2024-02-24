@@ -18,7 +18,7 @@ use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use super::{keys, print_dxgi_debug_messages};
+use super::keys;
 use crate::util::{self, Fence};
 
 pub struct RenderEngine {
@@ -47,12 +47,7 @@ pub struct RenderEngine {
 
 impl RenderEngine {
     pub fn new(ctx: &mut Context, width: u32, height: u32) -> Result<Self> {
-        let dxgi_factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }?;
-        let dxgi_adapter = unsafe { dxgi_factory.EnumAdapters(0) }?;
-
-        let device: ID3D12Device = util::try_out_ptr(|v| unsafe {
-            D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
-        })?;
+        let device = unsafe { create_device() }?;
 
         let (command_queue, command_allocator, command_list) =
             unsafe { create_command_objects(&device) }?;
@@ -369,7 +364,6 @@ impl RenderEngine {
                                     (cmd_params.vtx_offset + vtx_offset) as _,
                                     0,
                                 );
-                                print_dxgi_debug_messages();
                             }
                         }
                     },
@@ -438,6 +432,17 @@ impl RenderEngine {
 
         Ok(())
     }
+}
+
+unsafe fn create_device() -> Result<ID3D12Device> {
+    let dxgi_factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }?;
+    let dxgi_adapter = unsafe { dxgi_factory.EnumAdapters(0) }?;
+
+    let device: ID3D12Device = util::try_out_ptr(|v| unsafe {
+        D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
+    })?;
+
+    Ok(device)
 }
 
 unsafe fn create_command_objects(

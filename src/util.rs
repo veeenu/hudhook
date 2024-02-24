@@ -2,14 +2,18 @@ use std::fmt::Display;
 use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tracing::error;
+use tracing::{debug, error};
 use windows::Win32::Foundation::{HANDLE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::ID3DBlob;
 use windows::Win32::Graphics::Direct3D12::{
-    ID3D12Device, ID3D12Fence, ID3D12Resource, D3D12_FENCE_FLAG_NONE, D3D12_RESOURCE_BARRIER,
-    D3D12_RESOURCE_BARRIER_0, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-    D3D12_RESOURCE_BARRIER_FLAG_NONE, D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-    D3D12_RESOURCE_STATES, D3D12_RESOURCE_TRANSITION_BARRIER,
+    D3D12GetDebugInterface, ID3D12Debug, ID3D12Device, ID3D12Fence, ID3D12Resource,
+    D3D12_FENCE_FLAG_NONE, D3D12_RESOURCE_BARRIER, D3D12_RESOURCE_BARRIER_0,
+    D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, D3D12_RESOURCE_BARRIER_FLAG_NONE,
+    D3D12_RESOURCE_BARRIER_TYPE_TRANSITION, D3D12_RESOURCE_STATES,
+    D3D12_RESOURCE_TRANSITION_BARRIER,
+};
+use windows::Win32::Graphics::Dxgi::{
+    DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
 };
 use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
@@ -92,6 +96,49 @@ pub fn print_error_blob<D: Display, E>(msg: D) -> impl Fn((E, ID3DBlob)) -> E {
         error!("{msg}: {s}");
         e
     }
+}
+
+/// Enables the Direct3D12 debug interface. It will not panic if the interface
+/// is not available. Call this from your application before a DirectX 12 device
+/// is initialized. It could fail in DirectX 12 host applications that will
+/// have initialized their device already, but should not fail in other host
+/// applications.
+pub fn enable_debug_interface() {
+    let debug_interface: Result<ID3D12Debug, _> =
+        try_out_ptr(|v| unsafe { D3D12GetDebugInterface(v) });
+
+    match debug_interface {
+        Ok(debug_interface) => unsafe { debug_interface.EnableDebugLayer() },
+        Err(e) => {
+            error!("Could not create debug interface: {e:?}")
+        },
+    }
+}
+
+/// Prints the DXGI debug messages on the debug trace. It is used internally for
+/// error reporting, but can be used by clients. Requires calling
+/// [`enable_debug_interface`] before.
+pub fn print_dxgi_debug_messages() {
+    let Ok(diq): Result<IDXGIInfoQueue, _> = (unsafe { DXGIGetDebugInterface1(0) }) else {
+        return;
+    };
+
+    let n = unsafe { diq.GetNumStoredMessages(DXGI_DEBUG_ALL) };
+    for i in 0..n {
+        let mut msg_len: usize = 0;
+        unsafe { diq.GetMessage(DXGI_DEBUG_ALL, i, None, &mut msg_len as _).unwrap() };
+        let diqm = vec![0u8; msg_len];
+        let pdiqm = diqm.as_ptr() as *mut DXGI_INFO_QUEUE_MESSAGE;
+        unsafe { diq.GetMessage(DXGI_DEBUG_ALL, i, Some(pdiqm), &mut msg_len as _).unwrap() };
+        let diqm = unsafe { pdiqm.as_ref().unwrap() };
+        debug!(
+            "[DIQ] {}",
+            String::from_utf8_lossy(unsafe {
+                std::slice::from_raw_parts(diqm.pDescription, diqm.DescriptionByteLength - 1)
+            })
+        );
+    }
+    unsafe { diq.ClearStoredMessages(DXGI_DEBUG_ALL) };
 }
 
 /// Helper that returns width and height of a given
