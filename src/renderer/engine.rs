@@ -118,14 +118,86 @@ impl RenderEngine {
     pub unsafe fn copy_texture(&self, resource: ID3D12Resource, data: *mut u8) -> Result<()> {
         unsafe {
             let desc = resource.GetDesc();
-            let size = desc.Width as usize * desc.Height as usize * 4;
-            resource.ReadFromSubresource(data as _, desc.Width as _, 0, 0, None)?;
-            // let mut resource_ptr = ptr::null_mut();
-            // resource
-            //     .Map(0, None, Some(&mut resource_ptr))
-            //     .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
-            // ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size);
-            // resource.Unmap(0, None);
+            let size = desc.Width as u64 * desc.Height as u64 * 4;
+
+            let mut placed_footprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT = Default::default();
+            self.device.GetCopyableFootprints(
+                &desc,
+                0,
+                1,
+                0,
+                Some(&mut placed_footprint),
+                None,
+                None,
+                None,
+            );
+
+            let size_aligned =
+                placed_footprint.Footprint.RowPitch * placed_footprint.Footprint.Height;
+
+            trace!("Size {size} aligned {size_aligned} {}x{}", desc.Width, desc.Height);
+
+            let staging_resource: ID3D12Resource = util::try_out_ptr(|v| {
+                self.device.CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_READBACK,
+                        CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
+                        MemoryPoolPreference: D3D12_MEMORY_POOL_UNKNOWN,
+                        CreationNodeMask: 0,
+                        VisibleNodeMask: 0,
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 65536,
+                        Width: size_aligned as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_PRESENT,
+                    None,
+                    v,
+                )
+            })?;
+
+            let staging_location = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: ManuallyDrop::new(Some(staging_resource.clone())),
+                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { PlacedFootprint: placed_footprint },
+            };
+
+            let source_location = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: ManuallyDrop::new(Some(resource.clone())),
+                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
+            };
+
+            self.command_allocator.Reset()?;
+            self.command_list.Reset(&self.command_allocator, None)?;
+
+            self.command_list.CopyTextureRegion(&staging_location, 0, 0, 0, &source_location, None);
+
+            self.command_list.Close()?;
+            self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
+            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
+            self.fence.wait()?;
+            self.fence.incr();
+
+            // staging_resource.ReadFromSubresource(data as _, size as u32, 0, 0, None)?;
+            let mut resource_ptr = ptr::null_mut();
+            staging_resource
+                .Map(0, None, Some(&mut resource_ptr))
+                .inspect_err(|e| tracing::error!("Map: {e:?}"))?;
+            ptr::copy_nonoverlapping(resource_ptr as *mut u8, data, size as usize);
+            staging_resource.Unmap(0, None);
+
+            ManuallyDrop::into_inner(staging_location.pResource);
+            ManuallyDrop::into_inner(source_location.pResource);
         }
 
         Ok(())

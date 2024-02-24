@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+use hudhook::renderer::{enable_debug_interface, print_dxgi_debug_messages};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
@@ -72,6 +73,8 @@ impl Dx9Harness {
                     )
                 };
 
+                enable_debug_interface();
+
                 let direct3d = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
                 let mut device = None;
                 unsafe {
@@ -103,6 +106,8 @@ impl Dx9Harness {
                     if !handle_message(handle) {
                         break;
                     }
+
+                    print_dxgi_debug_messages();
 
                     if done.load(Ordering::SeqCst) {
                         break;
