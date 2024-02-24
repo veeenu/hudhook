@@ -70,6 +70,7 @@ unsafe fn init_pipeline(
     };
 
     let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
+
     let compositor = Compositor::new(&device)?;
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
@@ -98,7 +99,11 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
     let target: ID3D12Resource =
         unsafe { swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())? };
 
-    pipeline.compositor_mut().composite(source, target)?;
+    let Some(command_queue) = (unsafe { COMMAND_QUEUE.get() }) else {
+        return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
+    };
+
+    let resource = pipeline.compositor_mut().composite(source, target, command_queue)?;
 
     Ok(())
 }
@@ -137,6 +142,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     if let Err(e) = render(&swap_chain) {
         print_dxgi_debug_messages();
         error!("Render error: {e:?}");
+        panic!();
     }
 
     trace!("Call IDXGISwapChain::Present trampoline");

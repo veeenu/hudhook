@@ -165,8 +165,8 @@ impl Dx11Harness {
 
                         // for i in 0..desc.BufferCount {
                         //     rtv = util::try_out_ptr(|v| unsafe {
-                        //         device.CreateRenderTargetView(&backbuf, None, Some(v))
-                        //     })
+                        //         device.CreateRenderTargetView(&backbuf, None,
+                        // Some(v))     })
                         //     .unwrap();
                         // }
                     };

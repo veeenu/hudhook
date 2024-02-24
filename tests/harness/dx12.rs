@@ -7,9 +7,9 @@ use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use hudhook::renderer::print_dxgi_debug_messages;
+use hudhook::renderer::{enable_debug_interface, print_dxgi_debug_messages};
 use hudhook::util;
-use tracing::trace;
+use tracing::{error, trace};
 use windows::core::{s, ComInterface, PCSTR};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -31,7 +31,8 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory, IDXGIFactory, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory, CreateDXGIFactory2, IDXGIFactory, IDXGIFactory2, IDXGISwapChain,
+    IDXGISwapChain3, DXGI_CREATE_FACTORY_DEBUG, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
@@ -131,7 +132,10 @@ impl Dx12Harness {
                     )
                 }; // lpParam
 
-                let factory: IDXGIFactory = unsafe { CreateDXGIFactory() }.unwrap();
+                unsafe { enable_debug_interface() };
+
+                let factory: IDXGIFactory2 =
+                    unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }.unwrap();
                 let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
                 let mut dev: Option<ID3D12Device> = None;
@@ -160,7 +164,7 @@ impl Dx12Harness {
                         Width: 800,
                         Height: 600,
                         RefreshRate: DXGI_RATIONAL { Numerator: 60, Denominator: 1 },
-                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
                         ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
                         Scaling: DXGI_MODE_SCALING_UNSPECIFIED,
                     },
@@ -274,7 +278,13 @@ impl Dx12Harness {
                         trace!("Signal done");
 
                         trace!("Present");
-                        swap_chain.Present(1, 0).unwrap();
+                        if let Err(e) = swap_chain.Present(1, 0).ok() {
+                            if let Err(e) = dev.GetDeviceRemovedReason() {
+                                error!("Device removed: {e:?}");
+                            }
+                            print_dxgi_debug_messages();
+                            panic!("{e:?}");
+                        }
 
                         if fence.GetCompletedValue() < fence_val {
                             fence.SetEventOnCompletion(fence_val, fence_event);

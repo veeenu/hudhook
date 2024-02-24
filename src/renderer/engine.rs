@@ -145,7 +145,7 @@ impl RenderEngine {
             let rtv_to_present_barriers = [util::create_barrier(
                 &self.rtv_target,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_PRESENT,
+                D3D12_RESOURCE_STATE_COMMON,
             )];
 
             self.command_list.ResourceBarrier(&present_to_rtv_barriers);
@@ -231,12 +231,12 @@ impl RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         };
 
         self.setup_render_state(draw_data);
@@ -395,7 +395,7 @@ unsafe fn create_render_target(
                 Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
                 Flags: D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
             },
-            D3D12_RESOURCE_STATE_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_PRESENT,
             Some(&D3D12_CLEAR_VALUE {
                 Format: DXGI_FORMAT_B8G8R8A8_UNORM,
                 Anonymous: D3D12_CLEAR_VALUE_0 { Color: [0.0, 0.0, 0.0, 0.0] },

@@ -118,8 +118,8 @@ unsafe extern "system" fn dx9_present_impl(
     // Don't attempt a render if one is already underway: it might be that the
     // renderer itself is currently invoking `Present`.
     // if RenderState::is_locked() {
-    //     return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
-    // }
+    //     return dx9_present(p_this, psourcerect, pdestrect, hdestwindowoverride,
+    // pdirtyregion); }
     //
     // let hwnd = RenderState::setup(|| {
     //     let mut creation_parameters = Default::default();
@@ -130,8 +130,8 @@ unsafe extern "system" fn dx9_present_impl(
     // RenderState::lock();
     // let surface = RenderState::render(hwnd).unwrap();
     // let mut compositor =
-    //     COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this, hwnd).unwrap())).lock();
-    // compositor.composite(surface).unwrap();
+    //     COMPOSITOR.get_or_init(|| Mutex::new(Compositor::new(&p_this,
+    // hwnd).unwrap())).lock(); compositor.composite(surface).unwrap();
     // RenderState::unlock();
 
     trace!("Call IDirect3DDevice9::Present trampoline");

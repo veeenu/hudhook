@@ -58,7 +58,8 @@ impl<T> Pipeline<T> {
             mem::transmute(SetWindowLongPtrA(hwnd, GWLP_WNDPROC, wnd_proc as usize as isize))
         };
 
-        // TODO is this necessary? SetWindowLongPtrA should already decay to SetWindowLongA
+        // TODO is this necessary? SetWindowLongPtrA should already decay to
+        // SetWindowLongA
         #[cfg(target_arch = "x86")]
         let wnd_proc =
             unsafe { mem::transmute(SetWindowLongA(hwnd, GWLP_WNDPROC, wnd_proc as usize as i32)) };
@@ -158,7 +159,8 @@ impl<T> Pipeline<T> {
             SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as isize)
         };
 
-        // TODO is this necessary? SetWindowLongPtrA should already decay to SetWindowLongA
+        // TODO is this necessary? SetWindowLongPtrA should already decay to
+        // SetWindowLongA
         #[cfg(target_arch = "x86")]
         unsafe {
             SetWindowLongA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as i32)
