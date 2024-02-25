@@ -48,7 +48,6 @@ pub struct Compositor {
     ebo: GLuint,
     texture: GLuint,
     texture_data: RefCell<Vec<u8>>,
-    memory_object: GLuint,
 }
 
 impl Compositor {
@@ -141,12 +140,6 @@ impl Compositor {
             gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
             gl.BindTexture(gl::TEXTURE_2D, bound_texture as _);
 
-            // tracing::trace!("Create memory objects");
-            // let memory_object = out_param(|v| gl.CreateMemoryObjectsEXT(1, v));
-            // tracing::trace!("{}", gl.GetError());
-
-            let memory_object = 0;
-
             Ok(Compositor {
                 gl,
                 program,
@@ -154,7 +147,6 @@ impl Compositor {
                 texture,
                 texture_loc,
                 texture_data: RefCell::new(Vec::new()),
-                memory_object,
             })
         }
     }
@@ -203,28 +195,6 @@ impl Compositor {
                 gl::UNSIGNED_BYTE,
                 texture_data.as_ptr() as _,
             );
-
-            // let size = desc.Width as usize * desc.Height as usize * 4;
-            // let handle = engine.create_shared_handle(source)?;
-            //
-            // tracing::trace!("Import memory {}", gl.GetError());
-            // gl.ImportMemoryWin32HandleEXT(
-            //     self.memory_object,
-            //     size as u64,
-            //     gl::HANDLE_TYPE_D3D12_RESOURCE_EXT,
-            //     handle.0 as _,
-            // );
-            // tracing::trace!("TexStorageMem2D {}", gl.GetError());
-            // gl.TexStorageMem2DEXT(
-            //     gl::TEXTURE_2D,
-            //     0,
-            //     gl::RGBA,
-            //     desc.Width as _,
-            //     desc.Height as _,
-            //     self.memory_object,
-            //     0,
-            // );
-            tracing::trace!("Done {}", gl.GetError());
 
             gl.Scissor(0, 0, desc.Width as _, desc.Height as _);
             gl.DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_SHORT, ptr::null());
