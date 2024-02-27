@@ -14,7 +14,6 @@ use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
-use windows::Win32::Graphics::Dxgi::*;
 
 use crate::renderer::RenderEngine;
 use crate::util::{self, Fence};
@@ -270,11 +269,7 @@ impl D3D12RenderEngine {
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<()> {
-        // drop(mem::replace(&mut self.rtv_target, unsafe {
-        //     create_render_target(&self.device, width, height, self.rtv_heap_start)
-        // }?));
-
+    pub fn resize(&mut self, _width: u32, _height: u32) -> Result<()> {
         Ok(())
     }
 }
@@ -700,7 +695,7 @@ impl TextureHeap {
             command_list.SetName(w!("hudhook Render Engine Command List"))?;
         }
 
-        let fence = Fence::new(&device)?;
+        let fence = Fence::new(device)?;
 
         Ok(Self {
             device: device.clone(),
