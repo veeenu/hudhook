@@ -1,13 +1,13 @@
 use std::ffi::c_void;
 use std::mem;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
+use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{error, trace};
 use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device, ID3D12Resource,
@@ -18,16 +18,15 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory1, IDXGIFactory1, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
+    CreateDXGIFactory1, CreateDXGIFactory2, IDXGIFactory1, IDXGIFactory2, IDXGISwapChain,
+    IDXGISwapChain3, IDXGISwapChain_Vtbl, DXGI_SWAP_CHAIN_DESC,
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
-use crate::compositor::dx12::Compositor;
 use crate::mh::MhHook;
-use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
+use crate::renderer::{D3D12RenderEngine, Pipeline};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
@@ -56,72 +55,51 @@ struct Trampolines {
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 
-static mut PIPELINE: OnceCell<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> =
-    OnceCell::new();
+static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D12RenderEngine>>> = OnceCell::new();
 static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
 unsafe fn init_pipeline(
     swap_chain: &IDXGISwapChain3,
-) -> Result<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> {
+) -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
     let Some(command_queue) = COMMAND_QUEUE.get() else {
         return Err(Error::new(HRESULT(-1), "Command queue not yet initialized".into()));
     };
 
-    let compositor = Compositor::new(command_queue)?;
-
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
+
+    let mut ctx = Context::create();
+    let engine = D3D12RenderEngine::new(command_queue, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
     };
 
-    let (pipeline, shared_state) = Pipeline::new(hwnd, imgui_wnd_proc, compositor, render_loop)
-        .map_err(|(e, render_loop)| {
-            RENDER_LOOP.get_or_init(move || render_loop);
-            e
-        })?;
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
+        RENDER_LOOP.get_or_init(move || render_loop);
+        e
+    })?;
 
-    Ok((Mutex::new(pipeline), shared_state))
+    Ok(Mutex::new(pipeline))
 }
 
 fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
-    let (pipeline, _) = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(swap_chain)) }?;
+    unsafe {
+        let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(swap_chain))?;
 
-    let Some(mut pipeline) = pipeline.try_lock() else {
-        return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
-    };
+        let Some(mut pipeline) = pipeline.try_lock() else {
+            return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+        };
 
-    let source = pipeline.render()?;
-    let target: ID3D12Resource =
-        unsafe { swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())? };
+        pipeline.prepare_render()?;
 
-    pipeline.compositor_mut().composite(source, target)?;
+        let target: ID3D12Resource =
+            swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())?;
+
+        pipeline.render(target)?;
+    }
 
     Ok(())
-}
-
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    let Some((_, shared_state)) = PIPELINE.get() else {
-        return DefWindowProcW(hwnd, msg, wparam, lparam);
-    };
-
-    let _ = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam));
-
-    // CONCURRENCY: as the message interpretation now happens out of band, this
-    // expresses the intent as of *before* the current message was received.
-    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
-
-    if should_block_messages {
-        LRESULT(1)
-    } else {
-        CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
-    }
 }
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
@@ -169,8 +147,16 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    // TODO check command queue type
-    COMMAND_QUEUE.get_or_init(|| command_queue.clone());
+    COMMAND_QUEUE
+        .get_or_try_init(|| unsafe {
+            let desc = command_queue.GetDesc();
+            if desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT {
+                Ok(command_queue.clone())
+            } else {
+                Err(())
+            }
+        })
+        .ok();
 
     d3d12_command_queue_execute_command_lists(command_queue, num_command_lists, command_lists);
 }
@@ -182,15 +168,15 @@ fn get_target_addrs() -> (
 ) {
     let dummy_hwnd = DummyHwnd::new();
 
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.unwrap();
+    let factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(0) }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
-    let dev: ID3D12Device =
+    let device: ID3D12Device =
         util::try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
             .expect("D3D12CreateDevice failed");
 
     let command_queue: ID3D12CommandQueue = unsafe {
-        dev.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
+        device.CreateCommandQueue(&D3D12_COMMAND_QUEUE_DESC {
             Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
             Priority: 0,
             Flags: D3D12_COMMAND_QUEUE_FLAG_NONE,

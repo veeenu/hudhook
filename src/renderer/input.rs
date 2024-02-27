@@ -12,15 +12,22 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::pipeline::Pipeline;
+use super::RenderEngine;
+use crate::renderer::Pipeline;
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
 
 // Replication of the Win32 HIWORD macro.
 #[inline]
-fn hiword(l: u32) -> u16 {
+pub fn hiword(l: u32) -> u16 {
     ((l >> 16) & 0xffff) as u16
+}
+
+// Replication of the Win32 LOWORD macro.
+#[inline]
+pub fn loword(l: u32) -> u16 {
+    (l & 0xffff) as u16
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -235,7 +242,7 @@ fn handle_input(io: &mut Io, state: u32, WPARAM(wparam): WPARAM, LPARAM(lparam):
 // Window procedure
 ////////////////////////////////////////////////////////////////////////////////
 
-pub fn imgui_wnd_proc_impl<T>(
+pub fn imgui_wnd_proc_impl<T: RenderEngine>(
     hwnd: HWND,
     umsg: u32,
     WPARAM(wparam): WPARAM,
@@ -288,8 +295,8 @@ pub fn imgui_wnd_proc_impl<T>(
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
-        WM_SIZE | WM_PAINT => {
-            pipeline.resize();
+        WM_SIZE => {
+            pipeline.resize(loword(lparam as u32) as u32, hiword(lparam as u32) as u32);
         },
         _ => {},
     };

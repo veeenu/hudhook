@@ -149,7 +149,7 @@ pub fn win_size(hwnd: HWND) -> (i32, i32) {
     (rect.right - rect.left, rect.bottom - rect.top)
 }
 
-pub(crate) fn create_barrier(
+pub fn create_barrier(
     resource: &ID3D12Resource,
     before: D3D12_RESOURCE_STATES,
     after: D3D12_RESOURCE_STATES,
@@ -168,19 +168,19 @@ pub(crate) fn create_barrier(
     }
 }
 
-pub(crate) fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
+pub fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
     let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
     let _ = ManuallyDrop::into_inner(transition.pResource);
 }
 
-pub(crate) struct Fence {
+pub struct Fence {
     fence: ID3D12Fence,
     value: AtomicU64,
     event: HANDLE,
 }
 
 impl Fence {
-    pub(crate) fn new(device: &ID3D12Device) -> windows::core::Result<Self> {
+    pub fn new(device: &ID3D12Device) -> windows::core::Result<Self> {
         let fence = unsafe { device.CreateFence(0, D3D12_FENCE_FLAG_NONE) }?;
         let value = AtomicU64::new(0);
         let event = unsafe { CreateEventExW(None, None, CREATE_EVENT(0), 0x1f0003) }?;
@@ -188,19 +188,19 @@ impl Fence {
         Ok(Fence { fence, value, event })
     }
 
-    pub(crate) fn fence(&self) -> &ID3D12Fence {
+    pub fn fence(&self) -> &ID3D12Fence {
         &self.fence
     }
 
-    pub(crate) fn value(&self) -> u64 {
+    pub fn value(&self) -> u64 {
         self.value.load(Ordering::SeqCst)
     }
 
-    pub(crate) fn incr(&self) {
+    pub fn incr(&self) {
         self.value.fetch_add(1, Ordering::SeqCst);
     }
 
-    pub(crate) fn wait(&self) -> windows::core::Result<()> {
+    pub fn wait(&self) -> windows::core::Result<()> {
         let value = self.value();
         unsafe {
             if self.fence.GetCompletedValue() < value {
