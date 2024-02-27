@@ -1,128 +1,294 @@
+use std::ffi::c_void;
 use std::{mem, ptr, slice};
 
-use once_cell::sync::OnceCell;
-use windows::core::{s, ComInterface, Result};
-use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, RECT};
+use imgui::internal::RawWrapper;
+use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
+use memoffset::offset_of;
+use tracing::{debug, trace};
+use windows::core::{s, Interface, Result};
+use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::*;
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
-use windows::Win32::Graphics::Dxgi::*;
 
+use crate::renderer::RenderEngine;
 use crate::util;
 
-pub struct Compositor {
-    device: ID3D11Device1,
-    device_ctx: ID3D11DeviceContext,
-    quad_renderer: OnceCell<QuadRenderer>,
+pub struct D3D11RenderEngine {
+    device: ID3D11Device,
+    device_context: ID3D11DeviceContext,
+
+    shader_program: ShaderProgram,
+    texture_heap: TextureHeap,
+
+    vertex_buffer: Buffer<DrawVert>,
+    index_buffer: Buffer<DrawIdx>,
+    projection_buffer: Buffer<[[f32; 4]; 4]>,
 }
 
-impl Compositor {
-    pub fn new(device: &ID3D11Device1) -> Result<Self> {
+impl D3D11RenderEngine {
+    pub fn new(device: &ID3D11Device, ctx: &mut Context) -> Result<Self> {
+        let device = device.clone();
+        let device_context = unsafe { device.GetImmediateContext() }?;
+
+        let vertex_buffer = Buffer::new(&device, 5000, D3D11_BIND_VERTEX_BUFFER)?;
+        let index_buffer = Buffer::new(&device, 10000, D3D11_BIND_INDEX_BUFFER)?;
+        let projection_buffer = Buffer::new(&device, 1, D3D11_BIND_CONSTANT_BUFFER)?;
+
+        let shader_program = unsafe { ShaderProgram::new(&device) }?;
+        let mut texture_heap = TextureHeap::new(&device)?;
+
+        ctx.set_ini_filename(None);
+        ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
+        ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id = unsafe {
+            texture_heap.create_texture(
+                fonts_texture.data,
+                fonts_texture.width,
+                fonts_texture.height,
+            )
+        }?;
+
         Ok(Self {
-            device: device.clone(),
-            device_ctx: unsafe { device.GetImmediateContext()? },
-            quad_renderer: OnceCell::new(),
+            device,
+            device_context,
+            shader_program,
+            texture_heap,
+            vertex_buffer,
+            index_buffer,
+            projection_buffer,
         })
     }
+}
 
-    pub fn composite(&mut self, handle: HANDLE, target: &IDXGISwapChain) -> Result<()> {
-        let resource: ID3D11Texture2D = unsafe { self.device.OpenSharedResource1(handle) }?;
-        unsafe { self.render_quad(resource, target) }?;
+impl RenderEngine for D3D11RenderEngine {
+    type RenderTarget = ID3D11Texture2D;
 
-        unsafe { CloseHandle(handle)? };
-
-        Ok(())
+    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<imgui::TextureId> {
+        unsafe { self.texture_heap.create_texture(data, width, height) }
     }
 
-    unsafe fn quad_renderer(&mut self) -> Result<&QuadRenderer> {
-        self.quad_renderer.get_or_try_init(|| QuadRenderer::new(&self.device, &self.device_ctx))
-    }
-
-    unsafe fn render_quad(
+    fn render(
         &mut self,
-        texture: ID3D11Texture2D,
-        target: &IDXGISwapChain,
+        draw_data: &imgui::DrawData,
+        render_target: Self::RenderTarget,
     ) -> Result<()> {
-        let device = self.device.clone();
-        let ctx = self.device_ctx.clone();
-        let quad_renderer = self.quad_renderer()?;
+        // Backup data
 
-        quad_renderer.setup_state(&ctx);
-        quad_renderer.render(&device, &ctx, texture, target)?;
+        let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| unsafe {
+            self.device.CreateRenderTargetView(&render_target, None, Some(v))
+        })?;
 
+        unsafe { self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None) };
+
+        // Render draw data
+        unsafe { self.render_draw_data(draw_data) }?;
+
+        // Restore data
         Ok(())
     }
 }
 
-#[repr(C)]
-struct Vertex {
-    pos: [f32; 2],
-    uv: [f32; 2],
+impl D3D11RenderEngine {
+    unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
+        if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
+            debug!(
+                "Insufficent display size {}x{}, skip rendering",
+                draw_data.display_size[0], draw_data.display_size[1]
+            );
+            return Ok(());
+        }
+
+        self.vertex_buffer.clear();
+        self.index_buffer.clear();
+        self.projection_buffer.clear();
+
+        draw_data
+            .draw_lists()
+            .map(|draw_list| {
+                (draw_list.vtx_buffer().iter().copied(), draw_list.idx_buffer().iter().copied())
+            })
+            .for_each(|(vertices, indices)| {
+                self.vertex_buffer.extend(vertices);
+                self.index_buffer.extend(indices);
+            });
+
+        self.projection_buffer.push({
+            let [l, t, r, b] = [
+                draw_data.display_pos[0],
+                draw_data.display_pos[1],
+                draw_data.display_pos[0] + draw_data.display_size[0],
+                draw_data.display_pos[1] + draw_data.display_size[1],
+            ];
+
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
+        });
+
+        self.vertex_buffer.upload(&self.device, &self.device_context)?;
+        self.index_buffer.upload(&self.device, &self.device_context)?;
+        self.projection_buffer.upload(&self.device, &self.device_context)?;
+
+        self.setup_render_state(draw_data);
+
+        let mut vtx_offset = 0usize;
+        let mut idx_offset = 0usize;
+
+        for cl in draw_data.draw_lists() {
+            for cmd in cl.commands() {
+                match cmd {
+                    DrawCmd::Elements { count, cmd_params } => {
+                        let [cx, cy, cw, ch] = cmd_params.clip_rect;
+                        let [x, y] = draw_data.display_pos;
+                        let r = RECT {
+                            left: (cx - x) as i32,
+                            top: (cy - y) as i32,
+                            right: (cw - x) as i32,
+                            bottom: (ch - y) as i32,
+                        };
+
+                        if r.right > r.left && r.bottom > r.top {
+                            let srv = ID3D11ShaderResourceView::from_raw(
+                                cmd_params.texture_id.id() as *mut c_void,
+                            );
+                            unsafe {
+                                self.device_context.PSSetShaderResources(0, Some(&[Some(srv)]));
+                                self.device_context.RSSetScissorRects(Some(&[r]));
+                                self.device_context.DrawIndexed(
+                                    count as _,
+                                    (cmd_params.idx_offset + idx_offset) as _,
+                                    (cmd_params.vtx_offset + vtx_offset) as _,
+                                );
+                            }
+                        }
+                    },
+                    DrawCmd::ResetRenderState => {
+                        // Q: looking at the commands recorded in here, it
+                        // doesn't seem like this should have any effect
+                        // whatsoever. What am I doing wrong?
+                        self.setup_render_state(draw_data);
+                    },
+                    DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
+                        callback(cl.raw(), raw_cmd)
+                    },
+                }
+            }
+            idx_offset += cl.idx_buffer().len();
+            vtx_offset += cl.vtx_buffer().len();
+        }
+
+        Ok(())
+    }
+
+    unsafe fn setup_render_state(&self, draw_data: &DrawData) {
+        self.device_context.RSSetViewports(Some(&[D3D11_VIEWPORT {
+            TopLeftX: 0f32,
+            TopLeftY: 0f32,
+            Width: draw_data.display_size[0],
+            Height: draw_data.display_size[1],
+            MinDepth: 0f32,
+            MaxDepth: 1f32,
+        }]));
+        self.device_context.IASetInputLayout(&self.shader_program.input_layout);
+        self.device_context.IASetVertexBuffers(
+            0,
+            1,
+            Some(&Some(self.vertex_buffer.resource.clone())),
+            Some(&(mem::size_of::<DrawVert>() as u32)),
+            Some(&0),
+        );
+        self.device_context.IASetIndexBuffer(
+            Some(&self.index_buffer.resource),
+            if mem::size_of::<DrawIdx>() == 2 {
+                DXGI_FORMAT_R16_UINT
+            } else {
+                DXGI_FORMAT_R32_UINT
+            },
+            0,
+        );
+        self.device_context.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        self.device_context.VSSetShader(&self.shader_program.vertex_shader, None);
+        self.device_context
+            .VSSetConstantBuffers(0, Some(&[Some(self.projection_buffer.resource.clone())]));
+        self.device_context.PSSetShader(&self.shader_program.pixel_shader, None);
+        self.device_context
+            .PSSetSamplers(0, Some(&[Some(self.shader_program.sampler_state.clone())]));
+        self.device_context.GSSetShader(None, None);
+        self.device_context.HSSetShader(None, None);
+        self.device_context.DSSetShader(None, None);
+        self.device_context.CSSetShader(None, None);
+        self.device_context.OMSetBlendState(
+            &self.shader_program.blend_state,
+            Some(&[0.; 4]),
+            0xffffffff,
+        );
+        self.device_context.OMSetDepthStencilState(&self.shader_program.depth_stencil_state, 0);
+        self.device_context.RSSetState(&self.shader_program.rasterizer_state);
+    }
 }
 
-struct QuadRenderer {
-    vtx_shader: ID3D11VertexShader,
-    pix_shader: ID3D11PixelShader,
-    layout: ID3D11InputLayout,
-    sampler: ID3D11SamplerState,
-    rasterizer_state: ID3D11RasterizerState,
+struct ShaderProgram {
+    vertex_shader: ID3D11VertexShader,
+    pixel_shader: ID3D11PixelShader,
+    input_layout: ID3D11InputLayout,
+    sampler_state: ID3D11SamplerState,
     blend_state: ID3D11BlendState,
     depth_stencil_state: ID3D11DepthStencilState,
-    vertex_buffer: Option<ID3D11Buffer>,
-    index_buffer: ID3D11Buffer,
+    rasterizer_state: ID3D11RasterizerState,
 }
 
-impl QuadRenderer {
-    unsafe fn new(d3d11: &ID3D11Device1, d3d11_ctx: &ID3D11DeviceContext) -> Result<Self> {
-        const VERTICES: [Vertex; 4] = [
-            Vertex { pos: [-1., 1.], uv: [0., 0.] },
-            Vertex { pos: [1., 1.], uv: [1., 0.] },
-            Vertex { pos: [-1., -1.], uv: [0., 1.] },
-            Vertex { pos: [1., -1.], uv: [1., 1.] },
-        ];
-
-        const INDICES: [u16; 6] = [0, 1, 2, 1, 3, 2];
-
+impl ShaderProgram {
+    unsafe fn new(device: &ID3D11Device) -> Result<Self> {
         const VERTEX_SHADER_SRC: &str = r"
-            struct VS_INPUT
-            {
-              float2 pos : POSITION;
-              float2 uv  : TEXCOORD0;
-            };
+        cbuffer vertex_buffer: register(b0) {
+            float4x4 projection;
+        };
 
-            struct PS_INPUT
-            {
-              float4 pos : SV_POSITION;
-              float2 uv  : TEXCOORD0;
-            };
+        struct VS_INPUT {
+          float2 pos: POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
 
-            PS_INPUT main(VS_INPUT input)
-            {
-              PS_INPUT output;
-              output.pos = float4(input.pos.xy, 0.0f, 1.0f);
-              output.uv  = input.uv.xy;
-              return output;
-            }
+        struct PS_INPUT {
+          float4 pos: SV_POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
+
+        PS_INPUT main(VS_INPUT input) {
+          PS_INPUT output;
+          output.pos = mul(projection, float4(input.pos.xy, 0.0f, 1.0f));
+          output.col = input.col;
+          output.uv = input.uv.xy;
+          return output;
+        }
         ";
 
         const PIXEL_SHADER_SRC: &str = r"
-            struct PS_INPUT
-            {
-              float4 pos : SV_POSITION;
-              float2 uv  : TEXCOORD0;
-            };
-            Texture2D texture0 : register(t0);
-            SamplerState sampler0 : register(s0);
+        struct PS_INPUT {
+          float4 pos: SV_POSITION;
+          float4 col: COLOR0;
+          float2 uv: TEXCOORD0;
+        };
 
-            float4 main(PS_INPUT input) : SV_Target
-            {
-              float4 overlay_color = texture0.Sample(sampler0, input.uv);
-              return overlay_color;
-            }
+        Texture2D texture0: register(t0);
+        SamplerState sampler0: register(s0);
+
+        float4 main(PS_INPUT input): SV_Target {
+          float4 col = input.col * texture0.Sample(sampler0, input.uv);
+          return col;
+        }
         ";
 
-        let vs_blob: ID3DBlob = util::try_out_ptr(|v| unsafe {
+        let vs_blob: ID3DBlob = util::try_out_err_blob(|v, err_blob| unsafe {
             D3DCompile(
                 VERTEX_SHADER_SRC.as_ptr() as _,
                 VERTEX_SHADER_SRC.len(),
@@ -134,11 +300,13 @@ impl QuadRenderer {
                 0,
                 0,
                 v,
-                None,
+                Some(err_blob),
             )
-        })?;
+        })
+        .map_err(util::print_error_blob("Compiling vertex shader"))
+        .expect("D3DCompile");
 
-        let ps_blob = util::try_out_ptr(|v| unsafe {
+        let ps_blob = util::try_out_err_blob(|v, err_blob| unsafe {
             D3DCompile(
                 PIXEL_SHADER_SRC.as_ptr() as _,
                 PIXEL_SHADER_SRC.len(),
@@ -150,33 +318,44 @@ impl QuadRenderer {
                 0,
                 0,
                 v,
-                None,
+                Some(err_blob),
             )
-        })?;
+        })
+        .map_err(util::print_error_blob("Compiling pixel shader"))
+        .expect("D3DCompile");
 
-        let vtx_shader = util::try_out_ptr(|v| unsafe {
+        let vertex_shader = util::try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
-            d3d11.CreateVertexShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
+            device.CreateVertexShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
         })?;
 
-        let pix_shader = util::try_out_ptr(|v| unsafe {
+        let pixel_shader = util::try_out_ptr(|v| unsafe {
             let ptr = ps_blob.GetBufferPointer();
             let size = ps_blob.GetBufferSize();
-            d3d11.CreatePixelShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
+            device.CreatePixelShader(slice::from_raw_parts(ptr as _, size), None, Some(v))
         })?;
 
-        let layout = util::try_out_ptr(|v| unsafe {
+        let input_layout = util::try_out_ptr(|v| unsafe {
             let ptr = vs_blob.GetBufferPointer();
             let size = vs_blob.GetBufferSize();
-            d3d11.CreateInputLayout(
+            device.CreateInputLayout(
                 &[
                     D3D11_INPUT_ELEMENT_DESC {
                         SemanticName: s!("POSITION"),
                         SemanticIndex: 0,
                         Format: DXGI_FORMAT_R32G32_FLOAT,
                         InputSlot: 0,
-                        AlignedByteOffset: 0,
+                        AlignedByteOffset: offset_of!(DrawVert, pos) as u32,
+                        InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
+                        InstanceDataStepRate: 0,
+                    },
+                    D3D11_INPUT_ELEMENT_DESC {
+                        SemanticName: s!("COLOR"),
+                        SemanticIndex: 0,
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        InputSlot: 0,
+                        AlignedByteOffset: offset_of!(DrawVert, col) as u32,
                         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
                         InstanceDataStepRate: 0,
                     },
@@ -185,7 +364,7 @@ impl QuadRenderer {
                         SemanticIndex: 0,
                         Format: DXGI_FORMAT_R32G32_FLOAT,
                         InputSlot: 0,
-                        AlignedByteOffset: D3D11_APPEND_ALIGNED_ELEMENT,
+                        AlignedByteOffset: offset_of!(DrawVert, uv) as u32,
                         InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
                         InstanceDataStepRate: 0,
                     },
@@ -195,8 +374,8 @@ impl QuadRenderer {
             )
         })?;
 
-        let sampler = util::try_out_ptr(|v| unsafe {
-            d3d11.CreateSamplerState(
+        let sampler_state = util::try_out_ptr(|v| unsafe {
+            device.CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
                     Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
                     AddressU: D3D11_TEXTURE_ADDRESS_WRAP,
@@ -213,13 +392,13 @@ impl QuadRenderer {
             )
         })?;
         let blend_state = util::try_out_ptr(|v| unsafe {
-            d3d11.CreateBlendState(
+            device.CreateBlendState(
                 &D3D11_BLEND_DESC {
-                    AlphaToCoverageEnable: BOOL(0),
-                    IndependentBlendEnable: BOOL(0),
+                    AlphaToCoverageEnable: false.into(),
+                    IndependentBlendEnable: false.into(),
                     RenderTarget: [
                         D3D11_RENDER_TARGET_BLEND_DESC {
-                            BlendEnable: BOOL(1),
+                            BlendEnable: true.into(),
                             SrcBlend: D3D11_BLEND_SRC_ALPHA,
                             DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                             BlendOp: D3D11_BLEND_OP_ADD,
@@ -242,30 +421,30 @@ impl QuadRenderer {
         })?;
 
         let rasterizer_state = util::try_out_ptr(|v| unsafe {
-            d3d11.CreateRasterizerState(
+            device.CreateRasterizerState(
                 &D3D11_RASTERIZER_DESC {
                     FillMode: D3D11_FILL_SOLID,
                     CullMode: D3D11_CULL_NONE,
-                    ScissorEnable: BOOL(1),
-                    DepthClipEnable: BOOL(1),
+                    ScissorEnable: true.into(),
+                    DepthClipEnable: true.into(),
                     DepthBias: 0,
                     DepthBiasClamp: 0.,
                     SlopeScaledDepthBias: 0.,
-                    MultisampleEnable: BOOL(0),
-                    AntialiasedLineEnable: BOOL(0),
-                    FrontCounterClockwise: BOOL(0),
+                    MultisampleEnable: false.into(),
+                    AntialiasedLineEnable: false.into(),
+                    FrontCounterClockwise: false.into(),
                 },
                 Some(v),
             )
         })?;
 
         let depth_stencil_state = util::try_out_ptr(|v| unsafe {
-            d3d11.CreateDepthStencilState(
+            device.CreateDepthStencilState(
                 &D3D11_DEPTH_STENCIL_DESC {
-                    DepthEnable: BOOL(0),
+                    DepthEnable: false.into(),
                     DepthFunc: D3D11_COMPARISON_ALWAYS,
                     DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
-                    StencilEnable: BOOL(0),
+                    StencilEnable: false.into(),
                     StencilReadMask: 0,
                     StencilWriteMask: 0,
                     FrontFace: D3D11_DEPTH_STENCILOP_DESC {
@@ -285,97 +464,151 @@ impl QuadRenderer {
             )
         })?;
 
-        let vertex_buffer: ID3D11Buffer = util::try_out_ptr(|v| {
-            d3d11.CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    ByteWidth: mem::size_of_val(&VERTICES) as _,
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    BindFlags: D3D11_BIND_VERTEX_BUFFER.0 as _,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as _,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                },
-                Some(&D3D11_SUBRESOURCE_DATA {
-                    pSysMem: VERTICES.as_ptr() as *const _,
-                    SysMemPitch: 0,
-                    SysMemSlicePitch: 0,
-                }),
-                Some(v),
-            )
-        })?;
-
-        let index_buffer: ID3D11Buffer = util::try_out_ptr(|v| {
-            d3d11.CreateBuffer(
-                &D3D11_BUFFER_DESC {
-                    ByteWidth: mem::size_of_val(&INDICES) as _,
-                    Usage: D3D11_USAGE_DYNAMIC,
-                    BindFlags: D3D11_BIND_INDEX_BUFFER.0 as _,
-                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as _,
-                    MiscFlags: 0,
-                    StructureByteStride: 0,
-                },
-                Some(&D3D11_SUBRESOURCE_DATA {
-                    pSysMem: INDICES.as_ptr() as *const _,
-                    SysMemPitch: 0,
-                    SysMemSlicePitch: 0,
-                }),
-                Some(v),
-            )
-        })?;
-
-        let mut ms = Default::default();
-        d3d11_ctx.Map(&vertex_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut ms))?;
-        ptr::copy_nonoverlapping(VERTICES.as_ptr(), ms.pData as _, VERTICES.len());
-        d3d11_ctx.Unmap(&vertex_buffer, 0);
-
-        let mut ms = Default::default();
-        d3d11_ctx.Map(&index_buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut ms))?;
-        ptr::copy_nonoverlapping(INDICES.as_ptr(), ms.pData as _, INDICES.len());
-        d3d11_ctx.Unmap(&index_buffer, 0);
-
-        Ok(Self {
-            vtx_shader,
-            pix_shader,
-            layout,
-            sampler,
+        Ok(ShaderProgram {
+            vertex_shader,
+            pixel_shader,
+            input_layout,
+            sampler_state,
             blend_state,
             depth_stencil_state,
             rasterizer_state,
-            vertex_buffer: Some(vertex_buffer),
-            index_buffer,
+        })
+    }
+}
+
+struct Buffer<T: Sized> {
+    bind_flag: D3D11_BIND_FLAG,
+    resource: ID3D11Buffer,
+    resource_capacity: usize,
+    data: Vec<T>,
+}
+
+impl<T> Buffer<T> {
+    fn new(
+        device: &ID3D11Device,
+        resource_capacity: usize,
+        bind_flag: D3D11_BIND_FLAG,
+    ) -> Result<Self> {
+        let resource = Self::create_resource(device, resource_capacity, bind_flag)?;
+        let data = Vec::with_capacity(resource_capacity);
+
+        Ok(Self { bind_flag, resource, resource_capacity, data })
+    }
+
+    fn create_resource(
+        device: &ID3D11Device,
+        resource_capacity: usize,
+        bind_flag: D3D11_BIND_FLAG,
+    ) -> Result<ID3D11Buffer> {
+        util::try_out_ptr(|v| unsafe {
+            device.CreateBuffer(
+                &D3D11_BUFFER_DESC {
+                    ByteWidth: (resource_capacity * mem::size_of::<T>()) as u32,
+                    Usage: D3D11_USAGE_DYNAMIC,
+                    BindFlags: bind_flag.0 as u32,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as _,
+                    MiscFlags: 0,
+                    StructureByteStride: 0,
+                },
+                None,
+                Some(v),
+            )
         })
     }
 
-    unsafe fn setup_state(&self, d3d11_ctx: &ID3D11DeviceContext) {
-        d3d11_ctx.VSSetShader(&self.vtx_shader, Some(&[]));
-        d3d11_ctx.PSSetShader(&self.pix_shader, Some(&[]));
-        d3d11_ctx.IASetInputLayout(&self.layout);
-        d3d11_ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-        d3d11_ctx.OMSetBlendState(&self.blend_state, Some(&[0f32; 4]), 0xFFFFFFFF);
-        d3d11_ctx.OMSetDepthStencilState(&self.depth_stencil_state, 0);
-        d3d11_ctx.RSSetState(&self.rasterizer_state);
-        d3d11_ctx.IASetVertexBuffers(0, 1, Some(&self.vertex_buffer), Some(&16), Some(&0));
-        d3d11_ctx.IASetIndexBuffer(&self.index_buffer, DXGI_FORMAT_R16_UINT, 0);
-        d3d11_ctx.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    fn clear(&mut self) {
+        self.data.clear();
     }
 
-    unsafe fn render(
-        &self,
-        d3d11: &ID3D11Device1,
-        d3d11_ctx: &ID3D11DeviceContext,
-        texture: ID3D11Texture2D,
-        target: &IDXGISwapChain,
-    ) -> Result<()> {
-        let back_buffer: ID3D11Resource = target.GetBuffer(0)?;
-        let back_buffer: ID3D11RenderTargetView =
-            util::try_out_ptr(|v| d3d11.CreateRenderTargetView(&back_buffer, None, Some(v)))?;
+    fn extend<I: IntoIterator<Item = T>>(&mut self, it: I) {
+        self.data.extend(it)
+    }
 
-        let texture = texture.cast::<ID3D11Resource>()?;
-        let srv: ID3D11ShaderResourceView = util::try_out_ptr(|v| {
-            d3d11.CreateShaderResourceView(
-                &texture,
+    fn push(&mut self, t: T) {
+        self.data.push(t)
+    }
+
+    fn upload(
+        &mut self,
+        device: &ID3D11Device,
+        device_context: &ID3D11DeviceContext,
+    ) -> Result<()> {
+        let capacity = self.data.capacity();
+        if capacity > self.resource_capacity {
+            drop(mem::replace(
+                &mut self.resource,
+                Self::create_resource(device, capacity, self.bind_flag)?,
+            ));
+        }
+
+        unsafe {
+            let mut resource_ptr = Default::default();
+            device_context.Map(
+                &self.resource,
+                0,
+                D3D11_MAP_WRITE_DISCARD,
+                0,
+                Some(&mut resource_ptr),
+            )?;
+            ptr::copy_nonoverlapping(
+                self.data.as_ptr(),
+                resource_ptr.pData as *mut T,
+                self.data.len(),
+            );
+            device_context.Unmap(&self.resource, 0);
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+#[allow(unused)]
+struct Texture {
+    resource: ID3D11Texture2D,
+    shader_resource_view: ID3D11ShaderResourceView,
+    id: TextureId,
+}
+
+struct TextureHeap {
+    device: ID3D11Device,
+    textures: Vec<Texture>,
+}
+
+impl TextureHeap {
+    fn new(device: &ID3D11Device) -> Result<Self> {
+        Ok(Self { device: device.clone(), textures: Vec::with_capacity(8) })
+    }
+
+    unsafe fn create_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        let resource: ID3D11Texture2D = util::try_out_ptr(|v| {
+            self.device.CreateTexture2D(
+                &D3D11_TEXTURE2D_DESC {
+                    Width: width,
+                    Height: height,
+                    MipLevels: 1,
+                    ArraySize: 1,
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                    Usage: D3D11_USAGE_DEFAULT,
+                    BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                    CPUAccessFlags: 0,
+                    MiscFlags: 0,
+                },
+                Some(&D3D11_SUBRESOURCE_DATA {
+                    pSysMem: data.as_ptr() as *const c_void,
+                    SysMemPitch: width * 4,
+                    SysMemSlicePitch: 0,
+                }),
+                Some(v),
+            )
+        })?;
+
+        let shader_resource_view = util::try_out_ptr(|v| {
+            self.device.CreateShaderResourceView(
+                &resource,
                 Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
-                    Format: DXGI_FORMAT_UNKNOWN,
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                     ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
                     Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
                         Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 1 },
@@ -385,26 +618,11 @@ impl QuadRenderer {
             )
         })?;
 
-        let desc: DXGI_SWAP_CHAIN_DESC = util::try_out_param(|v| target.GetDesc(v))?;
+        let id = TextureId::from(shader_resource_view.as_raw());
 
-        d3d11_ctx.RSSetViewports(Some(&[D3D11_VIEWPORT {
-            TopLeftX: 0.,
-            TopLeftY: 0.,
-            Width: desc.BufferDesc.Width as f32,
-            Height: desc.BufferDesc.Height as f32,
-            MinDepth: 0.,
-            MaxDepth: 1.,
-        }]));
-        d3d11_ctx.RSSetScissorRects(Some(&[RECT {
-            left: 0,
-            top: 0,
-            right: desc.BufferDesc.Width as _,
-            bottom: desc.BufferDesc.Height as _,
-        }]));
-        d3d11_ctx.PSSetShaderResources(0, Some(&[Some(srv)]));
-        d3d11_ctx.OMSetRenderTargets(Some(&[Some(back_buffer)]), None);
-        d3d11_ctx.DrawIndexed(6, 0, 0);
+        let texture = Texture { resource, shader_resource_view, id };
+        self.textures.push(texture);
 
-        Ok(())
+        Ok(id)
     }
 }

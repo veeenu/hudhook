@@ -1,19 +1,19 @@
 use std::ffi::c_void;
 use std::mem;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
+use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{error, trace};
 use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_SDK_VERSION,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+    D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_MODE_SCALING_UNSPECIFIED,
@@ -22,12 +22,10 @@ use windows::Win32::Graphics::Dxgi::Common::{
 use windows::Win32::Graphics::Dxgi::{
     IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
-use crate::compositor::dx11::Compositor;
 use crate::mh::MhHook;
-use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
+use crate::renderer::{D3D11RenderEngine, Pipeline, RenderEngine};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
@@ -38,65 +36,42 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut PIPELINE: OnceCell<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> =
-    OnceCell::new();
+static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D11RenderEngine>>> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
-unsafe fn init_pipeline(
-    swap_chain: &IDXGISwapChain,
-) -> Result<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> {
+unsafe fn init_pipeline(swap_chain: &IDXGISwapChain) -> Result<Mutex<Pipeline<D3D11RenderEngine>>> {
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
-    let compositor = Compositor::new(&swap_chain.GetDevice()?)?;
+
+    let mut ctx = Context::create();
+    let engine = D3D11RenderEngine::new(&swap_chain.GetDevice()?, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
     };
 
-    let (pipeline, shared_state) = Pipeline::new(hwnd, imgui_wnd_proc, compositor, render_loop)
-        .map_err(|(e, render_loop)| {
-            RENDER_LOOP.get_or_init(move || render_loop);
-            e
-        })?;
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
+        RENDER_LOOP.get_or_init(move || render_loop);
+        e
+    })?;
 
-    Ok((Mutex::new(pipeline), shared_state))
+    Ok(Mutex::new(pipeline))
 }
 
 fn render(swap_chain: &IDXGISwapChain) -> Result<()> {
-    let (pipeline, _) = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(swap_chain)) }?;
+    unsafe {
+        let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(swap_chain))?;
 
-    let Some(mut pipeline) = pipeline.try_lock() else {
-        return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
-    };
+        let Some(mut pipeline) = pipeline.try_lock() else {
+            return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+        };
 
-    let source = pipeline.render()?;
-    let handle = pipeline.engine_mut().create_shared_handle(source)?;
+        pipeline.prepare_render()?;
 
-    pipeline.compositor_mut().composite(handle, swap_chain)?;
+        let target: ID3D11Texture2D = swap_chain.GetBuffer(0)?;
 
-    Ok(())
-}
-
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    let Some(shared_state) = PIPELINE.get().map(|(_, shared_state)| shared_state) else {
-        return DefWindowProcW(hwnd, msg, wparam, lparam);
-    };
-
-    let _ = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam));
-
-    // CONCURRENCY: as the message interpretation now happens out of band, this
-    // expresses the intent as of *before* the current message was received.
-    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
-
-    if should_block_messages {
-        LRESULT(1)
-    } else {
-        CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
+        pipeline.render(target)?;
     }
+    Ok(())
 }
 
 unsafe extern "system" fn dxgi_swap_chain_present_impl(
@@ -108,7 +83,6 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
         TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
 
     if let Err(e) = render(&swap_chain) {
-        util::print_dxgi_debug_messages();
         error!("Render error: {e:?}");
     }
 

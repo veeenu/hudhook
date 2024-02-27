@@ -11,5 +11,7 @@ pub use pipeline::Pipeline;
 use windows::core::Result;
 pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<TextureId>;
 
+#[cfg(feature = "dx11")]
+pub use backend::dx11::D3D11RenderEngine;
 #[cfg(feature = "dx12")]
 pub use backend::dx12::D3D12RenderEngine;

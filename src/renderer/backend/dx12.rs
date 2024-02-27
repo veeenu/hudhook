@@ -7,7 +7,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use tracing::trace;
+use tracing::{debug, trace};
 use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
@@ -95,9 +95,6 @@ impl RenderEngine for D3D12RenderEngine {
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()> {
         unsafe {
-            self.fence.wait()?;
-            self.fence.incr();
-
             self.device.CreateRenderTargetView(&render_target, None, self.rtv_heap_start);
 
             self.command_allocator.Reset()?;
@@ -125,6 +122,8 @@ impl RenderEngine for D3D12RenderEngine {
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
             self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
+            self.fence.wait()?;
+            self.fence.incr();
 
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
@@ -137,10 +136,9 @@ impl RenderEngine for D3D12RenderEngine {
 impl D3D12RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
         if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
-            trace!(
+            debug!(
                 "Insufficent display size {}x{}, skip rendering",
-                draw_data.display_size[0],
-                draw_data.display_size[1]
+                draw_data.display_size[0], draw_data.display_size[1]
             );
             return Ok(());
         }
@@ -273,18 +271,6 @@ impl D3D12RenderEngine {
         Ok(())
     }
 }
-
-// unsafe fn create_device() -> Result<ID3D12Device> {
-//     let dxgi_factory: IDXGIFactory2 = unsafe {
-// CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG) }?;     let dxgi_adapter =
-// unsafe { dxgi_factory.EnumAdapters(0) }?;
-//
-//     let device: ID3D12Device = util::try_out_ptr(|v| unsafe {
-//         D3D12CreateDevice(&dxgi_adapter, D3D_FEATURE_LEVEL_11_1, v)
-//     })?;
-//
-//     Ok(device)
-// }
 
 unsafe fn create_command_objects(
     command_queue: &ID3D12CommandQueue,

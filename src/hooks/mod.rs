@@ -14,8 +14,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_OVERLAPPEDWINDOW, WS_OVERLAPPEDWINDOW,
 };
 
-// #[cfg(feature = "dx11")]
-// pub mod dx11;
+#[cfg(feature = "dx11")]
+pub mod dx11;
 #[cfg(feature = "dx12")]
 pub mod dx12;
 // #[cfg(feature = "dx9")]
