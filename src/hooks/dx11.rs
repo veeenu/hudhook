@@ -25,7 +25,7 @@ use windows::Win32::Graphics::Dxgi::{
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
-use crate::renderer::{D3D11RenderEngine, Pipeline, RenderEngine};
+use crate::renderer::{D3D11RenderEngine, Pipeline};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =

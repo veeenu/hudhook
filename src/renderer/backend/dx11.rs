@@ -4,7 +4,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use tracing::{debug, trace};
+use tracing::debug;
 use windows::core::{s, Interface, Result};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -36,7 +36,7 @@ impl D3D11RenderEngine {
         let index_buffer = Buffer::new(&device, 10000, D3D11_BIND_INDEX_BUFFER)?;
         let projection_buffer = Buffer::new(&device, 1, D3D11_BIND_CONSTANT_BUFFER)?;
 
-        let shader_program = unsafe { ShaderProgram::new(&device) }?;
+        let shader_program = ShaderProgram::new(&device)?;
         let mut texture_heap = TextureHeap::new(&device)?;
 
         ctx.set_ini_filename(None);
@@ -76,7 +76,12 @@ impl RenderEngine for D3D11RenderEngine {
         draw_data: &imgui::DrawData,
         render_target: Self::RenderTarget,
     ) -> Result<()> {
-        // Backup data
+        // For the time being, state backup/restore is disabled as it leads to some
+        // unintelligible crashes. So far I have not found instances where this
+        // tampers with the underlying game's render loop, which means more
+        // computation saved.
+
+        // let state_backup = unsafe { StateBackup::backup(&self.device_context) };
 
         let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| unsafe {
             self.device.CreateRenderTargetView(&render_target, None, Some(v))
@@ -84,10 +89,10 @@ impl RenderEngine for D3D11RenderEngine {
 
         unsafe { self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None) };
 
-        // Render draw data
         unsafe { self.render_draw_data(draw_data) }?;
 
-        // Restore data
+        // unsafe { state_backup.restore(&self.device_context) };
+
         Ok(())
     }
 }
@@ -116,6 +121,7 @@ impl D3D11RenderEngine {
                 self.index_buffer.extend(indices);
             });
 
+        #[rustfmt::skip]
         self.projection_buffer.push({
             let [l, t, r, b] = [
                 draw_data.display_pos[0],
@@ -124,12 +130,12 @@ impl D3D11RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         });
 
         self.vertex_buffer.upload(&self.device, &self.device_context)?;
@@ -214,16 +220,12 @@ impl D3D11RenderEngine {
             0,
         );
         self.device_context.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        self.device_context.VSSetShader(&self.shader_program.vertex_shader, None);
+        self.device_context.VSSetShader(&self.shader_program.vertex_shader, Some(&[]));
         self.device_context
             .VSSetConstantBuffers(0, Some(&[Some(self.projection_buffer.resource.clone())]));
-        self.device_context.PSSetShader(&self.shader_program.pixel_shader, None);
+        self.device_context.PSSetShader(&self.shader_program.pixel_shader, Some(&[]));
         self.device_context
             .PSSetSamplers(0, Some(&[Some(self.shader_program.sampler_state.clone())]));
-        self.device_context.GSSetShader(None, None);
-        self.device_context.HSSetShader(None, None);
-        self.device_context.DSSetShader(None, None);
-        self.device_context.CSSetShader(None, None);
         self.device_context.OMSetBlendState(
             &self.shader_program.blend_state,
             Some(&[0.; 4]),
@@ -245,7 +247,7 @@ struct ShaderProgram {
 }
 
 impl ShaderProgram {
-    unsafe fn new(device: &ID3D11Device) -> Result<Self> {
+    fn new(device: &ID3D11Device) -> Result<Self> {
         const VERTEX_SHADER_SRC: &str = r"
         cbuffer vertex_buffer: register(b0) {
             float4x4 projection;
@@ -475,6 +477,119 @@ impl ShaderProgram {
         })
     }
 }
+
+// const BACKUP_OBJECT_COUNT: usize = 16;
+//
+// #[derive(Default)]
+// struct StateBackup {
+//     scissor: (u32, [RECT; BACKUP_OBJECT_COUNT]),
+//     viewports: (u32, [D3D11_VIEWPORT; BACKUP_OBJECT_COUNT]),
+//
+//     rasterizer_state: Option<ID3D11RasterizerState>,
+//
+//     blend_state: Option<ID3D11BlendState>,
+//     blend_factor: [f32; 4],
+//     sample_mask: u32,
+//
+//     depth_stencil_state: Option<ID3D11DepthStencilState>,
+//     depth_stencil_ref: u32,
+//
+//     shader_resources: [Option<ID3D11ShaderResourceView>; 1],
+//     sampler: [Option<ID3D11SamplerState>; 1],
+//
+//     vertex_shader: Option<ID3D11VertexShader>,
+//     pixel_shader: Option<ID3D11PixelShader>,
+//
+//     vs_instances: Option<ID3D11ClassInstance>,
+//     vs_instances_count: u32,
+//     ps_instances: Option<ID3D11ClassInstance>,
+//     ps_instances_count: u32,
+//
+//     vertex_buffer: Option<ID3D11Buffer>,
+//     vertex_buffer_stride: u32,
+//     vertex_buffer_offset: u32,
+//     index_buffer: Option<ID3D11Buffer>,
+//     index_buffer_offset: u32,
+//     index_buffer_format: DXGI_FORMAT,
+//     constant_buffer: [Option<ID3D11Buffer>; 1],
+//
+//     primitive_topology: D3D_PRIMITIVE_TOPOLOGY,
+//     input_layout: Option<ID3D11InputLayout>,
+// }
+//
+// impl StateBackup {
+//     unsafe fn backup(device_context: &ID3D11DeviceContext) -> StateBackup {
+//         let mut r = statebackup::default();
+//         r.scissor.0 = BACKUP_OBJECT_COUNT as _;
+//         r.viewports.0 = BACKUP_OBJECT_COUNT as _;
+//
+//         device_context.RSGetScissorRects(&mut r.scissor.0,
+// Some(r.scissor.1.as_mut_ptr()));         device_context.RSGetViewports(&mut
+// r.viewports.0, Some(r.viewports.1.as_mut_ptr()));         r.rasterizer_state
+// = device_context.RSGetState().ok();         device_context.OMGetBlendState(
+//             Some(&mut r.blend_state),
+//             Some(&mut r.blend_factor),
+//             Some(&mut r.sample_mask),
+//         );
+//         device_context.OMGetDepthStencilState(
+//             Some(&mut r.depth_stencil_state),
+//             Some(&mut r.depth_stencil_ref),
+//         );
+//         device_context.PSGetShaderResources(0, Some(&mut
+// r.shader_resources));         device_context.PSGetSamplers(0, Some(&mut
+// r.sampler));
+//
+//         r.vs_instances_count = 256;
+//         device_context.VSGetShader(
+//             &mut r.vertex_shader,
+//             Some(&mut r.vs_instances),
+//             Some(&mut r.vs_instances_count),
+//         );
+//         r.ps_instances_count = 256;
+//         device_context.PSGetShader(
+//             &mut r.pixel_shader,
+//             Some(&mut r.ps_instances),
+//             Some(&mut r.ps_instances_count),
+//         );
+//
+//         device_context.IAGetVertexBuffers(
+//             0,
+//             1,
+//             Some(&mut r.vertex_buffer),
+//             Some(&mut r.vertex_buffer_stride),
+//             Some(&mut r.vertex_buffer_offset),
+//         );
+//         device_context.IAGetIndexBuffer(
+//             Some(&mut r.index_buffer),
+//             Some(&mut r.index_buffer_format),
+//             Some(&mut r.index_buffer_offset),
+//         );
+//         device_context.VSGetConstantBuffers(0, Some(&mut r.constant_buffer));
+//         r.primitive_topology = device_context.IAGetPrimitiveTopology();
+//         r.input_layout = device_context.IAGetInputLayout().ok();
+//
+//         r
+//     }
+//
+//     unsafe fn restore(self, device_context: &ID3D11DeviceContext) {
+//         device_context.RSSetScissorRects(Some(&self.scissor.1[..self.scissor.
+// 0 as usize]));         device_context.RSSetViewports(Some(&self.viewports.1[.
+// .self.viewports.0 as usize]));         device_context.RSSetState(self.
+// rasterizer_state.as_ref());         device_context.OMSetBlendState(
+//             self.blend_state.as_ref(),
+//             Some(&self.blend_factor),
+//             self.sample_mask,
+//         );
+//         device_context
+//             .OMSetDepthStencilState(self.depth_stencil_state.as_ref(),
+// self.depth_stencil_ref);         device_context.PSSetShaderResources(0,
+// Some(&self.shader_resources));         device_context.VSSetConstantBuffers(0,
+// Some(&self.constant_buffer));         device_context.
+// IASetPrimitiveTopology(self.primitive_topology);         if let Some(il) =
+// self.input_layout {             device_context.IASetInputLayout(&il)
+//         };
+//     }
+// }
 
 struct Buffer<T: Sized> {
     bind_flag: D3D11_BIND_FLAG,
