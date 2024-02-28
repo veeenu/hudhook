@@ -1,25 +1,23 @@
 use std::ffi::c_void;
 use std::mem;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
+use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{error, trace};
 use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HWND, RECT};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-    D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD,
-    D3D_SDK_VERSION,
+    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
+    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
+    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::RGNDATA;
-use windows::Win32::UI::WindowsAndMessaging::{CallWindowProcW, DefWindowProcW};
 
 use super::DummyHwnd;
-use crate::compositor::dx9::Compositor;
 use crate::mh::MhHook;
-use crate::pipeline::{Pipeline, PipelineMessage, PipelineSharedState};
+use crate::renderer::{D3D9RenderEngine, Pipeline};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type Dx9PresentType = unsafe extern "system" fn(
@@ -35,67 +33,44 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut PIPELINE: OnceCell<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> =
-    OnceCell::new();
+static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D9RenderEngine>>> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
-unsafe fn init_pipeline(
-    device: &IDirect3DDevice9,
-) -> Result<(Mutex<Pipeline<Compositor>>, Arc<PipelineSharedState>)> {
+unsafe fn init_pipeline(device: &IDirect3DDevice9) -> Result<Mutex<Pipeline<D3D9RenderEngine>>> {
     let mut creation_parameters = Default::default();
     let _ = device.GetCreationParameters(&mut creation_parameters);
     let hwnd = creation_parameters.hFocusWindow;
 
-    let compositor = Compositor::new(device, hwnd)?;
+    let mut ctx = Context::create();
+    let engine = D3D9RenderEngine::new(device, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
     };
 
-    let (pipeline, shared_state) = Pipeline::new(hwnd, imgui_wnd_proc, compositor, render_loop)
-        .map_err(|(e, render_loop)| {
-            RENDER_LOOP.get_or_init(move || render_loop);
-            e
-        })?;
-
-    Ok((Mutex::new(pipeline), shared_state))
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
+        RENDER_LOOP.get_or_init(move || render_loop);
+        e
+    })?;
+    Ok(Mutex::new(pipeline))
 }
 
 fn render(device: &IDirect3DDevice9) -> Result<()> {
-    let (pipeline, _) = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
+    let pipeline = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
 
     let Some(mut pipeline) = pipeline.try_lock() else {
         return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
     };
 
-    let source = pipeline.render()?;
+    pipeline.prepare_render()?;
 
-    pipeline.compositor().composite(pipeline.engine(), source)?;
+    let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap() };
+
+    unsafe { device.BeginScene() }?;
+    pipeline.render(surface)?;
+    unsafe { device.EndScene() }?;
 
     Ok(())
-}
-
-unsafe extern "system" fn imgui_wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    let Some(shared_state) = PIPELINE.get().map(|(_, shared_state)| shared_state) else {
-        return DefWindowProcW(hwnd, msg, wparam, lparam);
-    };
-
-    let _ = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam));
-
-    // CONCURRENCY: as the message interpretation now happens out of band, this
-    // expresses the intent as of *before* the current message was received.
-    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
-
-    if should_block_messages {
-        LRESULT(1)
-    } else {
-        CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
-    }
 }
 
 unsafe extern "system" fn dx9_present_impl(
@@ -106,10 +81,9 @@ unsafe extern "system" fn dx9_present_impl(
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT {
     let Trampolines { dx9_present } =
-        TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
+        TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 
     if let Err(e) = render(&device) {
-        util::print_dxgi_debug_messages();
         error!("Render error: {e:?}");
     }
 

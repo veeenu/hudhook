@@ -7,7 +7,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use tracing::{debug, trace};
+use tracing::debug;
 use windows::core::{s, w, ComInterface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
@@ -57,7 +57,7 @@ impl D3D12RenderEngine {
 
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
-        ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
+        ctx.set_renderer_name(String::from(concat!("hudhook-dx12@", env!("CARGO_PKG_VERSION"))));
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
         fonts.tex_id = unsafe {
@@ -135,14 +135,6 @@ impl RenderEngine for D3D12RenderEngine {
 
 impl D3D12RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
-        if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
-            debug!(
-                "Insufficent display size {}x{}, skip rendering",
-                draw_data.display_size[0], draw_data.display_size[1]
-            );
-            return Ok(());
-        }
-
         self.vertex_buffer.clear();
         self.index_buffer.clear();
 
@@ -158,6 +150,7 @@ impl D3D12RenderEngine {
 
         self.vertex_buffer.upload(&self.device)?;
         self.index_buffer.upload(&self.device)?;
+
         self.projection_buffer = {
             let [l, t, r, b] = [
                 draw_data.display_pos[0],
@@ -196,17 +189,15 @@ impl D3D12RenderEngine {
                             let tex_handle = D3D12_GPU_DESCRIPTOR_HANDLE {
                                 ptr: cmd_params.texture_id.id() as u64,
                             };
-                            unsafe {
-                                self.command_list.SetGraphicsRootDescriptorTable(1, tex_handle);
-                                self.command_list.RSSetScissorRects(&[r]);
-                                self.command_list.DrawIndexedInstanced(
-                                    count as _,
-                                    1,
-                                    (cmd_params.idx_offset + idx_offset) as _,
-                                    (cmd_params.vtx_offset + vtx_offset) as _,
-                                    0,
-                                );
-                            }
+                            self.command_list.SetGraphicsRootDescriptorTable(1, tex_handle);
+                            self.command_list.RSSetScissorRects(&[r]);
+                            self.command_list.DrawIndexedInstanced(
+                                count as _,
+                                1,
+                                (cmd_params.idx_offset + idx_offset) as _,
+                                (cmd_params.vtx_offset + vtx_offset) as _,
+                                0,
+                            );
                         }
                     },
                     DrawCmd::ResetRenderState => {
@@ -215,9 +206,7 @@ impl D3D12RenderEngine {
                         // whatsoever. What am I doing wrong?
                         self.setup_render_state(draw_data);
                     },
-                    DrawCmd::RawCallback { callback, raw_cmd } => unsafe {
-                        callback(cl.raw(), raw_cmd)
-                    },
+                    DrawCmd::RawCallback { callback, raw_cmd } => callback(cl.raw(), raw_cmd),
                 }
             }
             idx_offset += cl.idx_buffer().len();
@@ -265,10 +254,6 @@ impl D3D12RenderEngine {
             0,
         );
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
-    }
-
-    pub fn resize(&mut self, _width: u32, _height: u32) -> Result<()> {
-        Ok(())
     }
 }
 
@@ -627,6 +612,7 @@ impl<T> Buffer<T> {
         let capacity = self.data.capacity();
         if capacity > self.resource_capacity {
             drop(mem::replace(&mut self.resource, Self::create_resource(device, capacity)?));
+            self.resource_capacity = capacity;
         }
 
         unsafe {

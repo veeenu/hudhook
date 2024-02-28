@@ -73,8 +73,6 @@ impl Dx9Harness {
                     )
                 };
 
-                util::enable_debug_interface();
-
                 let direct3d = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
                 let mut device = None;
                 unsafe {
@@ -106,8 +104,6 @@ impl Dx9Harness {
                     if !handle_message(handle) {
                         break;
                     }
-
-                    util::print_dxgi_debug_messages();
 
                     if done.load(Ordering::SeqCst) {
                         break;

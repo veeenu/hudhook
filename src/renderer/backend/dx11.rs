@@ -4,7 +4,6 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use tracing::debug;
 use windows::core::{s, Interface, Result};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -41,7 +40,7 @@ impl D3D11RenderEngine {
 
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
-        ctx.set_renderer_name(String::from(concat!("imgui-dx12@", env!("CARGO_PKG_VERSION"))));
+        ctx.set_renderer_name(String::from(concat!("hudhook-dx11@", env!("CARGO_PKG_VERSION"))));
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
         fonts.tex_id = unsafe {
@@ -99,14 +98,6 @@ impl RenderEngine for D3D11RenderEngine {
 
 impl D3D11RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
-        if draw_data.display_size[0] <= 0f32 || draw_data.display_size[1] <= 0f32 {
-            debug!(
-                "Insufficent display size {}x{}, skip rendering",
-                draw_data.display_size[0], draw_data.display_size[1]
-            );
-            return Ok(());
-        }
-
         self.vertex_buffer.clear();
         self.index_buffer.clear();
         self.projection_buffer.clear();
@@ -654,6 +645,7 @@ impl<T> Buffer<T> {
                 &mut self.resource,
                 Self::create_resource(device, capacity, self.bind_flag)?,
             ));
+            self.resource_capacity = capacity;
         }
 
         unsafe {

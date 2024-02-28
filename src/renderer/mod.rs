@@ -15,3 +15,5 @@ pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<Tex
 pub use backend::dx11::D3D11RenderEngine;
 #[cfg(feature = "dx12")]
 pub use backend::dx12::D3D12RenderEngine;
+#[cfg(feature = "dx9")]
+pub use backend::dx9::D3D9RenderEngine;
