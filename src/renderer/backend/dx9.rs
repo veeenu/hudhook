@@ -42,7 +42,6 @@ struct CustomVertex {
 
 pub struct D3D9RenderEngine {
     device: IDirect3DDevice9,
-    device_creation_parameters: D3DDEVICE_CREATION_PARAMETERS,
 
     texture_heap: TextureHeap,
 
@@ -54,8 +53,6 @@ pub struct D3D9RenderEngine {
 impl D3D9RenderEngine {
     pub fn new(device: &IDirect3DDevice9, ctx: &mut Context) -> Result<Self> {
         let device = device.clone();
-        let device_creation_parameters =
-            util::try_out_param(|v| unsafe { device.GetCreationParameters(v) })?;
 
         let mut texture_heap = TextureHeap::new(&device)?;
 
@@ -76,14 +73,7 @@ impl D3D9RenderEngine {
             )
         }?;
 
-        Ok(Self {
-            device,
-            device_creation_parameters,
-            texture_heap,
-            vertex_buffer,
-            index_buffer,
-            projection_buffer,
-        })
+        Ok(Self { device, texture_heap, vertex_buffer, index_buffer, projection_buffer })
     }
 }
 
