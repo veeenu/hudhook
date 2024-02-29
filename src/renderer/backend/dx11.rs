@@ -4,7 +4,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use windows::core::{s, Interface, Result};
+use windows::core::{s, Result};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::*;
@@ -146,9 +146,9 @@ impl D3D11RenderEngine {
                         };
 
                         if r.right > r.left && r.bottom > r.top {
-                            let srv = ID3D11ShaderResourceView::from_raw(
-                                cmd_params.texture_id.id() as *mut c_void,
-                            );
+                            let srv = self.texture_heap.textures[cmd_params.texture_id.id()]
+                                .shader_resource_view
+                                .clone();
                             unsafe {
                                 self.device_context.PSSetShaderResources(0, Some(&[Some(srv)]));
                                 self.device_context.RSSetScissorRects(Some(&[r]));
@@ -606,7 +606,7 @@ impl TextureHeap {
             )
         })?;
 
-        let id = TextureId::from(shader_resource_view.as_raw());
+        let id = TextureId::from(self.textures.len());
 
         let texture = Texture { resource, shader_resource_view, id };
         self.textures.push(texture);
@@ -799,7 +799,10 @@ impl StateBackup {
             self.index_buffer_offset,
         );
 
-        device_context.VSSetConstantBuffers(0, Some(&self.constant_buffer));
+        if self.constant_buffer[0].is_some() {
+            let count = self.constant_buffer.iter().take_while(|x| x.is_some()).count();
+            device_context.VSSetConstantBuffers(0, Some(&self.constant_buffer[..count]));
+        }
 
         device_context.RSSetState(self.rasterizer_state.as_ref());
         device_context.IASetPrimitiveTopology(self.primitive_topology);
