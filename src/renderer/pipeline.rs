@@ -7,7 +7,7 @@ use std::sync::Arc;
 use imgui::Context;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use tracing::{error, trace};
+use tracing::error;
 use windows::core::{Error, Result, HRESULT};
 use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
@@ -27,15 +27,20 @@ type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 static mut PIPELINE_STATES: Lazy<Mutex<HashMap<isize, Arc<PipelineSharedState>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub struct PipelineMessage(pub HWND, pub u32, pub WPARAM, pub LPARAM);
+pub(crate) struct PipelineMessage(
+    pub(crate) HWND,
+    pub(crate) u32,
+    pub(crate) WPARAM,
+    pub(crate) LPARAM,
+);
 
-pub struct PipelineSharedState {
-    pub should_block_events: AtomicBool,
-    pub wnd_proc: WndProcType,
-    pub tx: Sender<PipelineMessage>,
+pub(crate) struct PipelineSharedState {
+    pub(crate) should_block_events: AtomicBool,
+    pub(crate) wnd_proc: WndProcType,
+    pub(crate) tx: Sender<PipelineMessage>,
 }
 
-pub struct Pipeline<T: RenderEngine> {
+pub(crate) struct Pipeline<T: RenderEngine> {
     hwnd: HWND,
     ctx: Context,
     engine: T,
@@ -45,7 +50,7 @@ pub struct Pipeline<T: RenderEngine> {
 }
 
 impl<T: RenderEngine> Pipeline<T> {
-    pub fn new(
+    pub(crate) fn new(
         hwnd: HWND,
         mut ctx: Context,
         mut engine: T,
@@ -87,7 +92,7 @@ impl<T: RenderEngine> Pipeline<T> {
         Ok(Self { hwnd, ctx, engine, render_loop, rx, shared_state: Arc::clone(&shared_state) })
     }
 
-    pub fn prepare_render(&mut self) -> Result<()> {
+    pub(crate) fn prepare_render(&mut self) -> Result<()> {
         // TODO find a better alternative than allocating each frame
         let message_queue = self.rx.try_iter().collect::<Vec<_>>();
 
@@ -126,7 +131,7 @@ impl<T: RenderEngine> Pipeline<T> {
         Ok(())
     }
 
-    pub fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
+    pub(crate) fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
         let [w, h] = self.ctx.io().display_size;
         let [fsw, fsh] = self.ctx.io().display_framebuffer_scale;
 
@@ -144,37 +149,19 @@ impl<T: RenderEngine> Pipeline<T> {
         Ok(())
     }
 
-    pub fn engine(&self) -> &T {
-        &self.engine
-    }
-
-    pub fn engine_mut(&mut self) -> &mut T {
-        &mut self.engine
-    }
-
-    pub fn context(&mut self) -> &mut Context {
+    pub(crate) fn context(&mut self) -> &mut Context {
         &mut self.ctx
     }
 
-    pub fn render_loop(&mut self) -> &mut RenderLoop {
+    pub(crate) fn render_loop(&mut self) -> &mut RenderLoop {
         &mut self.render_loop
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        trace!("RESIZING TO {width} x {height}");
-        // let (width, height) = util::win_size(self.hwnd);
-        // let (width, height) = (width as u32, height as u32);
-
-        let io = self.ctx.io_mut();
-
-        // if let Err(e) = self.engine.resize(width, height) {
-        //     error!("Couldn't resize engine: {e:?}");
-        // }
-
-        io.display_size = [width as f32, height as f32];
+    pub(crate) fn resize(&mut self, width: u32, height: u32) {
+        self.ctx.io_mut().display_size = [width as f32, height as f32];
     }
 
-    pub fn cleanup(&mut self) {
+    pub(crate) fn cleanup(&mut self) {
         #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         unsafe {
             SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as isize)

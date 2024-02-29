@@ -1,5 +1,5 @@
 //! Thin FFI wrapper around [`minhook`](https://github.com/TsudaKageyu/minhook).
-#![allow(dead_code, non_snake_case, non_camel_case_types)]
+#![allow(dead_code, non_snake_case, non_camel_case_types, missing_docs)]
 
 use std::ffi::c_void;
 use std::ptr::null_mut;

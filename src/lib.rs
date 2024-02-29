@@ -109,6 +109,7 @@
 //! }
 //! ```
 #![allow(clippy::needless_doctest_main)]
+#![deny(missing_docs)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;

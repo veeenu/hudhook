@@ -61,6 +61,7 @@ impl Default for DummyHwnd {
 }
 
 impl DummyHwnd {
+    /// Construct the dummy [`HWND`].
     pub fn new() -> Self {
         // The window procedure for the class just calls `DefWindowProcW`.
         unsafe extern "system" fn wnd_proc(
@@ -113,7 +114,7 @@ impl DummyHwnd {
         Self(hwnd, wndclass)
     }
 
-    // Retrieve the window handle.
+    /// Retrieve the window handle.
     pub fn hwnd(&self) -> HWND {
         self.0
     }

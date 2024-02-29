@@ -1,3 +1,5 @@
+//! Hooks for DirectX 12.
+
 use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
@@ -226,6 +228,7 @@ fn get_target_addrs() -> (
     (present_ptr, resize_buffers_ptr, cqecl_ptr)
 }
 
+/// Hooks for DirectX 12.
 pub struct ImguiDx12Hooks([MhHook; 3]);
 
 impl ImguiDx12Hooks {

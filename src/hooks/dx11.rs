@@ -1,3 +1,5 @@
+//! Hooks for DirectX 11.
+
 use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
@@ -135,6 +137,7 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
     present_ptr
 }
 
+/// Hooks for DirectX 11.
 pub struct ImguiDx11Hooks([MhHook; 1]);
 
 impl ImguiDx11Hooks {

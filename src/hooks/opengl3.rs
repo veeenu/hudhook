@@ -1,3 +1,5 @@
+//! Hooks for OpenGL 3.
+
 use std::ffi::CString;
 use std::mem;
 use std::sync::OnceLock;
@@ -11,7 +13,8 @@ use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::mh::MhHook;
-use crate::renderer::{OpenGl3RenderEngine, Pipeline};
+use crate::renderer::OpenGl3RenderEngine;
+use crate::renderer::Pipeline;
 use crate::{Hooks, ImguiRenderLoop};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();
@@ -85,7 +88,7 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffersType {
     mem::transmute(wglswapbuffers_func)
 }
 
-/// Stores hook detours and implements the [`Hooks`] trait.
+/// Hooks for OpenGL 3.
 pub struct ImguiOpenGl3Hooks([MhHook; 1]);
 
 impl ImguiOpenGl3Hooks {

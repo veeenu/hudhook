@@ -15,6 +15,7 @@ use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use gl::types::*;
 
 use crate::renderer::RenderEngine;
+use crate::util;
 
 mod gl {
     #![cfg_attr(
@@ -70,11 +71,11 @@ impl OpenGl3RenderEngine {
         let (program, projection_loc, position_loc, color_loc, uv_loc, texture_loc) =
             unsafe { create_shader_program(&gl) };
 
-        let vertex_buffer = out_param(|x| unsafe { gl.GenBuffers(1, x) });
-        let index_buffer = out_param(|x| unsafe { gl.GenBuffers(1, x) });
+        let vertex_buffer = util::out_param(|x| unsafe { gl.GenBuffers(1, x) });
+        let index_buffer = util::out_param(|x| unsafe { gl.GenBuffers(1, x) });
         let projection_buffer = Default::default();
 
-        let vao = out_param(|x| unsafe { gl.GenVertexArrays(1, x) });
+        let vao = util::out_param(|x| unsafe { gl.GenVertexArrays(1, x) });
 
         let mut texture_heap = TextureHeap::new();
 
@@ -350,7 +351,7 @@ impl TextureHeap {
         width: u32,
         height: u32,
     ) -> Result<TextureId> {
-        let texture = out_param(|x| gl.GenTextures(1, x));
+        let texture = util::out_param(|x| gl.GenTextures(1, x));
 
         let mut bound_texture = 0;
         gl.GetIntegerv(gl::TEXTURE_BINDING_2D, &mut bound_texture);
@@ -404,31 +405,33 @@ struct StateBackup {
 
 impl StateBackup {
     unsafe fn backup(gl: &gl::Gl) -> StateBackup {
-        let last_active_texture = out_param(|x| gl.GetIntegerv(gl::ACTIVE_TEXTURE, x));
+        let last_active_texture = util::out_param(|x| gl.GetIntegerv(gl::ACTIVE_TEXTURE, x));
         gl.ActiveTexture(gl::TEXTURE0);
-        let last_program = out_param(|x| gl.GetIntegerv(gl::CURRENT_PROGRAM, x));
-        let last_texture = out_param(|x| gl.GetIntegerv(gl::TEXTURE_BINDING_2D, x));
+        let last_program = util::out_param(|x| gl.GetIntegerv(gl::CURRENT_PROGRAM, x));
+        let last_texture = util::out_param(|x| gl.GetIntegerv(gl::TEXTURE_BINDING_2D, x));
         let last_sampler = if gl.BindSampler.is_loaded() {
-            out_param(|x| gl.GetIntegerv(gl::SAMPLER_BINDING, x))
+            util::out_param(|x| gl.GetIntegerv(gl::SAMPLER_BINDING, x))
         } else {
             0
         };
-        let last_array_buffer = out_param(|x| gl.GetIntegerv(gl::ARRAY_BUFFER_BINDING, x));
+        let last_array_buffer = util::out_param(|x| gl.GetIntegerv(gl::ARRAY_BUFFER_BINDING, x));
         let last_element_array_buffer =
-            out_param(|x| gl.GetIntegerv(gl::ELEMENT_ARRAY_BUFFER_BINDING, x));
-        let last_vertex_array = out_param(|x| gl.GetIntegerv(gl::VERTEX_ARRAY_BINDING, x));
+            util::out_param(|x| gl.GetIntegerv(gl::ELEMENT_ARRAY_BUFFER_BINDING, x));
+        let last_vertex_array = util::out_param(|x| gl.GetIntegerv(gl::VERTEX_ARRAY_BINDING, x));
         let last_polygon_mode =
-            out_param(|x: &mut [GLint; 2]| gl.GetIntegerv(gl::POLYGON_MODE, x.as_mut_ptr()));
+            util::out_param(|x: &mut [GLint; 2]| gl.GetIntegerv(gl::POLYGON_MODE, x.as_mut_ptr()));
         let last_viewport =
-            out_param(|x: &mut [GLint; 4]| gl.GetIntegerv(gl::VIEWPORT, x.as_mut_ptr()));
+            util::out_param(|x: &mut [GLint; 4]| gl.GetIntegerv(gl::VIEWPORT, x.as_mut_ptr()));
         let last_scissor_box =
-            out_param(|x: &mut [GLint; 4]| gl.GetIntegerv(gl::SCISSOR_BOX, x.as_mut_ptr()));
-        let last_blend_src_rgb = out_param(|x| gl.GetIntegerv(gl::BLEND_SRC_RGB, x));
-        let last_blend_dst_rgb = out_param(|x| gl.GetIntegerv(gl::BLEND_DST_RGB, x));
-        let last_blend_src_alpha = out_param(|x| gl.GetIntegerv(gl::BLEND_SRC_ALPHA, x));
-        let last_blend_dst_alpha = out_param(|x| gl.GetIntegerv(gl::BLEND_DST_ALPHA, x));
-        let last_blend_equation_rgb = out_param(|x| gl.GetIntegerv(gl::BLEND_EQUATION_RGB, x));
-        let last_blend_equation_alpha = out_param(|x| gl.GetIntegerv(gl::BLEND_EQUATION_ALPHA, x));
+            util::out_param(|x: &mut [GLint; 4]| gl.GetIntegerv(gl::SCISSOR_BOX, x.as_mut_ptr()));
+        let last_blend_src_rgb = util::out_param(|x| gl.GetIntegerv(gl::BLEND_SRC_RGB, x));
+        let last_blend_dst_rgb = util::out_param(|x| gl.GetIntegerv(gl::BLEND_DST_RGB, x));
+        let last_blend_src_alpha = util::out_param(|x| gl.GetIntegerv(gl::BLEND_SRC_ALPHA, x));
+        let last_blend_dst_alpha = util::out_param(|x| gl.GetIntegerv(gl::BLEND_DST_ALPHA, x));
+        let last_blend_equation_rgb =
+            util::out_param(|x| gl.GetIntegerv(gl::BLEND_EQUATION_RGB, x));
+        let last_blend_equation_alpha =
+            util::out_param(|x| gl.GetIntegerv(gl::BLEND_EQUATION_ALPHA, x));
         let last_enable_blend = gl.IsEnabled(gl::BLEND) == gl::TRUE;
         let last_enable_cull_face = gl.IsEnabled(gl::CULL_FACE) == gl::TRUE;
         let last_enable_depth_test = gl.IsEnabled(gl::DEPTH_TEST) == gl::TRUE;
@@ -532,13 +535,4 @@ impl StateBackup {
             last_scissor_box[3] as _,
         );
     }
-}
-
-fn out_param<T: Default, F>(f: F) -> T
-where
-    F: FnOnce(&mut T),
-{
-    let mut val = Default::default();
-    f(&mut val);
-    val
 }

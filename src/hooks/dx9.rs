@@ -1,3 +1,5 @@
+//! Hooks for DirectX 9.
+
 use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
@@ -125,6 +127,7 @@ fn get_target_addrs() -> Dx9PresentType {
     unsafe { mem::transmute(present_ptr) }
 }
 
+/// Hooks for DirectX 9.
 pub struct ImguiDx9Hooks([MhHook; 1]);
 
 impl ImguiDx9Hooks {
