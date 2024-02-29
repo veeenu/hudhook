@@ -190,12 +190,12 @@ unsafe extern "system" fn pipeline_wnd_proc(
 ) -> LRESULT {
     let shared_state = {
         let Some(shared_state_guard) = PIPELINE_STATES.try_lock() else {
-            error!("No lockerino?");
+            error!("Could not lock shared state in window procedure");
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         };
 
         let Some(shared_state) = shared_state_guard.get(&hwnd.0) else {
-            error!("No shared state?");
+            error!("Could not get shared state for handle {hwnd:?}");
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         };
 
@@ -203,7 +203,7 @@ unsafe extern "system" fn pipeline_wnd_proc(
     };
 
     if let Err(e) = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam)) {
-        error!("No senderino? {e:?}");
+        error!("Could not send window message through pipeline: {e:?}");
     }
 
     // CONCURRENCY: as the message interpretation now happens out of band, this

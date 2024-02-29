@@ -89,13 +89,12 @@ impl RenderEngine for D3D9RenderEngine {
         draw_data: &imgui::DrawData,
         render_target: Self::RenderTarget,
     ) -> Result<()> {
-        let state_backup = unsafe { StateBackup::backup(&self.device) }?;
-
-        unsafe { self.device.SetRenderTarget(0, &render_target) }?;
-
-        unsafe { self.render_draw_data(draw_data) }?;
-
-        unsafe { state_backup.restore(&self.device) }?;
+        unsafe {
+            let state_backup = StateBackup::backup(&self.device)?;
+            self.device.SetRenderTarget(0, &render_target)?;
+            self.render_draw_data(draw_data)?;
+            state_backup.restore(&self.device)?;
+        }
         Ok(())
     }
 }

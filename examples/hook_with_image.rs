@@ -1,7 +1,6 @@
 use std::io::Cursor;
 
-use hudhook::renderer::TextureLoader;
-use hudhook::ImguiRenderLoop;
+use hudhook::{ImguiRenderLoop, TextureLoader};
 use image::io::Reader as ImageReader;
 use image::{EncodableLayout, RgbaImage};
 use imgui::{Condition, Context, Image, TextureId};

@@ -1,18 +1,18 @@
 //! The [`hudhook`](crate) overlay rendering engine.
 mod backend;
-mod engine;
 mod input;
 mod keys;
 mod pipeline;
 
-use imgui::TextureId;
+use imgui::{DrawData, TextureId};
 use windows::core::Result;
 
-/// A load texture callback. Invoke it in your [`crate::ImguiRenderLoop::initialize`] method for
-/// setting up textures.
-pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<TextureId>;
+pub(crate) trait RenderEngine {
+    type RenderTarget;
 
-pub(crate) use engine::RenderEngine;
+    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId>;
+    fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;
+}
 pub(crate) use pipeline::Pipeline;
 
 #[cfg(feature = "dx11")]

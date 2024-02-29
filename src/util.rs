@@ -117,11 +117,12 @@ pub fn print_error_blob<D: Display, E>(msg: D) -> impl Fn((E, ID3DBlob)) -> E {
     }
 }
 
-/// Enables the Direct3D12 debug interface. It will not panic if the interface
-/// is not available. Call this from your application before a DirectX 12 device
-/// is initialized. It could fail in DirectX 12 host applications that will
-/// have initialized their device already, but should not fail in other host
-/// applications.
+/// Enables the Direct3D12 debug interface.
+///
+/// It will not panic if the interface is not available. Call this from your
+/// application before a DirectX 12 device is initialized. It could fail in
+/// DirectX 12 host applications that will have initialized their device
+/// already, but should not fail in other host applications.
 pub fn enable_debug_interface() {
     let debug_interface: Result<ID3D12Debug, _> =
         try_out_ptr(|v| unsafe { D3D12GetDebugInterface(v) });
@@ -135,8 +136,8 @@ pub fn enable_debug_interface() {
 }
 
 /// Prints the DXGI debug messages on the debug trace. It is used internally for
-/// error reporting, but can be used by clients. Requires calling
-/// [`enable_debug_interface`] before.
+/// error reporting, but can be used by clients. Has effect only after
+/// [`enable_debug_interface`] has been called.
 pub fn print_dxgi_debug_messages() {
     let Ok(diq): Result<IDXGIInfoQueue, _> = (unsafe { DXGIGetDebugInterface1(0) }) else {
         return;

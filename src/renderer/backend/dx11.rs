@@ -75,22 +75,17 @@ impl RenderEngine for D3D11RenderEngine {
         draw_data: &imgui::DrawData,
         render_target: Self::RenderTarget,
     ) -> Result<()> {
-        // For the time being, state backup/restore is disabled as it leads to some
-        // unintelligible crashes. So far I have not found instances where this
-        // tampers with the underlying game's render loop, which means more
-        // computation saved.
+        unsafe {
+            let state_backup = StateBackup::backup(&self.device_context);
 
-        let state_backup = unsafe { StateBackup::backup(&self.device_context) };
+            let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| {
+                self.device.CreateRenderTargetView(&render_target, None, Some(v))
+            })?;
 
-        let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| unsafe {
-            self.device.CreateRenderTargetView(&render_target, None, Some(v))
-        })?;
-
-        unsafe { self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None) };
-
-        unsafe { self.render_draw_data(draw_data) }?;
-
-        unsafe { state_backup.restore(&self.device_context) };
+            self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
+            self.render_draw_data(draw_data)?;
+            state_backup.restore(&self.device_context);
+        };
 
         Ok(())
     }

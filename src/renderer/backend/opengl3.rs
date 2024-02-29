@@ -117,11 +117,11 @@ impl RenderEngine for OpenGl3RenderEngine {
     }
 
     fn render(&mut self, draw_data: &DrawData, _render_target: Self::RenderTarget) -> Result<()> {
-        let state_backup = unsafe { StateBackup::backup(&self.gl) };
-
-        unsafe { self.render_draw_data(draw_data) }?;
-
-        unsafe { state_backup.restore(&self.gl) };
+        unsafe {
+            let state_backup = StateBackup::backup(&self.gl);
+            self.render_draw_data(draw_data)?;
+            state_backup.restore(&self.gl);
+        }
         Ok(())
     }
 }

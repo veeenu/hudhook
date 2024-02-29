@@ -81,12 +81,7 @@ impl DummyHwnd {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: unsafe { GetModuleHandleW(None).unwrap().into() },
-            // hIcon: HICON(0),
-            // hCursor: HCURSOR(0),
-            // hbrBackground: HBRUSH(0),
-            // lpszMenuName: PCWSTR(null()),
             lpszClassName: w!("HUDHOOK"),
-            // hIconSm: HICON(0),
             ..Default::default()
         };
         debug!("{:?}", wndclass);
