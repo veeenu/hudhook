@@ -128,7 +128,9 @@ impl<T: RenderEngine> Pipeline<T> {
 
     pub fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
         let [w, h] = self.ctx.io().display_size;
-        if w <= 0.0 || h <= 0.0 {
+        let [fsw, fsh] = self.ctx.io().display_framebuffer_scale;
+
+        if (w * fsw) <= 0.0 || (h * fsh) <= 0.0 {
             error!("Insufficient display size: {w}x{h}");
             return Err(Error::new(HRESULT(-1), "Insufficient display size".into()));
         }
