@@ -12,8 +12,7 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-use crate::renderer::Pipeline;
-use crate::renderer::RenderEngine;
+use crate::renderer::{Pipeline, RenderEngine};
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;

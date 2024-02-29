@@ -143,8 +143,8 @@ static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
-/// A load texture callback. Invoke it in your [`crate::ImguiRenderLoop::initialize`] method for
-/// setting up textures.
+/// A load texture callback. Invoke it in your
+/// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
 pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<TextureId, Error>;
 
 /// Allocate a Windows console.
@@ -250,8 +250,8 @@ pub trait ImguiRenderLoop {
 /// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
 /// - [`ImguiOpenGl3Hooks`](crate::hooks::opengl3::ImguiOpenGl3Hooks)
 pub trait Hooks {
-    /// Construct a boxed instance of the implementor, storing the provided render loop
-    /// where appropriate.
+    /// Construct a boxed instance of the implementor, storing the provided
+    /// render loop where appropriate.
     fn from_render_loop<T>(t: T) -> Box<Self>
     where
         Self: Sized,

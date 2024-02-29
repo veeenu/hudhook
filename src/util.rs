@@ -1,5 +1,5 @@
-//! General-purpose utilities. These are used across the [`crate`] but have proven useful in
-//! client code as well.
+//! General-purpose utilities. These are used across the [`crate`] but have
+//! proven useful in client code as well.
 
 use std::fmt::Display;
 use std::mem::ManuallyDrop;
@@ -171,9 +171,11 @@ pub fn win_size(hwnd: HWND) -> (i32, i32) {
 
 /// Creates a [`D3D12_RESOURCE_BARRIER`].
 ///
-/// Use this function and the associated [`drop_barrier`] for correctly managing barrier resources.
+/// Use this function and the associated [`drop_barrier`] for correctly managing
+/// barrier resources.
 ///
-/// RAII was not used due to the complicated signature of [`windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList::ResourceBarrier`].
+/// RAII was not used due to the complicated signature of
+/// [`windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList::ResourceBarrier`].
 pub fn create_barrier(
     resource: &ID3D12Resource,
     before: D3D12_RESOURCE_STATES,
@@ -195,9 +197,11 @@ pub fn create_barrier(
 
 /// Drops a [`D3D12_RESOURCE_BARRIER`].
 ///
-/// Use this function and the associated [`create_barrier`] for correctly managing barrier resources.
+/// Use this function and the associated [`create_barrier`] for correctly
+/// managing barrier resources.
 ///
-/// RAII was not used due to the complicated signature of [`windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList::ResourceBarrier`].
+/// RAII was not used due to the complicated signature of
+/// [`windows::Win32::Graphics::Direct3D12::ID3D12GraphicsCommandList::ResourceBarrier`].
 pub fn drop_barrier(barrier: D3D12_RESOURCE_BARRIER) {
     let transition = ManuallyDrop::into_inner(unsafe { barrier.Anonymous.Transition });
     let _ = ManuallyDrop::into_inner(transition.pResource);

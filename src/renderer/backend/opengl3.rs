@@ -3,6 +3,7 @@
 use std::ffi::{c_void, CString};
 use std::mem;
 
+use gl::types::*;
 use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
@@ -11,8 +12,6 @@ use windows::core::{s, Result, PCSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::*;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
-
-use gl::types::*;
 
 use crate::renderer::RenderEngine;
 use crate::util;
@@ -140,12 +139,12 @@ impl OpenGl3RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         };
 
         self.setup_render_state(draw_data);

@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
 use imgui::Context;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use tracing::error;
 use windows::core::{Error, Result, HRESULT};
@@ -27,6 +27,7 @@ type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 static mut PIPELINE_STATES: Lazy<Mutex<HashMap<isize, Arc<PipelineSharedState>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
+#[derive(Debug)]
 pub(crate) struct PipelineMessage(
     pub(crate) HWND,
     pub(crate) u32,
@@ -47,6 +48,7 @@ pub(crate) struct Pipeline<T: RenderEngine> {
     render_loop: RenderLoop,
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
+    queue_buffer: OnceCell<Vec<PipelineMessage>>,
 }
 
 impl<T: RenderEngine> Pipeline<T> {
@@ -89,16 +91,27 @@ impl<T: RenderEngine> Pipeline<T> {
 
         unsafe { PIPELINE_STATES.lock() }.insert(hwnd.0, Arc::clone(&shared_state));
 
-        Ok(Self { hwnd, ctx, engine, render_loop, rx, shared_state: Arc::clone(&shared_state) })
+        let queue_buffer = OnceCell::from(Vec::new());
+
+        Ok(Self {
+            hwnd,
+            ctx,
+            engine,
+            render_loop,
+            rx,
+            shared_state: Arc::clone(&shared_state),
+            queue_buffer,
+        })
     }
 
     pub(crate) fn prepare_render(&mut self) -> Result<()> {
-        // TODO find a better alternative than allocating each frame
-        let message_queue = self.rx.try_iter().collect::<Vec<_>>();
-
-        message_queue.into_iter().for_each(|PipelineMessage(hwnd, umsg, wparam, lparam)| {
+        let mut queue_buffer = self.queue_buffer.take().unwrap();
+        queue_buffer.clear();
+        queue_buffer.extend(self.rx.try_iter());
+        queue_buffer.drain(..).for_each(|PipelineMessage(hwnd, umsg, wparam, lparam)| {
             imgui_wnd_proc_impl(hwnd, umsg, wparam, lparam, self);
         });
+        self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
 
         let should_block_events = self.render_loop.should_block_messages(self.ctx.io_mut());
 

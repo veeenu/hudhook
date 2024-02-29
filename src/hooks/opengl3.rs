@@ -13,8 +13,7 @@ use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::mh::MhHook;
-use crate::renderer::OpenGl3RenderEngine;
-use crate::renderer::Pipeline;
+use crate::renderer::{OpenGl3RenderEngine, Pipeline};
 use crate::{Hooks, ImguiRenderLoop};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();

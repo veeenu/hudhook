@@ -107,7 +107,6 @@ impl D3D11RenderEngine {
                 self.index_buffer.extend(indices);
             });
 
-        #[rustfmt::skip]
         self.projection_buffer.push({
             let [l, t, r, b] = [
                 draw_data.display_pos[0],
@@ -116,12 +115,12 @@ impl D3D11RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         });
 
         self.vertex_buffer.upload(&self.device, &self.device_context)?;
