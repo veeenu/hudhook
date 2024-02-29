@@ -4,7 +4,6 @@ use std::{mem, ptr};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use tracing::trace;
 use windows::core::Result;
 use windows::Foundation::Numerics::Matrix4x4;
 use windows::Win32::Foundation::RECT;
@@ -148,8 +147,6 @@ impl D3D9RenderEngine {
         let mut idx_offset = 0usize;
         let mut last_texture = None;
 
-        trace!("{:?}", self.texture_heap.textures);
-
         for cl in draw_data.draw_lists() {
             for cmd in cl.commands() {
                 match cmd {
@@ -162,8 +159,6 @@ impl D3D9RenderEngine {
                             right: (cw - x) as i32,
                             bottom: (ch - y) as i32,
                         };
-
-                        trace!("{:?} {count}", cmd_params);
 
                         last_texture = match last_texture {
                             Some(t) if t == cmd_params.texture_id => Some(t),
@@ -436,7 +431,7 @@ impl StateBackup {
                 device.GetTransform(D3DTS_VIEW, &mut mat_view)?;
                 device.GetTransform(D3DTS_PROJECTION, &mut mat_projection)?;
                 device.GetViewport(&mut viewport)?;
-                let surface = device.GetRenderTarget(0).unwrap();
+                let surface = device.GetRenderTarget(0)?;
 
                 Ok(StateBackup {
                     state_block,
@@ -452,12 +447,12 @@ impl StateBackup {
     }
 
     unsafe fn restore(&self, device: &IDirect3DDevice9) -> Result<()> {
-        self.state_block.Apply().unwrap();
+        self.state_block.Apply()?;
         device.SetTransform(D3DTRANSFORMSTATETYPE(256), &self.mat_world)?;
         device.SetTransform(D3DTS_VIEW, &self.mat_view)?;
         device.SetTransform(D3DTS_PROJECTION, &self.mat_projection)?;
-        device.SetViewport(&self.viewport).unwrap();
-        device.SetRenderTarget(0, &self.surface).unwrap();
+        device.SetViewport(&self.viewport)?;
+        device.SetRenderTarget(0, &self.surface)?;
         Ok(())
     }
 }

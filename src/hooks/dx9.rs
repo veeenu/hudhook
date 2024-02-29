@@ -66,7 +66,7 @@ fn render(device: &IDirect3DDevice9) -> Result<()> {
 
     pipeline.prepare_render()?;
 
-    let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO).unwrap() };
+    let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO)? };
 
     unsafe { device.BeginScene() }?;
     pipeline.render(surface)?;
