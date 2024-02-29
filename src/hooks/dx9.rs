@@ -140,9 +140,9 @@ impl ImguiDx9Hooks {
     /// # Safety
     ///
     /// yolo
-    pub unsafe fn new<T: 'static>(t: T) -> Self
+    pub unsafe fn new<T>(t: T) -> Self
     where
-        T: ImguiRenderLoop + Send + Sync,
+        T: ImguiRenderLoop + Send + Sync + 'static,
     {
         let dx9_present_addr = get_target_addrs();
 

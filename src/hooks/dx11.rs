@@ -150,9 +150,9 @@ impl ImguiDx11Hooks {
     /// # Safety
     ///
     /// yolo
-    pub unsafe fn new<T: 'static>(t: T) -> Self
+    pub unsafe fn new<T>(t: T) -> Self
     where
-        T: ImguiRenderLoop + Send + Sync,
+        T: ImguiRenderLoop + Send + Sync + 'static,
     {
         let dxgi_swap_chain_present_addr = get_target_addrs();
 

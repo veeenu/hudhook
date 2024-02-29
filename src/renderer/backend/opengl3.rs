@@ -17,15 +17,12 @@ use crate::renderer::RenderEngine;
 use crate::util;
 
 mod gl {
-    #![cfg_attr(
-        feature = "cargo-clippy",
-        allow(
-            clippy::unreadable_literal,
-            clippy::too_many_arguments,
-            clippy::unused_unit,
-            clippy::upper_case_acronyms,
-            clippy::manual_non_exhaustive
-        )
+    #![allow(
+        clippy::unreadable_literal,
+        clippy::too_many_arguments,
+        clippy::unused_unit,
+        clippy::upper_case_acronyms,
+        clippy::manual_non_exhaustive
     )]
 
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
