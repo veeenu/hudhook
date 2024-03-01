@@ -18,7 +18,7 @@ pub unsafe extern "stdcall" fn DllMain(
         ::hudhook::tracing::trace!("DllMain()");
         ::std::thread::spawn(move || {
             if let Err(e) = ::hudhook::Hudhook::builder()
-                .with::<hooks::opengl3::ImguiOpenGl3Hooks>(support::HookExample(true))
+                .with::<hooks::opengl3::ImguiOpenGl3Hooks>(support::HookExample::new())
                 .with_hmodule(hmodule)
                 .build()
                 .apply()

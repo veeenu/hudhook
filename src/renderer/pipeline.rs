@@ -11,8 +11,6 @@ use tracing::error;
 use windows::core::{Error, Result, HRESULT};
 use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-#[cfg(target_arch = "x86")]
-use windows::Win32::UI::WindowsAndMessaging::SetWindowLongA;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, DefWindowProcW, GetCursorPos, GetForegroundWindow, IsChild, SetWindowLongPtrA,
     GWLP_WNDPROC,
@@ -66,20 +64,8 @@ impl<T: RenderEngine> Pipeline<T> {
             engine.load_image(data, width, height)
         });
 
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         let wnd_proc = unsafe {
-            mem::transmute(SetWindowLongPtrA(
-                hwnd,
-                GWLP_WNDPROC,
-                pipeline_wnd_proc as usize as isize,
-            ))
-        };
-
-        // TODO is this necessary? SetWindowLongPtrA should already decay to
-        // SetWindowLongA
-        #[cfg(target_arch = "x86")]
-        let wnd_proc = unsafe {
-            mem::transmute(SetWindowLongA(hwnd, GWLP_WNDPROC, pipeline_wnd_proc as usize as i32))
+            mem::transmute(SetWindowLongPtrA(hwnd, GWLP_WNDPROC, pipeline_wnd_proc as usize as _))
         };
 
         let (tx, rx) = mpsc::channel();
@@ -175,23 +161,14 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn cleanup(&mut self) {
-        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         unsafe {
             SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as isize)
         };
-
-        // TODO is this necessary? SetWindowLongPtrA should already decay to
-        // SetWindowLongA
-        #[cfg(target_arch = "x86")]
-        unsafe {
-            SetWindowLongA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as i32)
-        };
     }
-}
 
-impl<T: RenderEngine> Drop for Pipeline<T> {
-    fn drop(&mut self) {
+    pub(crate) fn take(mut self) -> RenderLoop {
         self.cleanup();
+        self.render_loop
     }
 }
 
