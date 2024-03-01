@@ -162,7 +162,7 @@ impl<T: RenderEngine> Pipeline<T> {
 
     pub(crate) fn cleanup(&mut self) {
         unsafe {
-            SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as isize)
+            SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)
         };
     }
 

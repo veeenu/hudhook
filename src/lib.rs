@@ -414,8 +414,6 @@ impl HudhookBuilder {
 #[macro_export]
 macro_rules! hudhook {
     ($t:ty, $hooks:expr) => {
-        use hudhook::*;
-
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
@@ -423,6 +421,8 @@ macro_rules! hudhook {
             reason: u32,
             _: *mut ::std::ffi::c_void,
         ) {
+            use ::hudhook::*;
+
             if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
                 ::hudhook::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {
