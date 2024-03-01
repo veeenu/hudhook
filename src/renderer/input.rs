@@ -4,10 +4,11 @@ use std::ffi::c_void;
 use std::mem::size_of;
 
 use imgui::Io;
+use windows::Win32::Devices::HumanInterfaceDevice::MOUSE_MOVE_ABSOLUTE;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
-    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE_0_0,
+    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE,
     RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -50,8 +51,9 @@ pub fn lowordi(l: u32) -> i16 {
 // Given the RAWINPUT structure, check each possible mouse flag status and
 // update the Io object accordingly. Both the key_down indices associated to the
 // mouse click (VK_...) and the values in mouse_down are updated.
-fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE_0_0) {
-    let button_flags = raw_mouse.usButtonFlags as u32;
+fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
+    let button_data = unsafe { raw_mouse.Anonymous.Anonymous };
+    let button_flags = button_data.usButtonFlags as u32;
 
     let has_flag = |flag| button_flags & flag != 0;
     let mut set_key_down = |VIRTUAL_KEY(index), val: bool| io.keys_down[index as usize] = val;
@@ -100,14 +102,23 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE_0_0) {
 
     // Apply vertical mouse scroll.
     if button_flags & RI_MOUSE_WHEEL != 0 {
-        let wheel_delta = raw_mouse.usButtonData as i16 / WHEEL_DELTA as i16;
+        let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
         io.mouse_wheel += wheel_delta as f32;
     }
 
     // Apply horizontal mouse scroll.
     if button_flags & RI_MOUSE_HWHEEL != 0 {
-        let wheel_delta = raw_mouse.usButtonData as i16 / WHEEL_DELTA as i16;
+        let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
         io.mouse_wheel_h += wheel_delta as f32;
+    }
+
+    let mouse_flags = raw_mouse.usFlags as u32;
+    let (last_x, last_y) = (raw_mouse.lLastX as f32, raw_mouse.lLastY as f32);
+
+    if mouse_flags & MOUSE_MOVE_ABSOLUTE != 0 {
+        io.mouse_pos = [last_x, last_y];
+    } else {
+        io.mouse_pos = [io.mouse_pos[0] + last_x, io.mouse_pos[1] + last_y];
     }
 }
 
@@ -191,7 +202,7 @@ fn handle_raw_input(io: &mut Io, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM)
     // Dispatch to the appropriate raw input processing method.
     match RID_DEVICE_INFO_TYPE(raw_data.header.dwType) {
         RIM_TYPEMOUSE => {
-            handle_raw_mouse_input(io, unsafe { &raw_data.data.mouse.Anonymous.Anonymous });
+            handle_raw_mouse_input(io, unsafe { &raw_data.data.mouse });
         },
         RIM_TYPEKEYBOARD => {
             handle_raw_keyboard_input(io, unsafe { &raw_data.data.keyboard });
