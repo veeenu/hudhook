@@ -29,6 +29,18 @@ pub fn loword(l: u32) -> u16 {
     (l & 0xffff) as u16
 }
 
+// Replication of the Win32 HIWORD macro, returning signed values.
+#[inline]
+pub fn hiwordi(l: u32) -> i16 {
+    ((l >> 16) & 0xffff) as i16
+}
+
+// Replication of the Win32 LOWORD macro, returning signed values.
+#[inline]
+pub fn lowordi(l: u32) -> i16 {
+    (l & 0xffff) as i16
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Raw input
 ////////////////////////////////////////////////////////////////////////////////
@@ -292,6 +304,11 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
             let wheel_delta_wparam = hiword(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
             io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
+        },
+        WM_MOUSEMOVE => {
+            let x = lowordi(lparam as u32) as f32;
+            let y = hiwordi(lparam as u32) as f32;
+            io.mouse_pos = [x, y];
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
         WM_SIZE => {

@@ -9,11 +9,9 @@ use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use tracing::error;
 use windows::core::{Error, Result, HRESULT};
-use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::ScreenToClient;
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, GetCursorPos, GetForegroundWindow, IsChild, SetWindowLongPtrA,
-    GWLP_WNDPROC,
+    CallWindowProcW, DefWindowProcW, SetWindowLongPtrA, GWLP_WNDPROC,
 };
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
@@ -104,19 +102,6 @@ impl<T: RenderEngine> Pipeline<T> {
         self.shared_state.should_block_events.store(should_block_events, Ordering::SeqCst);
 
         let io = self.ctx.io_mut();
-
-        unsafe {
-            let active_window = GetForegroundWindow();
-            if active_window == self.hwnd
-                || (!HANDLE(active_window.0).is_invalid()
-                    && IsChild(active_window, self.hwnd).as_bool())
-            {
-                let mut pos = util::try_out_param(|v| GetCursorPos(v))?;
-                if ScreenToClient(self.hwnd, &mut pos).as_bool() {
-                    io.mouse_pos = [pos.x as f32, pos.y as f32];
-                }
-            }
-        }
 
         io.nav_active = true;
         io.nav_visible = true;
