@@ -1,12 +1,16 @@
 //! General-purpose utilities. These are used across the [`crate`] but have
 //! proven useful in client code as well.
 
+use std::ffi::OsString;
 use std::fmt::Display;
 use std::mem::ManuallyDrop;
+use std::os::windows::ffi::OsStringExt;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{debug, error};
-use windows::Win32::Foundation::{HANDLE, HWND, RECT};
+use windows::core::s;
+use windows::Win32::Foundation::{HANDLE, HMODULE, HWND, MAX_PATH, RECT};
 use windows::Win32::Graphics::Direct3D::ID3DBlob;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12GetDebugInterface, ID3D12Debug, ID3D12Device, ID3D12Fence, ID3D12Resource,
@@ -17,6 +21,10 @@ use windows::Win32::Graphics::Direct3D12::{
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGIGetDebugInterface1, IDXGIInfoQueue, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE,
+};
+use windows::Win32::System::LibraryLoader::{
+    GetModuleFileNameW, GetModuleHandleExA, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+    GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 };
 use windows::Win32::System::Threading::{CreateEventExW, WaitForSingleObjectEx, CREATE_EVENT};
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
@@ -167,6 +175,26 @@ pub fn win_size(hwnd: HWND) -> (i32, i32) {
     let mut rect = RECT::default();
     unsafe { GetClientRect(hwnd, &mut rect).unwrap() };
     (rect.right - rect.left, rect.bottom - rect.top)
+}
+
+/// Returns the path of the current module.
+pub fn get_dll_path() -> Option<PathBuf> {
+    let mut hmodule = HMODULE(0);
+    if let Err(e) = unsafe {
+        GetModuleHandleExA(
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+            s!("DllMain"),
+            &mut hmodule,
+        )
+    } {
+        error!("get_dll_path: GetModuleHandleExA error: {e:?}");
+        return None;
+    }
+
+    let mut sz_filename = [0u16; MAX_PATH as usize];
+    let len = unsafe { GetModuleFileNameW(hmodule, &mut sz_filename) } as usize;
+
+    Some(OsString::from_wide(&sz_filename[..len]).into())
 }
 
 /// Creates a [`D3D12_RESOURCE_BARRIER`].

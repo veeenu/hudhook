@@ -1,30 +1,6 @@
 use hudhook::*;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
 
-pub fn setup_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            fmt::layer().event_format(
-                fmt::format()
-                    .with_level(true)
-                    .with_thread_ids(true)
-                    .with_file(true)
-                    .with_line_number(true)
-                    .with_thread_names(true),
-            ),
-        )
-        .with(EnvFilter::from_default_env())
-        .init();
-}
-
-pub struct HookExample(bool);
-
-impl ImguiRenderLoop for HookExample {
-    fn render(&mut self, ui: &mut imgui::Ui) {
-        ui.show_demo_window(&mut self.0);
-    }
-}
+mod support;
 
 /// Entry point created by the `hudhook` library.
 ///
@@ -38,12 +14,11 @@ pub unsafe extern "stdcall" fn DllMain(
     _: *mut ::std::ffi::c_void,
 ) {
     if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
-        setup_tracing();
-        alloc_console().unwrap();
+        support::setup_tracing();
         ::hudhook::tracing::trace!("DllMain()");
         ::std::thread::spawn(move || {
             if let Err(e) = ::hudhook::Hudhook::builder()
-                .with::<hooks::dx9::ImguiDx9Hooks>(HookExample(true))
+                .with::<hooks::dx9::ImguiDx9Hooks>(support::HookExample(true))
                 .with_hmodule(hmodule)
                 .build()
                 .apply()

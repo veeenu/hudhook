@@ -1,4 +1,6 @@
+use std::fs::File;
 use std::io::Cursor;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use hudhook::{ImguiRenderLoop, TextureLoader};
@@ -10,6 +12,15 @@ use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn setup_tracing() {
     dotenv::dotenv().ok();
+
+    let log_file = hudhook::util::get_dll_path()
+        .map(|mut path| {
+            path.set_extension("log");
+            path
+        })
+        .and_then(|path| File::create(path).ok())
+        .unwrap();
+
     tracing_subscriber::registry()
         .with(
             fmt::layer().event_format(
@@ -20,6 +31,16 @@ pub fn setup_tracing() {
                     .with_line_number(true)
                     .with_thread_names(true),
             ),
+        )
+        .with(
+            fmt::layer()
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_names(true)
+                .with_writer(Mutex::new(log_file))
+                .with_ansi(false)
+                .boxed(),
         )
         .with(EnvFilter::from_default_env())
         .init();
