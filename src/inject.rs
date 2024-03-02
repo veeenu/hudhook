@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use tracing::debug;
 use windows::core::{s, w, Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, GetLastError, BOOL, HANDLE, MAX_PATH};
+use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32First, Process32FirstW, Process32Next, Process32NextW,
@@ -118,10 +118,7 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowA(None, PCSTR(title.as_encoded_bytes().as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = match GetLastError() {
-            Ok(()) => Error::empty(),
-            Err(e) => e,
-        };
+        let last_error = Error::from_win32();
         return Err(Error::new(
             last_error.code(),
             format!("FindWindowA returned NULL: {:?}", last_error),
@@ -140,10 +137,7 @@ unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowW(None, PCWSTR(title.as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = match GetLastError() {
-            Ok(()) => Error::empty(),
-            Err(e) => e,
-        };
+        let last_error = Error::from_win32();
         return Err(Error::new(
             last_error.code(),
             format!("FindWindowW returned NULL: {:?}", last_error),
@@ -178,13 +172,7 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
 
     if Process32First(snapshot, &mut pe32).is_err() {
         CloseHandle(snapshot)?;
-        return Err(Error::new(
-            match GetLastError() {
-                Ok(()) => Error::empty().code(),
-                Err(e) => e.code(),
-            },
-            "Process32First failed",
-        ));
+        return Err(Error::new(Error::from_win32().code(), "Process32First failed"));
     }
 
     let pid = loop {
@@ -216,13 +204,7 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
 
     if Process32FirstW(snapshot, &mut pe32).is_err() {
         CloseHandle(snapshot)?;
-        return Err(Error::new(
-            match GetLastError() {
-                Ok(()) => Error::empty().code(),
-                Err(e) => e.code(),
-            },
-            "Process32First failed",
-        ));
+        return Err(Error::new(Error::from_win32().code(), "Process32First failed"));
     }
 
     let pid = loop {
