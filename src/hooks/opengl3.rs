@@ -33,7 +33,7 @@ unsafe fn init_pipeline(dc: HDC) -> Result<Mutex<Pipeline<OpenGl3RenderEngine>>>
     let engine = OpenGl3RenderEngine::new(&mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
-        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized"));
     };
 
     let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
@@ -49,7 +49,7 @@ fn render(dc: HDC) -> Result<()> {
         let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(dc))?;
 
         let Some(mut pipeline) = pipeline.try_lock() else {
-            return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+            return Err(Error::new(HRESULT(-1), "Could not lock pipeline"));
         };
 
         pipeline.prepare_render()?;

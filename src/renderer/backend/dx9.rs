@@ -205,14 +205,14 @@ impl D3D9RenderEngine {
         })?;
         self.device.SetPixelShader(None)?;
         self.device.SetVertexShader(None)?;
-        self.device.SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE.0)?;
+        self.device.SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE.0 as u32)?;
         self.device.SetRenderState(D3DRS_LIGHTING, false.into())?;
         self.device.SetRenderState(D3DRS_ZENABLE, false.into())?;
         self.device.SetRenderState(D3DRS_ALPHABLENDENABLE, true.into())?;
         self.device.SetRenderState(D3DRS_ALPHATESTENABLE, false.into())?;
-        self.device.SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD.0)?;
-        self.device.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA.0)?;
-        self.device.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA.0)?;
+        self.device.SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD.0 as u32)?;
+        self.device.SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA.0 as u32)?;
+        self.device.SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA.0 as u32)?;
         self.device.SetRenderState(D3DRS_SCISSORTESTENABLE, true.into())?;
         self.device.SetRenderState(D3DRS_SHADEMODE, D3DSHADE_GOURAUD.0 as u32)?;
         self.device.SetRenderState(D3DRS_FOGENABLE, false.into())?;
