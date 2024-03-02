@@ -58,7 +58,7 @@ tracing = { version = "0.1", features = ["log"], default-features = false }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], default-features = false }
 
 [dependencies.windows]
-version = "0.51.0"
+version = "0.53.0"
 features = [
   "Foundation_Numerics",
   "Win32_Devices_HumanInterfaceDevice",

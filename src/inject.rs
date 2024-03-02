@@ -119,12 +119,12 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
 
     if hwnd.0 == 0 {
         let last_error = match GetLastError() {
-            Ok(()) => Error::OK,
+            Ok(()) => Error::empty(),
             Err(e) => e,
         };
         return Err(Error::new(
             last_error.code(),
-            format!("FindWindowA returned NULL: {:?}", last_error).into(),
+            format!("FindWindowA returned NULL: {:?}", last_error),
         ));
     }
 
@@ -141,12 +141,12 @@ unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
 
     if hwnd.0 == 0 {
         let last_error = match GetLastError() {
-            Ok(()) => Error::OK,
+            Ok(()) => Error::empty(),
             Err(e) => e,
         };
         return Err(Error::new(
             last_error.code(),
-            format!("FindWindowW returned NULL: {:?}", last_error).into(),
+            format!("FindWindowW returned NULL: {:?}", last_error),
         ));
     }
 
@@ -180,10 +180,10 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
         CloseHandle(snapshot)?;
         return Err(Error::new(
             match GetLastError() {
-                Ok(()) => Error::OK.code(),
+                Ok(()) => Error::empty().code(),
                 Err(e) => e.code(),
             },
-            "Process32First failed".to_string().into(),
+            "Process32First failed",
         ));
     }
 
@@ -191,13 +191,13 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
         let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
         let proc_name = &pe32.szExeFile[..zero_idx];
 
-        if proc_name == name {
+        if proc_name.iter().zip(name.iter()).fold(true, |v, (&a, &b)| v && (a as u8 == b)) {
             break Ok(pe32.th32ProcessID);
         }
 
         if Process32Next(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found").into()));
+            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found")));
         }
     }?;
 
@@ -218,24 +218,24 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
         CloseHandle(snapshot)?;
         return Err(Error::new(
             match GetLastError() {
-                Ok(()) => Error::OK.code(),
+                Ok(()) => Error::empty().code(),
                 Err(e) => e.code(),
             },
-            "Process32First failed".to_string().into(),
+            "Process32First failed",
         ));
     }
 
     let pid = loop {
         let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
         let proc_name = HSTRING::from_wide(&pe32.szExeFile[..zero_idx])?;
-        println!("{proc_name:?}");
+
         if name == proc_name {
             break Ok(pe32.th32ProcessID);
         }
 
         if Process32NextW(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found").into()));
+            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found")));
         }
     }?;
 

@@ -4,12 +4,11 @@ use std::ffi::c_void;
 use std::mem::size_of;
 
 use imgui::Io;
-use windows::Win32::Devices::HumanInterfaceDevice::MOUSE_MOVE_ABSOLUTE;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
-    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE,
-    RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+    GetRawInputData, HRAWINPUT, MOUSE_MOVE_ABSOLUTE, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD,
+    RAWMOUSE, RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -112,10 +111,10 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
         io.mouse_wheel_h += wheel_delta as f32;
     }
 
-    let mouse_flags = raw_mouse.usFlags as u32;
+    let mouse_flags = raw_mouse.usFlags;
     let (last_x, last_y) = (raw_mouse.lLastX as f32, raw_mouse.lLastY as f32);
 
-    if mouse_flags & MOUSE_MOVE_ABSOLUTE != 0 {
+    if (mouse_flags.0 & MOUSE_MOVE_ABSOLUTE.0) != 0 {
         io.mouse_pos = [last_x, last_y];
     } else {
         io.mouse_pos = [io.mouse_pos[0] + last_x, io.mouse_pos[1] + last_y];

@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use hudhook::util;
 use once_cell::sync::OnceCell;
 use tracing::{error, trace};
-use windows::core::{w, ComInterface, Result, PCSTR, PCWSTR};
+use windows::core::{w, Interface, Result, PCSTR, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::*;

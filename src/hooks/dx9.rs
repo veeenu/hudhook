@@ -54,7 +54,7 @@ unsafe fn init_pipeline(device: &IDirect3DDevice9) -> Result<Mutex<Pipeline<D3D9
     let engine = D3D9RenderEngine::new(device, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
-        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized"));
     };
 
     trace!("creating pipeline");
@@ -69,7 +69,7 @@ fn render(device: &IDirect3DDevice9) -> Result<()> {
     let pipeline = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
 
     let Some(mut pipeline) = pipeline.try_lock() else {
-        return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+        return Err(Error::new(HRESULT(-1), "Could not lock pipeline"));
     };
 
     pipeline.prepare_render()?;

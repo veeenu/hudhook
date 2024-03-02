@@ -48,7 +48,7 @@ unsafe fn init_pipeline(swap_chain: &IDXGISwapChain) -> Result<Mutex<Pipeline<D3
     let engine = D3D11RenderEngine::new(&swap_chain.GetDevice()?, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
-        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized"));
     };
 
     let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
@@ -64,7 +64,7 @@ fn render(swap_chain: &IDXGISwapChain) -> Result<()> {
         let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(swap_chain))?;
 
         let Some(mut pipeline) = pipeline.try_lock() else {
-            return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+            return Err(Error::new(HRESULT(-1), "Could not lock pipeline"));
         };
 
         pipeline.prepare_render()?;

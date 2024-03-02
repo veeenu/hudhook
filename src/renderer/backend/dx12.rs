@@ -7,7 +7,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use windows::core::{s, w, ComInterface, Result};
+use windows::core::{s, w, Interface, Result};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
