@@ -73,20 +73,10 @@ impl OpenGl3RenderEngine {
 
         let vao = util::out_param(|x| unsafe { gl.GenVertexArrays(1, x) });
 
-        let mut texture_heap = TextureHeap::new();
+        let texture_heap = TextureHeap::new();
 
         ctx.set_ini_filename(None);
         ctx.set_renderer_name(String::from(concat!("hudhook-opengl3@", env!("CARGO_PKG_VERSION"))));
-        let fonts = ctx.fonts();
-        let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            texture_heap.create_texture(
-                &gl,
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
 
         Ok(Self {
             gl,
@@ -118,6 +108,21 @@ impl RenderEngine for OpenGl3RenderEngine {
             self.render_draw_data(draw_data)?;
             state_backup.restore(&self.gl);
         }
+        Ok(())
+    }
+
+    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id = unsafe {
+            self.texture_heap.create_texture(
+                &self.gl,
+                fonts_texture.data,
+                fonts_texture.width,
+                fonts_texture.height,
+            )
+        }?;
+
         Ok(())
     }
 }

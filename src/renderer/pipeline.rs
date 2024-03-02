@@ -62,6 +62,10 @@ impl<T: RenderEngine> Pipeline<T> {
             engine.load_image(data, width, height)
         });
 
+        if let Err(e) = engine.setup_fonts(&mut ctx) {
+            return Err((e, render_loop));
+        }
+
         let wnd_proc = unsafe {
             mem::transmute(SetWindowLongPtrA(hwnd, GWLP_WNDPROC, pipeline_wnd_proc as usize as _))
         };

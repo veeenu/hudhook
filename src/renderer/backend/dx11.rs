@@ -36,20 +36,11 @@ impl D3D11RenderEngine {
         let projection_buffer = Buffer::new(&device, 1, D3D11_BIND_CONSTANT_BUFFER)?;
 
         let shader_program = ShaderProgram::new(&device)?;
-        let mut texture_heap = TextureHeap::new(&device)?;
+        let texture_heap = TextureHeap::new(&device)?;
 
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("hudhook-dx11@", env!("CARGO_PKG_VERSION"))));
-        let fonts = ctx.fonts();
-        let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
 
         Ok(Self {
             device,
@@ -86,6 +77,20 @@ impl RenderEngine for D3D11RenderEngine {
             self.render_draw_data(draw_data)?;
             state_backup.restore(&self.device_context);
         };
+
+        Ok(())
+    }
+
+    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id = unsafe {
+            self.texture_heap.create_texture(
+                fonts_texture.data,
+                fonts_texture.width,
+                fonts_texture.height,
+            )
+        }?;
 
         Ok(())
     }
