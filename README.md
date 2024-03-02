@@ -2,6 +2,7 @@
 
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/veeenu/hudhook/lint.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/veeenu/hudhook)](https://github.com/veeenu/hudhook/releases)
+[![Crates.io Version](https://img.shields.io/crates/v/hudhook)](https://crates.io/crates/hudhook)
 [![GitHub License](https://img.shields.io/github/license/veeenu/hudhook)](https://github.com/veeenu/hudhook/blob/main/LICENSE)
 [![Discord](https://img.shields.io/discord/267623298647457802)](https://discord.gg/CVHbN7eF)
 [![book](https://img.shields.io/badge/docs-book-brightgreen)](https://veeenu.github.io/hudhook)
