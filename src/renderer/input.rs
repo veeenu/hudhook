@@ -5,11 +5,11 @@ use std::mem::size_of;
 
 use imgui::Io;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
-    GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD, RAWMOUSE,
-    RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+    GetRawInputData, HRAWINPUT, MOUSE_MOVE_ABSOLUTE, RAWINPUT, RAWINPUTHEADER, RAWKEYBOARD,
+    RAWMOUSE, RID_DEVICE_INFO_TYPE, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
-use windows::Win32::UI::Input::{KeyboardAndMouse::*, MOUSE_MOVE_ABSOLUTE};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::renderer::{Pipeline, RenderEngine};
