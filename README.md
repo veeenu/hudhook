@@ -8,17 +8,17 @@
 [![rustdoc](https://img.shields.io/badge/docs-rustdoc-brightgreen)](https://veeenu.github.io/hudhook/rustdoc/hudhook)
 [![Patreon](https://img.shields.io/badge/Support_me-Patreon-orange)](https://www.patreon.com/johndisandonato)
 
-A render loop hook library with [Dear ImGui](https://github.com/ocornut/imgui) overlays.
+A Rust renderer hook library for building [Dear ImGui](https://github.com/ocornut/imgui) overlays.
 
-Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3.
+Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3. Runs on Windows and Wine/Proton.
 
 ![hello](tests/hello.jpg)
 
-Read the tutorial book [here](https://veeenu.github.io/hudhook).
+## Resources
 
-Read the API reference [here](https://veeenu.github.io/hudhook/rustdoc/hudhook).
-
-Read up on the underlying architecture [here](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/).
+- [Tutorial book](https://veeenu.github.io/hudhook).
+- [API reference](https://veeenu.github.io/hudhook/rustdoc/hudhook).
+- [Architecture blog post](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/) (a bit outdated).
 
 ## Supporting the project
 
