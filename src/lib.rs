@@ -2,8 +2,7 @@
 //!
 //! This library implements a mechanism for hooking into the
 //! render loop of applications and drawing things on screen via
-//! [`imgui`](https://docs.rs/imgui/0.11.0/imgui/). It has been largely inspired
-//! by [CheatEngine](https://www.cheatengine.org/).
+//! [`dear imgui`](https://docs.rs/imgui/0.11.0/imgui/).
 //!
 //! Currently, DirectX9, DirectX 11, DirectX 12 and OpenGL 3 are supported.
 //!
@@ -19,6 +18,9 @@
 //!
 //! Refer to [this post](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/) for
 //! in-depth information about the architecture of the library.
+//!
+//! A [tutorial book](https://veeenu.github.io/hudhook/) is also available, with end-to-end
+//! examples.
 //!
 //! [`darksoulsiii-practice-tool`]: https://github.com/veeenu/darksoulsiii-practice-tool
 //! [`eldenring-practice-tool`]: https://github.com/veeenu/eldenring-practice-tool
@@ -109,13 +111,13 @@
 //! }
 //! ```
 #![allow(clippy::needless_doctest_main)]
+#![deny(missing_docs)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-use imgui::{Io, Ui};
+use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
-use renderer::RenderEngine;
 use tracing::error;
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
@@ -132,14 +134,18 @@ pub mod hooks;
 #[cfg(feature = "inject")]
 pub mod inject;
 pub mod mh;
-pub mod renderer;
+pub(crate) mod renderer;
 
-mod util;
+pub mod util;
 
 // Global state objects.
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
+
+/// A load texture callback. Invoke it in your
+/// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
+pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<TextureId, Error>;
 
 /// Allocate a Windows console.
 pub fn alloc_console() -> Result<(), Error> {
@@ -157,7 +163,7 @@ pub fn enable_console_colors() {
             // Get the stdout handle
             let stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE).unwrap();
 
-            // call GetConsoleMode to get the current mode of the console
+            // Call GetConsoleMode to get the current mode of the console
             let mut current_console_mode = CONSOLE_MODE(0);
             GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
 
@@ -213,19 +219,19 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
-    fn initialize(&mut self, _render_engine: &mut RenderEngine) {}
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, _loader: TextureLoader<'a>) {}
 
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
     /// Called before rendering each frame. Use the provided `ctx` object to
     /// modify imgui settings before rendering the UI.
-    fn before_render(&mut self, _render_engine: &mut RenderEngine) {}
+    fn before_render(&mut self, _ctx: &mut Context) {}
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
 
-    /// If this function returns `true`, the WndProc function will not call the
+    /// If this method returns `true`, the WndProc function will not call the
     /// procedure of the parent window.
     fn should_block_messages(&self, _io: &Io) -> bool {
         false
@@ -244,7 +250,8 @@ pub trait ImguiRenderLoop {
 /// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
 /// - [`ImguiOpenGl3Hooks`](crate::hooks::opengl3::ImguiOpenGl3Hooks)
 pub trait Hooks {
-    /// Constructor that should return a boxed version of [`Self`].
+    /// Construct a boxed instance of the implementor, storing the provided
+    /// render loop where appropriate.
     fn from_render_loop<T>(t: T) -> Box<Self>
     where
         Self: Sized,
@@ -407,8 +414,6 @@ impl HudhookBuilder {
 #[macro_export]
 macro_rules! hudhook {
     ($t:ty, $hooks:expr) => {
-        use hudhook::*;
-
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
         pub unsafe extern "stdcall" fn DllMain(
@@ -416,6 +421,8 @@ macro_rules! hudhook {
             reason: u32,
             _: *mut ::std::ffi::c_void,
         ) {
+            use ::hudhook::*;
+
             if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
                 ::hudhook::tracing::trace!("DllMain()");
                 ::std::thread::spawn(move || {

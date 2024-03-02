@@ -95,7 +95,7 @@ impl Dx9Harness {
                 loop {
                     eprintln!("Present...");
                     unsafe {
-                        device.Clear(0, null(), D3DCLEAR_TARGET as _, 0, 1.0, 0);
+                        device.Clear(0, null(), D3DCLEAR_TARGET as _, 0x0022cc22, 1.0, 0);
                         device.Present(null(), null(), None, null());
                     }
 

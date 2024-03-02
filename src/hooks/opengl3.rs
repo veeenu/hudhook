@@ -1,14 +1,19 @@
+//! Hooks for OpenGL 3.
+
 use std::ffi::CString;
 use std::mem;
 use std::sync::OnceLock;
 
-use tracing::trace;
-use windows::core::PCSTR;
+use imgui::Context;
+use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
+use tracing::{error, trace};
+use windows::core::{Error, Result, HRESULT, PCSTR};
 use windows::Win32::Graphics::Gdi::{WindowFromDC, HDC};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::mh::MhHook;
-use crate::renderer::RenderState;
+use crate::renderer::{OpenGl3RenderEngine, Pipeline};
 use crate::{Hooks, ImguiRenderLoop};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();
@@ -18,20 +23,50 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
+static mut PIPELINE: OnceCell<Mutex<Pipeline<OpenGl3RenderEngine>>> = OnceCell::new();
+static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+
+unsafe fn init_pipeline(dc: HDC) -> Result<Mutex<Pipeline<OpenGl3RenderEngine>>> {
+    let hwnd = WindowFromDC(dc);
+
+    let mut ctx = Context::create();
+    let engine = OpenGl3RenderEngine::new(&mut ctx)?;
+
+    let Some(render_loop) = RENDER_LOOP.take() else {
+        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized".into()));
+    };
+
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
+        RENDER_LOOP.get_or_init(move || render_loop);
+        e
+    })?;
+
+    Ok(Mutex::new(pipeline))
+}
+
+fn render(dc: HDC) -> Result<()> {
+    unsafe {
+        let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(dc))?;
+
+        let Some(mut pipeline) = pipeline.try_lock() else {
+            return Err(Error::new(HRESULT(-1), "Could not lock pipeline".into()));
+        };
+
+        pipeline.prepare_render()?;
+
+        pipeline.render(())?;
+    }
+
+    Ok(())
+}
 
 unsafe extern "system" fn opengl32_wgl_swap_buffers_impl(dc: HDC) {
     let Trampolines { opengl32_wgl_swap_buffers } =
         TRAMPOLINES.get().expect("OpenGL3 trampolines uninitialized");
 
-    // Don't attempt a render if one is already underway: it might be that the
-    // renderer itself is currently invoking `Present`.
-    if RenderState::is_locked() {
-        return opengl32_wgl_swap_buffers(dc);
+    if let Err(e) = render(dc) {
+        error!("Render error: {e:?}");
     }
-
-    let hwnd = RenderState::setup(|| WindowFromDC(dc));
-
-    RenderState::render(hwnd);
 
     trace!("Call OpenGL3 wglSwapBuffers trampoline");
     opengl32_wgl_swap_buffers(dc);
@@ -52,7 +87,7 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffersType {
     mem::transmute(wglswapbuffers_func)
 }
 
-/// Stores hook detours and implements the [`Hooks`] trait.
+/// Hooks for OpenGL 3.
 pub struct ImguiOpenGl3Hooks([MhHook; 1]);
 
 impl ImguiOpenGl3Hooks {
@@ -65,9 +100,9 @@ impl ImguiOpenGl3Hooks {
     /// # Safety
     ///
     /// yolo
-    pub unsafe fn new<T: 'static>(t: T) -> Self
+    pub unsafe fn new<T>(t: T) -> Self
     where
-        T: ImguiRenderLoop + Send + Sync,
+        T: ImguiRenderLoop + Send + Sync + 'static,
     {
         // Grab the addresses
         let hook_opengl_swap_buffers_address = get_opengl_wglswapbuffers_addr();
@@ -80,7 +115,7 @@ impl ImguiOpenGl3Hooks {
         .expect("couldn't create opengl32.wglSwapBuffers hook");
 
         // Initialize the render loop and store detours
-        RenderState::set_render_loop(t);
+        RENDER_LOOP.get_or_init(move || Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
             opengl32_wgl_swap_buffers: std::mem::transmute(
                 hook_opengl_wgl_swap_buffers.trampoline(),
@@ -105,7 +140,8 @@ impl Hooks for ImguiOpenGl3Hooks {
     }
 
     unsafe fn unhook(&mut self) {
-        RenderState::cleanup();
         TRAMPOLINES.take();
+        PIPELINE.take();
+        RENDER_LOOP.take();
     }
 }

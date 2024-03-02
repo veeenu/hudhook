@@ -13,8 +13,8 @@ use hudhook::*;
 fn test_imgui_dx12() {
     hook::setup_tracing();
 
-    let dx12_harness = Dx12Harness::new("DX12 hook example");
-    thread::sleep(Duration::from_millis(500));
+    let dx12_harness = Dx12Harness::new();
+    thread::sleep(Duration::from_millis(1000));
 
     if let Err(e) = Hudhook::builder().with::<ImguiDx12Hooks>(HookExample::new()).build().apply() {
         eprintln!("Couldn't apply hooks: {e:?}");

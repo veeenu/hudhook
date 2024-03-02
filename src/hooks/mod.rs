@@ -14,9 +14,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_OVERLAPPEDWINDOW, WS_OVERLAPPEDWINDOW,
 };
 
+#[cfg(feature = "dx11")]
 pub mod dx11;
+#[cfg(feature = "dx12")]
 pub mod dx12;
+#[cfg(feature = "dx9")]
 pub mod dx9;
+#[cfg(feature = "opengl3")]
 pub mod opengl3;
 
 /// A utility function to retrieve the top level [`HWND`] belonging to this
@@ -57,6 +61,7 @@ impl Default for DummyHwnd {
 }
 
 impl DummyHwnd {
+    /// Construct the dummy [`HWND`].
     pub fn new() -> Self {
         // The window procedure for the class just calls `DefWindowProcW`.
         unsafe extern "system" fn wnd_proc(
@@ -76,12 +81,7 @@ impl DummyHwnd {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: unsafe { GetModuleHandleW(None).unwrap().into() },
-            // hIcon: HICON(0),
-            // hCursor: HCURSOR(0),
-            // hbrBackground: HBRUSH(0),
-            // lpszMenuName: PCWSTR(null()),
             lpszClassName: w!("HUDHOOK"),
-            // hIconSm: HICON(0),
             ..Default::default()
         };
         debug!("{:?}", wndclass);
@@ -109,7 +109,7 @@ impl DummyHwnd {
         Self(hwnd, wndclass)
     }
 
-    // Retrieve the window handle.
+    /// Retrieve the window handle.
     pub fn hwnd(&self) -> HWND {
         self.0
     }

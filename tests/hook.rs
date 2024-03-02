@@ -1,15 +1,26 @@
+use std::fs::File;
 use std::io::Cursor;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use hudhook::renderer::RenderEngine;
-use hudhook::ImguiRenderLoop;
+use hudhook::{ImguiRenderLoop, TextureLoader};
 use image::io::Reader as ImageReader;
 use image::{EncodableLayout, RgbaImage};
-use imgui::{Condition, Image, StyleColor, TextureId};
+use imgui::{Condition, Context, Image, StyleColor, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn setup_tracing() {
+    dotenv::dotenv().ok();
+
+    let log_file = hudhook::util::get_dll_path()
+        .map(|mut path| {
+            path.set_extension("log");
+            path
+        })
+        .and_then(|path| File::create(path).ok())
+        .unwrap();
+
     tracing_subscriber::registry()
         .with(
             fmt::layer().event_format(
@@ -21,13 +32,23 @@ pub fn setup_tracing() {
                     .with_thread_names(true),
             ),
         )
+        .with(
+            fmt::layer()
+                .with_thread_ids(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_names(true)
+                .with_writer(Mutex::new(log_file))
+                .with_ansi(false)
+                .boxed(),
+        )
         .with(EnvFilter::from_default_env())
         .init();
 }
 
 pub struct HookExample {
     frame_times: Vec<Duration>,
-    last_time: Instant,
+    last_time: Option<Instant>,
     image: RgbaImage,
     image_id: Option<TextureId>,
     image_pos: [f32; 2],
@@ -48,7 +69,7 @@ impl HookExample {
 
         HookExample {
             frame_times: Vec::new(),
-            last_time: Instant::now(),
+            last_time: None,
             image,
             image_id: None,
             image_pos: [16.0, 16.0],
@@ -64,25 +85,32 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize(&mut self, render_engine: &mut RenderEngine) {
-        self.image_id = render_engine
-            .load_image(self.image.as_bytes(), self.image.width() as _, self.image.height() as _)
-            .ok();
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, loader: TextureLoader<'a>) {
+        self.image_id =
+            loader(self.image.as_bytes(), self.image.width() as _, self.image.height() as _).ok();
 
         println!("{:?}", self.image_id);
     }
 
     fn render(&mut self, ui: &mut imgui::Ui) {
-        let duration = self.last_time.elapsed();
-        self.frame_times.push(duration);
-        self.last_time = Instant::now();
+        if let Some(last_time) = self.last_time.as_mut() {
+            let duration = last_time.elapsed();
+            self.frame_times.push(duration);
+            *last_time = Instant::now();
+        } else {
+            self.last_time = Some(Instant::now());
+        }
 
-        let avg: Duration =
-            self.frame_times.iter().sum::<Duration>() / self.frame_times.len() as u32;
-        let last = self.frame_times.last().unwrap();
+        let avg: Duration = if self.frame_times.is_empty() {
+            Duration::from_nanos(0)
+        } else {
+            self.frame_times.iter().sum::<Duration>() / self.frame_times.len() as u32
+        };
+
+        let last = self.frame_times.last().copied().unwrap_or_else(|| Duration::from_nanos(0));
 
         ui.window("Hello world")
-            .size([368.0, 568.0], Condition::FirstUseEver)
+            .size([376.0, 568.0], Condition::FirstUseEver)
             .position([16.0, 16.0], Condition::FirstUseEver)
             .build(|| {
                 ui.text("Hello world!");
@@ -117,13 +145,13 @@ impl ImguiRenderLoop for HookExample {
             });
 
         ui.window("Image")
-            .size([368.0, 568.0], Condition::FirstUseEver)
-            .position([416.0, 16.0], Condition::FirstUseEver)
+            .size([376.0, 568.0], Condition::FirstUseEver)
+            .position([408.0, 16.0], Condition::FirstUseEver)
             .build(|| {
                 let next_x = self.image_pos[0] + self.image_dir[0];
                 let next_y = self.image_pos[1] + self.image_dir[1];
 
-                if next_x <= 16. || next_x >= 368. - 16. - self.image.width() as f32 {
+                if next_x <= 16. || next_x >= 376. - 16. - self.image.width() as f32 {
                     self.image_dir[0] = -self.image_dir[0];
                 } else {
                     self.image_pos[0] = next_x;

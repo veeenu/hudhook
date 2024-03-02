@@ -228,6 +228,7 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
     let pid = loop {
         let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
         let proc_name = HSTRING::from_wide(&pe32.szExeFile[..zero_idx])?;
+        println!("{proc_name:?}");
         if name == proc_name {
             break Ok(pe32.th32ProcessID);
         }

@@ -1,3 +1,4 @@
+.env
 Cargo.lock
 /target
 **/*.rs.bk
@@ -8,3 +9,5 @@ Cargo.lock
 /tests/test_sample.exe
 
 .idea
+.cargo
+vkd3d-proton.cache
