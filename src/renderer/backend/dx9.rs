@@ -53,7 +53,7 @@ impl D3D9RenderEngine {
     pub fn new(device: &IDirect3DDevice9, ctx: &mut Context) -> Result<Self> {
         let device = device.clone();
 
-        let mut texture_heap = TextureHeap::new(&device)?;
+        let texture_heap = TextureHeap::new(&device)?;
 
         let vertex_buffer = Buffer::new(&device, 5000)?;
         let index_buffer = Buffer::new(&device, 10000)?;
@@ -62,15 +62,6 @@ impl D3D9RenderEngine {
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("hudhook-dx9@", env!("CARGO_PKG_VERSION"))));
-        let fonts = ctx.fonts();
-        let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
 
         Ok(Self { device, texture_heap, vertex_buffer, index_buffer, projection_buffer })
     }
@@ -94,6 +85,20 @@ impl RenderEngine for D3D9RenderEngine {
             self.render_draw_data(draw_data)?;
             state_backup.restore(&self.device)?;
         }
+        Ok(())
+    }
+
+    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id = unsafe {
+            self.texture_heap.create_texture(
+                fonts_texture.data,
+                fonts_texture.width,
+                fonts_texture.height,
+            )
+        }?;
+
         Ok(())
     }
 }

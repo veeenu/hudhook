@@ -44,7 +44,7 @@ impl D3D12RenderEngine {
         let (device, command_queue, command_allocator, command_list) =
             unsafe { create_command_objects(command_queue) }?;
 
-        let (rtv_heap, mut texture_heap) = unsafe { create_heaps(&device) }?;
+        let (rtv_heap, texture_heap) = unsafe { create_heaps(&device) }?;
         let rtv_heap_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
         let (root_signature, pipeline_state) = unsafe { create_shader_program(&device) }?;
@@ -57,15 +57,6 @@ impl D3D12RenderEngine {
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
         ctx.set_renderer_name(String::from(concat!("hudhook-dx12@", env!("CARGO_PKG_VERSION"))));
-        let fonts = ctx.fonts();
-        let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
 
         Ok(Self {
             device,
@@ -127,6 +118,20 @@ impl RenderEngine for D3D12RenderEngine {
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
         }
+
+        Ok(())
+    }
+
+    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id = unsafe {
+            self.texture_heap.create_texture(
+                fonts_texture.data,
+                fonts_texture.width,
+                fonts_texture.height,
+            )
+        }?;
 
         Ok(())
     }
