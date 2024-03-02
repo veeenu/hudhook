@@ -1,7 +1,12 @@
 # hudhook
 
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/veeenu/hudhook/lint.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/veeenu/hudhook)](https://github.com/veeenu/hudhook/releases)
+[![GitHub License](https://img.shields.io/github/license/veeenu/hudhook)](https://github.com/veeenu/hudhook/blob/main/LICENSE)
+[![Discord](https://img.shields.io/discord/267623298647457802)](https://discord.gg/CVHbN7eF)
 [![book](https://img.shields.io/badge/docs-book-brightgreen)](https://veeenu.github.io/hudhook)
 [![rustdoc](https://img.shields.io/badge/docs-rustdoc-brightgreen)](https://veeenu.github.io/hudhook/rustdoc/hudhook)
+[![Patreon](https://img.shields.io/badge/Support_me-Patreon-orange)](https://www.patreon.com/johndisandonato)
 
 A render loop hook library with [Dear ImGui](https://github.com/ocornut/imgui) overlays.
 
@@ -14,6 +19,12 @@ Read the tutorial book [here](https://veeenu.github.io/hudhook).
 Read the API reference [here](https://veeenu.github.io/hudhook/rustdoc/hudhook).
 
 Read up on the underlying architecture [here](https://veeenu.github.io/blog/sekiro-practice-tool-architecture/).
+
+## Supporting the project
+
+If you like `hudhook` and would like to support the project, you can do so via my [Patreon](https://www.patreon.com/johndisandonato).
+
+I'm glad the project works for you and I'm grateful for your support. Thank you!
 
 ## Example
 
