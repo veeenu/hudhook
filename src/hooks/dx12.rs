@@ -64,7 +64,8 @@ unsafe fn init_pipeline(
     swap_chain: &IDXGISwapChain3,
 ) -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
     let Some(command_queue) = COMMAND_QUEUE.get() else {
-        return Err(Error::new(HRESULT(-1), "Command queue not yet initialized"));
+        error!("Command queue not yet initialized");
+        return Err(Error::from_hresult(HRESULT(-1)));
     };
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
@@ -73,7 +74,8 @@ unsafe fn init_pipeline(
     let engine = D3D12RenderEngine::new(command_queue, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
-        return Err(Error::new(HRESULT(-1), "Render loop not yet initialized"));
+        error!("Render loop not yet initialized");
+        return Err(Error::from_hresult(HRESULT(-1)));
     };
 
     let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
@@ -89,7 +91,8 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
         let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(swap_chain))?;
 
         let Some(mut pipeline) = pipeline.try_lock() else {
-            return Err(Error::new(HRESULT(-1), "Could not lock pipeline"));
+            error!("Could not lock pipeline");
+            return Err(Error::from_hresult(HRESULT(-1)));
         };
 
         pipeline.prepare_render()?;

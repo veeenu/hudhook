@@ -125,7 +125,7 @@ impl<T: RenderEngine> Pipeline<T> {
 
         if (w * fsw) <= 0.0 || (h * fsh) <= 0.0 {
             error!("Insufficient display size: {w}x{h}");
-            return Err(Error::new(HRESULT(-1), "Insufficient display size"));
+            return Err(Error::from_hresult(HRESULT(-1)));
         }
 
         let ui = self.ctx.frame();
