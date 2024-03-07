@@ -118,11 +118,7 @@ unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowA(None, PCSTR(title.as_encoded_bytes().as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = Error::from_win32();
-        return Err(Error::new(
-            last_error.code(),
-            format!("FindWindowA returned NULL: {:?}", last_error),
-        ));
+        return Err(Error::from_win32());
     }
 
     let mut pid: u32 = 0;
@@ -137,11 +133,7 @@ unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     let hwnd = FindWindowW(None, PCWSTR(title.as_ptr()));
 
     if hwnd.0 == 0 {
-        let last_error = Error::from_win32();
-        return Err(Error::new(
-            last_error.code(),
-            format!("FindWindowW returned NULL: {:?}", last_error),
-        ));
+        return Err(Error::from_win32());
     }
 
     let mut pid: u32 = 0;
@@ -172,7 +164,7 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
 
     if Process32First(snapshot, &mut pe32).is_err() {
         CloseHandle(snapshot)?;
-        return Err(Error::new(Error::from_win32().code(), "Process32First failed"));
+        return Err(Error::from_win32());
     }
 
     let pid = loop {
@@ -185,7 +177,7 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
 
         if Process32Next(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found")));
+            break Err(Error::from_hresult(HRESULT(-1)));
         }
     }?;
 
@@ -204,7 +196,7 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
 
     if Process32FirstW(snapshot, &mut pe32).is_err() {
         CloseHandle(snapshot)?;
-        return Err(Error::new(Error::from_win32().code(), "Process32First failed"));
+        return Err(Error::from_win32());
     }
 
     let pid = loop {
@@ -217,7 +209,7 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
 
         if Process32NextW(snapshot, &mut pe32).is_err() {
             CloseHandle(snapshot)?;
-            break Err(Error::new(HRESULT(0), format!("Process {name_str} not found")));
+            break Err(Error::from_hresult(HRESULT(-1)));
         }
     }?;
 
