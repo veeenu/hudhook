@@ -8,11 +8,6 @@ fn main() {
 
     let parts = target.splitn(4, '-').collect::<Vec<_>>();
     let arch = parts[0];
-    let sys = parts[2];
-
-    if sys != "windows" {
-        panic!("Platform '{sys}' not supported.");
-    }
 
     let hde = match arch {
         "i686" => "hde/hde32.c",
