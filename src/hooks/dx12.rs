@@ -300,7 +300,7 @@ impl Hooks for ImguiDx12Hooks {
 
     unsafe fn unhook(&mut self) {
         TRAMPOLINES.take();
-        PIPELINE.take();
+        PIPELINE.take().map(|p| p.into_inner().take());
         COMMAND_QUEUE.take();
         RENDER_LOOP.take(); // should already be null
     }
