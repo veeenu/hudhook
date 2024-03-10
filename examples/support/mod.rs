@@ -10,8 +10,8 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
 pub fn setup_tracing() {
-    hudhook::enable_console_colors();
     hudhook::alloc_console().unwrap();
+    hudhook::enable_console_colors();
     dotenv::dotenv().ok();
     std::env::set_var("RUST_LOG", "trace");
 
