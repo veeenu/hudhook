@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
-use crate::renderer::{keys, RenderEngine};
+use crate::renderer::RenderEngine;
 use crate::{util, ImguiRenderLoop};
 
 type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
@@ -109,10 +109,6 @@ impl<T: RenderEngine> Pipeline<T> {
 
         io.nav_active = true;
         io.nav_visible = true;
-
-        for (key, virtual_key) in keys::KEYS {
-            io[key] = virtual_key.0 as u32;
-        }
 
         self.render_loop.before_render(&mut self.ctx);
 
