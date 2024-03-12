@@ -3,7 +3,7 @@
 use std::ffi::c_void;
 use std::mem::size_of;
 
-use imgui::Io;
+use imgui::{Io, Key, MouseButton};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Input::{
@@ -12,6 +12,7 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+use super::keys::vk_to_imgui;
 use crate::renderer::{Pipeline, RenderEngine};
 
 pub type WndProcType =
@@ -54,70 +55,52 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
     let button_data = unsafe { raw_mouse.Anonymous.Anonymous };
     let button_flags = button_data.usButtonFlags as u32;
 
-    let has_flag = |flag| button_flags & flag != 0;
-    let mut set_key_down = |VIRTUAL_KEY(index), val: bool| io.keys_down[index as usize] = val;
+    let mut event = |flag, button, key, state| {
+        if (button_flags & flag) != 0 {
+            io.add_mouse_button_event(button, state);
+            if let Some(key) = vk_to_imgui(key) {
+                io.add_key_event(key, state);
+            }
+        }
+    };
 
     // Check whether any of the mouse buttons was pressed or released.
-    if has_flag(RI_MOUSE_LEFT_BUTTON_DOWN) {
-        set_key_down(VK_LBUTTON, true);
-        io.mouse_down[0] = true;
-    }
-    if has_flag(RI_MOUSE_LEFT_BUTTON_UP) {
-        set_key_down(VK_LBUTTON, false);
-        io.mouse_down[0] = false;
-    }
-    if has_flag(RI_MOUSE_RIGHT_BUTTON_DOWN) {
-        set_key_down(VK_RBUTTON, true);
-        io.mouse_down[1] = true;
-    }
-    if has_flag(RI_MOUSE_RIGHT_BUTTON_UP) {
-        set_key_down(VK_RBUTTON, false);
-        io.mouse_down[1] = false;
-    }
-    if has_flag(RI_MOUSE_MIDDLE_BUTTON_DOWN) {
-        set_key_down(VK_MBUTTON, true);
-        io.mouse_down[2] = true;
-    }
-    if has_flag(RI_MOUSE_MIDDLE_BUTTON_UP) {
-        set_key_down(VK_MBUTTON, false);
-        io.mouse_down[2] = false;
-    }
-    if has_flag(RI_MOUSE_BUTTON_4_DOWN) {
-        set_key_down(VK_XBUTTON1, true);
-        io.mouse_down[3] = true;
-    }
-    if has_flag(RI_MOUSE_BUTTON_4_UP) {
-        set_key_down(VK_XBUTTON1, false);
-        io.mouse_down[3] = false;
-    }
-    if has_flag(RI_MOUSE_BUTTON_5_DOWN) {
-        set_key_down(VK_XBUTTON2, true);
-        io.mouse_down[4] = true;
-    }
-    if has_flag(RI_MOUSE_BUTTON_5_UP) {
-        set_key_down(VK_XBUTTON2, false);
-        io.mouse_down[4] = false;
-    }
+    event(RI_MOUSE_LEFT_BUTTON_DOWN, MouseButton::Left, VK_LBUTTON, true);
+    event(RI_MOUSE_LEFT_BUTTON_UP, MouseButton::Left, VK_LBUTTON, false);
+    event(RI_MOUSE_RIGHT_BUTTON_DOWN, MouseButton::Right, VK_RBUTTON, true);
+    event(RI_MOUSE_RIGHT_BUTTON_UP, MouseButton::Right, VK_RBUTTON, false);
+    event(RI_MOUSE_MIDDLE_BUTTON_DOWN, MouseButton::Middle, VK_MBUTTON, true);
+    event(RI_MOUSE_MIDDLE_BUTTON_UP, MouseButton::Middle, VK_MBUTTON, false);
+    event(RI_MOUSE_BUTTON_4_DOWN, MouseButton::Extra1, VK_XBUTTON1, true);
+    event(RI_MOUSE_BUTTON_4_UP, MouseButton::Extra1, VK_XBUTTON1, false);
+    event(RI_MOUSE_BUTTON_5_DOWN, MouseButton::Extra2, VK_XBUTTON2, true);
+    event(RI_MOUSE_BUTTON_5_UP, MouseButton::Extra2, VK_XBUTTON2, false);
 
     // Apply vertical mouse scroll.
-    if button_flags & RI_MOUSE_WHEEL != 0 {
+    let wheel_delta_x = if button_flags & RI_MOUSE_WHEEL != 0 {
         let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
-        io.mouse_wheel += wheel_delta as f32;
-    }
+        wheel_delta as f32
+    } else {
+        0.0
+    };
 
     // Apply horizontal mouse scroll.
-    if button_flags & RI_MOUSE_HWHEEL != 0 {
+    let wheel_delta_y = if button_flags & RI_MOUSE_HWHEEL != 0 {
         let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
-        io.mouse_wheel_h += wheel_delta as f32;
-    }
+        wheel_delta as f32
+    } else {
+        0.0
+    };
+
+    io.add_mouse_wheel_event([wheel_delta_x, wheel_delta_y]);
 
     let mouse_flags = raw_mouse.usFlags;
     let (last_x, last_y) = (raw_mouse.lLastX as f32, raw_mouse.lLastY as f32);
 
     if (mouse_flags.0 & MOUSE_MOVE_ABSOLUTE.0) != 0 {
-        io.mouse_pos = [last_x, last_y];
+        io.add_mouse_pos_event([last_x, last_y]);
     } else {
-        io.mouse_pos = [io.mouse_pos[0] + last_x, io.mouse_pos[1] + last_y];
+        io.add_mouse_pos_event([io.mouse_pos[0] + last_x, io.mouse_pos[1] + last_y]);
     }
 }
 
@@ -162,11 +145,13 @@ fn handle_raw_keyboard_input(io: &mut Io, raw_keyboard: &RAWKEYBOARD) {
     // If the virtual key is in the allowed array range, set the appropriate status
     // of key_down for that virtual key.
     if virtual_key < 0xFF {
-        if is_key_down {
-            io.keys_down[virtual_key] = true;
-        }
-        if is_key_up {
-            io.keys_down[virtual_key] = false;
+        if let Some(key) = vk_to_imgui(VIRTUAL_KEY(virtual_key as _)) {
+            if is_key_down {
+                io.add_key_event(key, true);
+            }
+            if is_key_up {
+                io.add_key_event(key, false);
+            }
         }
     }
 }
@@ -240,23 +225,48 @@ fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
     }
 }
 
+fn is_vk_down(vk: VIRTUAL_KEY) -> bool {
+    unsafe { GetKeyState(vk.0 as i32) < 0 }
+}
+
 // Handle WM_(SYS)KEYDOWN/WM_(SYS)KEYUP events.
 fn handle_input(io: &mut Io, state: u32, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM) {
-    let pressed = (state == WM_KEYDOWN) || (state == WM_SYSKEYDOWN);
-    let key_pressed = map_vkey(wparam as _, lparam as _);
-    io.keys_down[key_pressed.0 as usize] = pressed;
+    let is_key_down = (state == WM_KEYDOWN) || (state == WM_SYSKEYDOWN);
+    let scancode = map_vkey(wparam as _, lparam as _);
 
-    // According to the winit implementation [1], it's ok to check twice, and the
-    // logic isn't flawed either.
-    //
-    // [1] https://github.com/imgui-rs/imgui-rs/blob/b1e66d050e84dbb2120001d16ce59d15ef6b5303/imgui-winit-support/src/lib.rs#L401-L404
-    match key_pressed {
-        VK_CONTROL | VK_LCONTROL | VK_RCONTROL => io.key_ctrl = pressed,
-        VK_SHIFT | VK_LSHIFT | VK_RSHIFT => io.key_shift = pressed,
-        VK_MENU | VK_LMENU | VK_RMENU => io.key_alt = pressed,
-        VK_LWIN | VK_RWIN => io.key_super = pressed,
-        _ => (),
-    };
+    if let Some(key) = vk_to_imgui(scancode) {
+        io.add_key_event(key, is_key_down);
+    }
+
+    io.add_key_event(Key::ModCtrl, is_vk_down(VK_CONTROL));
+    io.add_key_event(Key::ModShift, is_vk_down(VK_SHIFT));
+    io.add_key_event(Key::ModAlt, is_vk_down(VK_MENU));
+    io.add_key_event(Key::ModSuper, is_vk_down(VK_APPS));
+
+    if scancode == VK_SHIFT {
+        if is_vk_down(VK_LSHIFT) == is_key_down {
+            io.add_key_event(Key::LeftShift, is_key_down);
+        }
+        if is_vk_down(VK_RSHIFT) == is_key_down {
+            io.add_key_event(Key::RightShift, is_key_down);
+        }
+    } else if scancode == VK_CONTROL {
+        if is_vk_down(VK_LCONTROL) == is_key_down {
+            io.add_key_event(Key::LeftCtrl, is_key_down);
+        }
+        if is_vk_down(VK_RCONTROL) == is_key_down {
+            io.add_key_event(Key::RightCtrl, is_key_down);
+        }
+    } else if scancode == VK_MENU {
+        if is_vk_down(VK_LMENU) == is_key_down {
+            io.add_key_event(Key::LeftAlt, is_key_down);
+        }
+        if is_vk_down(VK_RMENU) == is_key_down {
+            io.add_key_event(Key::RightAlt, is_key_down);
+        }
+    }
+
+    // TODO: Workarounds https://github.com/ocornut/imgui/blob/da29b776eed289db16a8527e5f16a0e1fa540251/backends/imgui_impl_win32.cpp#L263
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -278,47 +288,55 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
             handle_input(io, state, WPARAM(wparam), LPARAM(lparam))
         },
         WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-            io.mouse_down[0] = true;
+            io.add_mouse_button_event(MouseButton::Left, true);
         },
         WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-            io.mouse_down[1] = true;
+            io.add_mouse_button_event(MouseButton::Right, true);
         },
         WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-            io.mouse_down[2] = true;
+            io.add_mouse_button_event(MouseButton::Middle, true);
         },
         WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
-            io.mouse_down[btn] = true;
+            let btn = if hiword(wparam as _) == XBUTTON1 {
+                MouseButton::Extra1
+            } else {
+                MouseButton::Extra2
+            };
+            io.add_mouse_button_event(btn, true);
         },
         WM_LBUTTONUP => {
-            io.mouse_down[0] = false;
+            io.add_mouse_button_event(MouseButton::Left, false);
         },
         WM_RBUTTONUP => {
-            io.mouse_down[1] = false;
+            io.add_mouse_button_event(MouseButton::Right, false);
         },
         WM_MBUTTONUP => {
-            io.mouse_down[2] = false;
+            io.add_mouse_button_event(MouseButton::Middle, false);
         },
         WM_XBUTTONUP => {
-            let btn = if hiword(wparam as _) == XBUTTON1 { 3 } else { 4 };
-            io.mouse_down[btn] = false;
+            let btn = if hiword(wparam as _) == XBUTTON1 {
+                MouseButton::Extra1
+            } else {
+                MouseButton::Extra2
+            };
+            io.add_mouse_button_event(btn, false);
         },
         WM_MOUSEWHEEL => {
             // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
             let wheel_delta_wparam = hiword(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
-            io.mouse_wheel += (wheel_delta_wparam as i16 as f32) / wheel_delta;
+            io.add_mouse_wheel_event([0.0, (wheel_delta_wparam as i16 as f32) / wheel_delta]);
         },
         WM_MOUSEHWHEEL => {
             // This `hiword` call is equivalent to GET_WHEEL_DELTA_WPARAM
             let wheel_delta_wparam = hiword(wparam as _);
             let wheel_delta = WHEEL_DELTA as f32;
-            io.mouse_wheel_h += (wheel_delta_wparam as i16 as f32) / wheel_delta;
+            io.add_mouse_wheel_event([(wheel_delta_wparam as i16 as f32) / wheel_delta, 0.0]);
         },
         WM_MOUSEMOVE => {
             let x = lowordi(lparam as u32) as f32;
             let y = hiwordi(lparam as u32) as f32;
-            io.mouse_pos = [x, y];
+            io.add_mouse_pos_event([x, y]);
         },
         WM_CHAR => io.add_input_character(wparam as u8 as char),
         WM_SIZE => {

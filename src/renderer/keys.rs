@@ -1,4 +1,5 @@
 use imgui::Key;
+use once_cell::sync::Lazy;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A, VK_ADD, VK_B,
     VK_BACK, VK_C, VK_CAPITAL, VK_D, VK_DECIMAL, VK_DELETE, VK_DIVIDE, VK_DOWN, VK_E, VK_END,
@@ -167,3 +168,16 @@ pub(crate) const KEYS: [(Key, VIRTUAL_KEY); 132] = [
     // (Key::GamepadL3),
     // (Key::GamepadR3),
 ];
+
+static VK_TO_IMGUI: Lazy<[Option<Key>; 256]> = Lazy::new(|| {
+    let mut map = [None; 256];
+    for (k, vk) in KEYS {
+        map[vk.0 as usize] = Some(k);
+    }
+
+    map
+});
+
+pub(crate) fn vk_to_imgui(virtual_key: VIRTUAL_KEY) -> Option<Key> {
+    VK_TO_IMGUI[virtual_key.0 as usize]
+}

@@ -14,8 +14,7 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup toolchain install nightly --profile minimal -c rustfmt,clippy
-          rustup target add i686-pc-windows-msvc --toolchain nightly
+          rustup toolchain install nightly --target x86_64-pc-windows-msvc,i686-pc-windows-msvc --profile minimal -c rustfmt,clippy
 
       - name: Format
         run: |
