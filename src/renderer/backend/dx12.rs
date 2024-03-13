@@ -750,8 +750,11 @@ impl TextureHeap {
             )
         })?;
 
-        let upload_pitch = width * 4;
+        let upload_row_size = width * 4;
+        let align = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+        let upload_pitch = (upload_row_size + align - 1) / align * align; // 256 bytes aligned
         let upload_size = height * upload_pitch;
+
         let upload_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -782,7 +785,15 @@ impl TextureHeap {
 
         let mut upload_buffer_ptr = ptr::null_mut();
         upload_buffer.Map(0, None, Some(&mut upload_buffer_ptr))?;
-        ptr::copy_nonoverlapping(data.as_ptr(), upload_buffer_ptr as *mut u8, data.len());
+        if upload_row_size == upload_pitch {
+            ptr::copy_nonoverlapping(data.as_ptr(), upload_buffer_ptr as *mut u8, data.len());
+        } else {
+            for y in 0..height {
+                let src = data.as_ptr().add((y * upload_row_size) as usize);
+                let dst = (upload_buffer_ptr as *mut u8).add((y * upload_pitch) as usize);
+                ptr::copy_nonoverlapping(src, dst, upload_row_size as usize);
+            }
+        }
         upload_buffer.Unmap(0, None);
 
         self.command_allocator.Reset()?;
