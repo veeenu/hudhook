@@ -72,28 +72,7 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
     event(RI_MOUSE_BUTTON_4_UP, MouseButton::Extra1, false);
     event(RI_MOUSE_BUTTON_5_DOWN, MouseButton::Extra2, true);
     event(RI_MOUSE_BUTTON_5_UP, MouseButton::Extra2, false);
-
-    // let mut event = |flag, button, key, state| {
-    //     if (button_flags & flag) != 0 {
-    //         io.add_mouse_button_event(button, state);
-    //         if let Some(key) = vk_to_imgui(key) {
-    //             io.add_key_event(key, state);
-    //         }
-    //     }
-    // };
-
-    // // Check whether any of the mouse buttons was pressed or released.
-    // event(RI_MOUSE_LEFT_BUTTON_DOWN, MouseButton::Left, VK_LBUTTON, true);
-    // event(RI_MOUSE_LEFT_BUTTON_UP, MouseButton::Left, VK_LBUTTON, false);
-    // event(RI_MOUSE_RIGHT_BUTTON_DOWN, MouseButton::Right, VK_RBUTTON, true);
-    // event(RI_MOUSE_RIGHT_BUTTON_UP, MouseButton::Right, VK_RBUTTON, false);
-    // event(RI_MOUSE_MIDDLE_BUTTON_DOWN, MouseButton::Middle, VK_MBUTTON, true);
-    // event(RI_MOUSE_MIDDLE_BUTTON_UP, MouseButton::Middle, VK_MBUTTON, false);
-    // event(RI_MOUSE_BUTTON_4_DOWN, MouseButton::Extra1, VK_XBUTTON1, true);
-    // event(RI_MOUSE_BUTTON_4_UP, MouseButton::Extra1, VK_XBUTTON1, false);
-    // event(RI_MOUSE_BUTTON_5_DOWN, MouseButton::Extra2, VK_XBUTTON2, true);
-    // event(RI_MOUSE_BUTTON_5_UP, MouseButton::Extra2, VK_XBUTTON2, false);
-
+    
     // Apply vertical mouse scroll.
     let wheel_delta_x = if button_flags & RI_MOUSE_WHEEL != 0 {
         let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
