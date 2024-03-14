@@ -81,10 +81,10 @@ impl ImguiRenderLoop for HookExample {
             .size([192.0, 192.0], Condition::FirstUseEver)
             .position([16.0, 16.0], Condition::FirstUseEver)
             .build(|| {
-                Image::new(
-                    self.image_id.unwrap(),
-                    [self.image.width() as f32, self.image.height() as f32],
-                )
+                Image::new(self.image_id.unwrap(), [
+                    self.image.width() as f32,
+                    self.image.height() as f32,
+                ])
                 .build(ui);
             });
 

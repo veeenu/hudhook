@@ -148,8 +148,9 @@ pub trait TextureLoader {
     /// Load texture and return TextureId to use. Invoke it in your
     /// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId, Error>;
-    /// Upload an image to an existing texture, replacing its content. Invoke it in your
-    /// [`crate::ImguiRenderLoop::before_render`] method for updating textures.
+    /// Upload an image to an existing texture, replacing its content. Invoke it
+    /// in your [`crate::ImguiRenderLoop::before_render`] method for
+    /// updating textures.
     fn replace_texture(
         &mut self,
         texture_id: TextureId,
