@@ -4,8 +4,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use hudhook::{ImguiRenderLoop, TextureLoader};
+use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
-use image::{EncodableLayout, RgbaImage};
+use image::{DynamicImage, EncodableLayout, RgbaImage};
 use imgui::{Condition, Context, Image, StyleColor, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -46,13 +47,15 @@ pub fn setup_tracing() {
         .init();
 }
 
+const IMAGE_COUNT: usize = 3;
+
 pub struct HookExample {
     frame_times: Vec<Duration>,
     last_time: Option<Instant>,
-    image: RgbaImage,
-    image_id: Option<TextureId>,
-    image_pos: [f32; 2],
-    image_dir: [f32; 2],
+    image: [RgbaImage; IMAGE_COUNT],
+    image_id: [Option<TextureId>; IMAGE_COUNT],
+    image_pos: [[f32; 2]; IMAGE_COUNT],
+    image_vel: [[f32; 2]; IMAGE_COUNT],
 }
 
 impl HookExample {
@@ -60,20 +63,24 @@ impl HookExample {
         println!("Initializing");
         hudhook::alloc_console().ok();
 
-        let image = ImageReader::new(Cursor::new(include_bytes!("thingken.webp")))
+        let image0 = ImageReader::new(Cursor::new(include_bytes!("thingken.webp")))
             .with_guessed_format()
             .unwrap()
             .decode()
             .unwrap()
             .into_rgba8();
 
+        let dynamic_image = DynamicImage::ImageRgba8(image0.clone());
+        let image1 = dynamic_image.resize(29, 29, FilterType::Lanczos3).to_rgba8();
+        let image2 = dynamic_image.resize(65, 65, FilterType::Lanczos3).to_rgba8();
+
         HookExample {
             frame_times: Vec::new(),
             last_time: None,
-            image,
-            image_id: None,
-            image_pos: [16.0, 16.0],
-            image_dir: [1.0, 1.0],
+            image: [image0, image1, image2],
+            image_id: [None, None, None],
+            image_pos: [[16.0, 16.0], [16.0, 16.0], [16.0, 16.0]],
+            image_vel: [[200.0, 200.0], [100.0, 200.0], [200.0, 100.0]],
         }
     }
 }
@@ -86,20 +93,25 @@ impl Default for HookExample {
 
 impl ImguiRenderLoop for HookExample {
     fn initialize<'a>(&'a mut self, _ctx: &mut Context, loader: TextureLoader<'a>) {
-        self.image_id =
-            loader(self.image.as_bytes(), self.image.width() as _, self.image.height() as _).ok();
+        for i in 0..IMAGE_COUNT {
+            let image = &self.image[i];
+            self.image_id[i] =
+                loader(image.as_bytes(), image.width() as _, image.height() as _).ok();
+        }
 
         println!("{:?}", self.image_id);
     }
 
     fn render(&mut self, ui: &mut imgui::Ui) {
-        if let Some(last_time) = self.last_time.as_mut() {
+        let frame_time = if let Some(last_time) = self.last_time.as_mut() {
             let duration = last_time.elapsed();
             self.frame_times.push(duration);
             *last_time = Instant::now();
+            duration.as_secs_f32()
         } else {
             self.last_time = Some(Instant::now());
-        }
+            0.
+        };
 
         let avg: Duration = if self.frame_times.is_empty() {
             Duration::from_nanos(0)
@@ -148,25 +160,31 @@ impl ImguiRenderLoop for HookExample {
             .size([376.0, 568.0], Condition::FirstUseEver)
             .position([408.0, 16.0], Condition::FirstUseEver)
             .build(|| {
-                let next_x = self.image_pos[0] + self.image_dir[0];
-                let next_y = self.image_pos[1] + self.image_dir[1];
+                for i in 0..IMAGE_COUNT {
+                    let pos = &mut self.image_pos[i];
+                    let vel = &mut self.image_vel[i];
+                    let image = &self.image[i];
+                    let width = image.width() as f32;
+                    let height = image.height() as f32;
 
-                if next_x <= 16. || next_x >= 376. - 16. - self.image.width() as f32 {
-                    self.image_dir[0] = -self.image_dir[0];
-                } else {
-                    self.image_pos[0] = next_x;
-                }
-                if next_y <= 16. || next_y >= 568. - 16. - self.image.height() as f32 {
-                    self.image_dir[1] = -self.image_dir[1];
-                } else {
-                    self.image_pos[1] = next_y;
-                }
+                    let next_x = pos[0] + vel[0] * frame_time;
+                    let next_y = pos[1] + vel[1] * frame_time;
 
-                ui.set_cursor_pos(self.image_pos);
+                    if next_x < 16. || next_x > 376. - 16. - width {
+                        vel[0] = -vel[0];
+                    }
+                    pos[0] = next_x.clamp(16., 376. - 16. - width);
 
-                if let Some(tex_id) = self.image_id {
-                    Image::new(tex_id, [self.image.width() as f32, self.image.height() as f32])
-                        .build(ui);
+                    if next_y < 16. || next_y > 568. - 16. - height {
+                        vel[1] = -vel[1];
+                    }
+                    pos[1] = next_y.clamp(16., 568. - 16. - height);
+
+                    ui.set_cursor_pos(*pos);
+
+                    if let Some(tex_id) = self.image_id[i] {
+                        Image::new(tex_id, [width, height]).build(ui);
+                    }
                 }
             });
     }
