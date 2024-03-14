@@ -72,7 +72,7 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
     event(RI_MOUSE_BUTTON_4_UP, MouseButton::Extra1, false);
     event(RI_MOUSE_BUTTON_5_DOWN, MouseButton::Extra2, true);
     event(RI_MOUSE_BUTTON_5_UP, MouseButton::Extra2, false);
-    
+
     // Apply vertical mouse scroll.
     let wheel_delta_x = if button_flags & RI_MOUSE_WHEEL != 0 {
         let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
