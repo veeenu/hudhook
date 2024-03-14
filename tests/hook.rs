@@ -113,14 +113,10 @@ impl ImguiRenderLoop for HookExample {
         _ctx: &mut Context,
         texture_loader: &'a mut dyn TextureLoader,
     ) {
-        let elapsed = if let Some(first_time) = self.first_time {
-            first_time.elapsed().as_secs()
-        } else {
-            self.first_time = Some(Instant::now());
-            0
-        };
+        let elapsed = self.first_time.get_or_insert(Instant::now()).elapsed().as_secs();
         if elapsed != self.last_upload_time {
             self.last_upload_time = elapsed;
+
             self.dynamic_image.invert();
             if let Some(texture) = self.image_id[0] {
                 texture_loader

@@ -75,6 +75,7 @@ impl TextureLoader for D3D9RenderEngine {
             Ok(texture_id)
         }
     }
+
     fn replace_texture(
         &mut self,
         texture_id: TextureId,
@@ -108,7 +109,6 @@ impl RenderEngine for D3D9RenderEngine {
         let fonts_texture = fonts.build_rgba32_texture();
         fonts.tex_id =
             self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
-
         Ok(())
     }
 }
@@ -397,8 +397,7 @@ impl TextureHeap {
         })?;
 
         let id = TextureId::from(self.textures.len());
-        let texture = Texture { resource, id, width, height };
-        self.textures.push(texture);
+        self.textures.push(Texture { resource, id, width, height });
 
         Ok(id)
     }

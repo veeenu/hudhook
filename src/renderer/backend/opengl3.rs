@@ -107,7 +107,7 @@ impl TextureLoader for OpenGl3RenderEngine {
         width: u32,
         height: u32,
     ) -> Result<()> {
-        unsafe { self.texture_heap.upload_texture(&self.gl, texture_id, data, width, height) }
+        unsafe { self.texture_heap.update_texture(&self.gl, texture_id, data, width, height) }
     }
 }
 
@@ -126,15 +126,8 @@ impl RenderEngine for OpenGl3RenderEngine {
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            self.texture_heap.create_texture(
-                &self.gl,
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
-
+        fonts.tex_id =
+            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
         Ok(())
     }
 }
@@ -352,9 +345,9 @@ unsafe fn create_shader_program(gl: &gl::Gl) -> (GLuint, GLuint, GLuint, GLuint,
 }
 
 struct TextureHeap {
-    textures: Vec<TextureInfo>,
+    textures: Vec<Texture>,
 }
-struct TextureInfo {
+struct Texture {
     gl_texture: GLuint,
     width: u32,
     height: u32,
@@ -365,7 +358,7 @@ impl TextureHeap {
         Self { textures: Vec::new() }
     }
 
-    fn get(&self, texture_id: TextureId) -> &TextureInfo {
+    fn get(&self, texture_id: TextureId) -> &Texture {
         &self.textures[texture_id.id()]
     }
 
@@ -399,14 +392,13 @@ impl TextureHeap {
         );
         gl.BindTexture(gl::TEXTURE_2D, bound_texture as _);
 
-        let texture_id = self.textures.len();
+        let id = TextureId::from(self.textures.len());
+        self.textures.push(Texture { gl_texture: texture, width, height });
 
-        self.textures.push(TextureInfo { gl_texture: texture, width, height });
-
-        Ok(TextureId::from(texture_id))
+        Ok(id)
     }
 
-    unsafe fn upload_texture(
+    unsafe fn update_texture(
         &mut self,
         gl: &gl::Gl,
         texture: TextureId,
