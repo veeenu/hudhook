@@ -4,13 +4,13 @@ use std::{mem, ptr};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use windows::core::Result;
+use windows::core::{Error, Result, HRESULT};
 use windows::Foundation::Numerics::Matrix4x4;
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D9::*;
 
 use crate::renderer::RenderEngine;
-use crate::util;
+use crate::{util, TextureLoader};
 
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
 const MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
@@ -67,12 +67,27 @@ impl D3D9RenderEngine {
     }
 }
 
+impl TextureLoader for D3D9RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        unsafe {
+            let texture_id = self.texture_heap.create_texture(width, height)?;
+            self.texture_heap.upload_texture(texture_id, data, width, height)?;
+            Ok(texture_id)
+        }
+    }
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        unsafe { self.texture_heap.upload_texture(texture_id, data, width, height) }
+    }
+}
+
 impl RenderEngine for D3D9RenderEngine {
     type RenderTarget = IDirect3DSurface9;
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<imgui::TextureId> {
-        unsafe { self.texture_heap.create_texture(data, width, height) }
-    }
 
     fn render(
         &mut self,
@@ -91,13 +106,8 @@ impl RenderEngine for D3D9RenderEngine {
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            self.texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
+        fonts.tex_id =
+            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
 
         Ok(())
     }
@@ -354,6 +364,8 @@ impl BufferType for IDirect3DIndexBuffer9 {
 struct Texture {
     resource: IDirect3DTexture9,
     id: TextureId,
+    width: u32,
+    height: u32,
 }
 
 struct TextureHeap {
@@ -370,7 +382,7 @@ impl TextureHeap {
         &self.textures[texture_id.id()].resource
     }
 
-    unsafe fn create_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+    unsafe fn create_texture(&mut self, width: u32, height: u32) -> Result<TextureId> {
         let resource = util::try_out_ptr(|v| {
             self.device.CreateTexture(
                 width,
@@ -384,8 +396,33 @@ impl TextureHeap {
             )
         })?;
 
+        let id = TextureId::from(self.textures.len());
+        let texture = Texture { resource, id, width, height };
+        self.textures.push(texture);
+
+        Ok(id)
+    }
+
+    unsafe fn upload_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let texture = &self.textures[texture_id.id()];
+        if texture.width != width || texture.height != height {
+            return Err(Error::new(
+                HRESULT(-1),
+                format!(
+                    "image size {width}x{height} do not match expected {}x{}",
+                    texture.width, texture.height
+                ),
+            ));
+        }
+
         let mut r: D3DLOCKED_RECT = Default::default();
-        resource.LockRect(0, &mut r, ptr::null_mut(), 0)?;
+        texture.resource.LockRect(0, &mut r, ptr::null_mut(), 0)?;
 
         let bits = r.pBits as *mut u8;
         let pitch = r.Pitch as usize;
@@ -404,13 +441,9 @@ impl TextureHeap {
             }
         }
 
-        resource.UnlockRect(0)?;
-        let id = TextureId::from(self.textures.len());
-        let texture = Texture { resource, id };
+        texture.resource.UnlockRect(0)?;
 
-        self.textures.push(texture);
-
-        Ok(id)
+        Ok(())
     }
 }
 

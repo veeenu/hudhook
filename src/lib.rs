@@ -143,9 +143,21 @@ static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
-/// A load texture callback. Invoke it in your
-/// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
-pub type TextureLoader<'a> = &'a mut dyn FnMut(&'a [u8], u32, u32) -> Result<TextureId, Error>;
+/// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
+pub trait TextureLoader {
+    /// Load texture and return TextureId to use. Invoke it in your
+    /// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId, Error>;
+    /// Upload an image to an existing texture, replacing its content. Invoke it in your
+    /// [`crate::ImguiRenderLoop::before_render`] method for updating textures.
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(), Error>;
+}
 
 /// Allocate a Windows console.
 pub fn alloc_console() -> Result<(), Error> {
@@ -219,14 +231,24 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
-    fn initialize<'a>(&'a mut self, _ctx: &mut Context, _loader: TextureLoader<'a>) {}
+    fn initialize<'a>(
+        &'a mut self,
+        _ctx: &mut Context,
+        _texture_loader: &'a mut dyn TextureLoader,
+    ) {
+    }
 
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
     /// Called before rendering each frame. Use the provided `ctx` object to
     /// modify imgui settings before rendering the UI.
-    fn before_render(&mut self, _ctx: &mut Context) {}
+    fn before_render<'a>(
+        &'a mut self,
+        _ctx: &mut Context,
+        _texture_loader: &'a mut dyn TextureLoader,
+    ) {
+    }
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}

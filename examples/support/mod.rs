@@ -68,9 +68,10 @@ impl HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize<'a>(&'a mut self, _ctx: &mut imgui::Context, loader: TextureLoader<'a>) {
-        let tex_id =
-            loader(self.image.as_bytes(), self.image.width(), self.image.height()).unwrap();
+    fn initialize<'a>(&'a mut self, _ctx: &mut imgui::Context, loader: &'a mut dyn TextureLoader) {
+        let tex_id = loader
+            .load_texture(self.image.as_bytes(), self.image.width(), self.image.height())
+            .unwrap();
 
         self.image_id = Some(tex_id);
     }
@@ -80,10 +81,10 @@ impl ImguiRenderLoop for HookExample {
             .size([192.0, 192.0], Condition::FirstUseEver)
             .position([16.0, 16.0], Condition::FirstUseEver)
             .build(|| {
-                Image::new(self.image_id.unwrap(), [
-                    self.image.width() as f32,
-                    self.image.height() as f32,
-                ])
+                Image::new(
+                    self.image_id.unwrap(),
+                    [self.image.width() as f32, self.image.height() as f32],
+                )
                 .build(ui);
             });
 

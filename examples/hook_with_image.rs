@@ -48,13 +48,10 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize<'a>(&'a mut self, _ctx: &mut Context, texture_loader: TextureLoader<'a>) {
-        self.image_id = texture_loader(
-            self.image.as_bytes(),
-            self.image.width() as _,
-            self.image.height() as _,
-        )
-        .ok();
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, texture_loader: &'a mut dyn TextureLoader) {
+        self.image_id = texture_loader
+            .load_texture(self.image.as_bytes(), self.image.width() as _, self.image.height() as _)
+            .ok();
 
         println!("{:?}", self.image_id);
     }

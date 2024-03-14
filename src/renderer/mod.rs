@@ -4,13 +4,13 @@ mod input;
 mod keys;
 mod pipeline;
 
-use imgui::{Context, DrawData, TextureId};
+use imgui::{Context, DrawData};
 use windows::core::Result;
+use crate::TextureLoader;
 
-pub(crate) trait RenderEngine {
+pub(crate) trait RenderEngine: TextureLoader {
     type RenderTarget;
 
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId>;
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()>;
 }

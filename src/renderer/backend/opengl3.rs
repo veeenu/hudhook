@@ -8,13 +8,13 @@ use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use once_cell::sync::OnceCell;
-use windows::core::{s, Result, PCSTR};
+use windows::core::{s, Error, Result, HRESULT, PCSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::*;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
 use crate::renderer::RenderEngine;
-use crate::util;
+use crate::{util, TextureLoader};
 
 mod gl {
     #![allow(
@@ -95,12 +95,24 @@ impl OpenGl3RenderEngine {
     }
 }
 
-impl RenderEngine for OpenGl3RenderEngine {
-    type RenderTarget = ();
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+impl TextureLoader for OpenGl3RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(&self.gl, data, width, height) }
     }
+
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        unsafe { self.texture_heap.upload_texture(&self.gl, texture_id, data, width, height) }
+    }
+}
+
+impl RenderEngine for OpenGl3RenderEngine {
+    type RenderTarget = ();
 
     fn render(&mut self, draw_data: &DrawData, _render_target: Self::RenderTarget) -> Result<()> {
         unsafe {
@@ -173,7 +185,10 @@ impl OpenGl3RenderEngine {
                             (clip_max_y - clip_min_y) as i32,
                         );
                         self.gl.ActiveTexture(gl::TEXTURE0);
-                        self.gl.BindTexture(gl::TEXTURE_2D, cmd_params.texture_id.id() as GLuint);
+                        self.gl.BindTexture(
+                            gl::TEXTURE_2D,
+                            self.texture_heap.get(cmd_params.texture_id).gl_texture,
+                        );
 
                         self.gl.BufferData(
                             gl::ARRAY_BUFFER,
@@ -337,12 +352,21 @@ unsafe fn create_shader_program(gl: &gl::Gl) -> (GLuint, GLuint, GLuint, GLuint,
 }
 
 struct TextureHeap {
-    textures: Vec<GLuint>,
+    textures: Vec<TextureInfo>,
+}
+struct TextureInfo {
+    gl_texture: GLuint,
+    width: u32,
+    height: u32,
 }
 
 impl TextureHeap {
     fn new() -> Self {
         Self { textures: Vec::new() }
+    }
+
+    fn get(&self, texture_id: TextureId) -> &TextureInfo {
+        &self.textures[texture_id.id()]
     }
 
     unsafe fn create_texture(
@@ -375,9 +399,53 @@ impl TextureHeap {
         );
         gl.BindTexture(gl::TEXTURE_2D, bound_texture as _);
 
-        self.textures.push(texture);
+        let texture_id = self.textures.len();
 
-        Ok(TextureId::from(texture as usize))
+        self.textures.push(TextureInfo { gl_texture: texture, width, height });
+
+        Ok(TextureId::from(texture_id))
+    }
+
+    unsafe fn upload_texture(
+        &mut self,
+        gl: &gl::Gl,
+        texture: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let texture_info = self.get(texture);
+        if texture_info.width != width || texture_info.height != height {
+            return Result::Err(Error::new(
+                HRESULT(-1),
+                format!(
+                    "image size {width}x{height} do not match expected {}x{}",
+                    texture_info.width, texture_info.height
+                ),
+            ));
+        }
+
+        let mut bound_texture = 0;
+        gl.GetIntegerv(gl::TEXTURE_BINDING_2D, &mut bound_texture);
+
+        gl.ActiveTexture(gl::TEXTURE0);
+        gl.BindTexture(gl::TEXTURE_2D, texture_info.gl_texture);
+
+        gl.TexSubImage2D(
+            gl::TEXTURE_2D,
+            0,
+            0,
+            0,
+            width as GLint,
+            height as GLint,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            data.as_ptr() as *const c_void,
+        );
+
+        gl.BindTexture(gl::TEXTURE_2D, bound_texture as _);
+
+        Ok(())
     }
 }
 

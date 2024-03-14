@@ -1,4 +1,4 @@
-// NOTE: see this for ManuallyDrop instanceshttps://github.com/microsoft/windows-rs/issues/2386
+// NOTE: see this for ManuallyDrop instances https://github.com/microsoft/windows-rs/issues/2386
 
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
@@ -16,6 +16,7 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
 use crate::util::{self, Fence};
+use crate::TextureLoader;
 
 pub struct D3D12RenderEngine {
     device: ID3D12Device,
@@ -76,12 +77,23 @@ impl D3D12RenderEngine {
     }
 }
 
-impl RenderEngine for D3D12RenderEngine {
-    type RenderTarget = ID3D12Resource;
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+impl TextureLoader for D3D12RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(data, width, height) }
     }
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        todo!()
+    }
+}
+
+impl RenderEngine for D3D12RenderEngine {
+    type RenderTarget = ID3D12Resource;
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()> {
         unsafe {

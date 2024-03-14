@@ -12,7 +12,7 @@ use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
-use crate::util;
+use crate::{util, TextureLoader};
 
 pub struct D3D11RenderEngine {
     device: ID3D11Device,
@@ -54,12 +54,23 @@ impl D3D11RenderEngine {
     }
 }
 
-impl RenderEngine for D3D11RenderEngine {
-    type RenderTarget = ID3D11Texture2D;
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<imgui::TextureId> {
+impl TextureLoader for D3D11RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(data, width, height) }
     }
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        todo!()
+    }
+}
+
+impl RenderEngine for D3D11RenderEngine {
+    type RenderTarget = ID3D11Texture2D;
 
     fn render(
         &mut self,
