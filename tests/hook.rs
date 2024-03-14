@@ -4,9 +4,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use hudhook::{ImguiRenderLoop, TextureLoader};
+use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
 use image::{DynamicImage, EncodableLayout, RgbaImage};
-use image::imageops::FilterType;
 use imgui::{Condition, Context, Image, StyleColor, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -93,7 +93,7 @@ impl Default for HookExample {
 
 impl ImguiRenderLoop for HookExample {
     fn initialize<'a>(&'a mut self, _ctx: &mut Context, loader: TextureLoader<'a>) {
-        for i in 0..3 {
+        for i in 0..IMAGE_COUNT {
             let image = &self.image[i];
             self.image_id[i] =
                 loader(image.as_bytes(), image.width() as _, image.height() as _).ok();
