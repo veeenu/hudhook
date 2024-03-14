@@ -170,12 +170,12 @@ impl ImguiRenderLoop for HookExample {
                     let next_x = pos[0] + vel[0] * frame_time;
                     let next_y = pos[1] + vel[1] * frame_time;
 
-                    if next_x <= 16. || next_x >= 376. - 16. - width {
+                    if next_x < 16. || next_x > 376. - 16. - width {
                         vel[0] = -vel[0];
                     }
                     pos[0] = next_x.clamp(16., 376. - 16. - width);
 
-                    if next_y <= 16. || next_y >= 568. - 16. - height {
+                    if next_y < 16. || next_y > 568. - 16. - height {
                         vel[1] = -vel[1];
                     }
                     pos[1] = next_y.clamp(16., 568. - 16. - height);
