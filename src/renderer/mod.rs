@@ -7,9 +7,9 @@ mod pipeline;
 use imgui::{Context, DrawData};
 use windows::core::Result;
 
-use crate::TextureLoader;
+use crate::RenderContext;
 
-pub(crate) trait RenderEngine: TextureLoader {
+pub(crate) trait RenderEngine: RenderContext {
     type RenderTarget;
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;

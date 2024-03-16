@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use hudhook::{ImguiRenderLoop, TextureLoader};
+use hudhook::{ImguiRenderLoop, RenderContext};
 use image::io::Reader as ImageReader;
 use image::{EncodableLayout, RgbaImage};
 use imgui::{Condition, Context, Image, TextureId};
@@ -48,8 +48,8 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize<'a>(&'a mut self, _ctx: &mut Context, texture_loader: &'a mut dyn TextureLoader) {
-        self.image_id = texture_loader
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, render_context: &'a mut dyn RenderContext) {
+        self.image_id = render_context
             .load_texture(self.image.as_bytes(), self.image.width() as _, self.image.height() as _)
             .ok();
 

@@ -14,7 +14,7 @@ use windows::Win32::Graphics::OpenGL::*;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
 use crate::renderer::RenderEngine;
-use crate::{util, TextureLoader};
+use crate::{util, RenderContext};
 
 mod gl {
     #![allow(
@@ -95,7 +95,7 @@ impl OpenGl3RenderEngine {
     }
 }
 
-impl TextureLoader for OpenGl3RenderEngine {
+impl RenderContext for OpenGl3RenderEngine {
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(&self.gl, data, width, height) }
     }

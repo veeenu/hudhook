@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use hudhook::{ImguiRenderLoop, TextureLoader};
+use hudhook::{ImguiRenderLoop, RenderContext};
 use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
 use image::{DynamicImage, EncodableLayout, RgbaImage};
@@ -98,11 +98,12 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize<'a>(&'a mut self, _ctx: &mut Context, loader: &'a mut dyn TextureLoader) {
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, render_context: &'a mut dyn RenderContext) {
         for i in 0..IMAGE_COUNT {
             let image = &self.image[i];
-            self.image_id[i] =
-                loader.load_texture(image.as_bytes(), image.width() as _, image.height() as _).ok();
+            self.image_id[i] = render_context
+                .load_texture(image.as_bytes(), image.width() as _, image.height() as _)
+                .ok();
         }
 
         println!("{:?}", self.image_id);
@@ -111,7 +112,7 @@ impl ImguiRenderLoop for HookExample {
     fn before_render<'a>(
         &'a mut self,
         _ctx: &mut Context,
-        texture_loader: &'a mut dyn TextureLoader,
+        render_context: &'a mut dyn RenderContext,
     ) {
         let elapsed = self.first_time.get_or_insert(Instant::now()).elapsed().as_secs();
         if elapsed != self.last_upload_time {
@@ -119,7 +120,7 @@ impl ImguiRenderLoop for HookExample {
 
             self.dynamic_image.invert();
             if let Some(texture) = self.image_id[0] {
-                texture_loader
+                render_context
                     .replace_texture(
                         texture,
                         self.dynamic_image.as_bytes(),

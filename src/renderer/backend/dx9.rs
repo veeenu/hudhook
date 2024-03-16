@@ -10,7 +10,7 @@ use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D9::*;
 
 use crate::renderer::RenderEngine;
-use crate::{util, TextureLoader};
+use crate::{util, RenderContext};
 
 const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
 const MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
@@ -67,7 +67,7 @@ impl D3D9RenderEngine {
     }
 }
 
-impl TextureLoader for D3D9RenderEngine {
+impl RenderContext for D3D9RenderEngine {
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe {
             let texture_id = self.texture_heap.create_texture(width, height)?;

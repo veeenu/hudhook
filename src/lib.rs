@@ -144,7 +144,7 @@ static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 
 /// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
-pub trait TextureLoader {
+pub trait RenderContext {
     /// Load texture and return TextureId to use. Invoke it in your
     /// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId, Error>;
@@ -235,21 +235,21 @@ pub trait ImguiRenderLoop {
     fn initialize<'a>(
         &'a mut self,
         _ctx: &mut Context,
-        _texture_loader: &'a mut dyn TextureLoader,
+        _render_context: &'a mut dyn RenderContext,
     ) {
     }
-
-    /// Called every frame. Use the provided `ui` object to build your UI.
-    fn render(&mut self, ui: &mut Ui);
 
     /// Called before rendering each frame. Use the provided `ctx` object to
     /// modify imgui settings before rendering the UI.
     fn before_render<'a>(
         &'a mut self,
         _ctx: &mut Context,
-        _texture_loader: &'a mut dyn TextureLoader,
+        _render_context: &'a mut dyn RenderContext,
     ) {
     }
+
+    /// Called every frame. Use the provided `ui` object to build your UI.
+    fn render(&mut self, ui: &mut Ui);
 
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}

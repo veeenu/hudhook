@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
 use crate::util::{self, Fence};
-use crate::TextureLoader;
+use crate::RenderContext;
 
 pub struct D3D12RenderEngine {
     device: ID3D12Device,
@@ -77,7 +77,7 @@ impl D3D12RenderEngine {
     }
 }
 
-impl TextureLoader for D3D12RenderEngine {
+impl RenderContext for D3D12RenderEngine {
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe {
             let texture_id = self.texture_heap.create_texture(width, height)?;
