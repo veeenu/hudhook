@@ -1,4 +1,4 @@
-// NOTE: see this for ManuallyDrop instanceshttps://github.com/microsoft/windows-rs/issues/2386
+// NOTE: see this for ManuallyDrop instances https://github.com/microsoft/windows-rs/issues/2386
 
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
@@ -7,7 +7,8 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use windows::core::{s, w, Interface, Result};
+use tracing::error;
+use windows::core::{s, w, Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
 use windows::Win32::Graphics::Direct3D::*;
@@ -16,6 +17,7 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
 use crate::util::{self, Fence};
+use crate::RenderContext;
 
 pub struct D3D12RenderEngine {
     device: ID3D12Device,
@@ -76,12 +78,28 @@ impl D3D12RenderEngine {
     }
 }
 
+impl RenderContext for D3D12RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        unsafe {
+            let texture_id = self.texture_heap.create_texture(width, height)?;
+            self.texture_heap.upload_texture(texture_id, data, width, height)?;
+            Ok(texture_id)
+        }
+    }
+
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        unsafe { self.texture_heap.upload_texture(texture_id, data, width, height) }
+    }
+}
+
 impl RenderEngine for D3D12RenderEngine {
     type RenderTarget = ID3D12Resource;
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
-        unsafe { self.texture_heap.create_texture(data, width, height) }
-    }
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()> {
         unsafe {
@@ -125,14 +143,8 @@ impl RenderEngine for D3D12RenderEngine {
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            self.texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
-
+        fonts.tex_id =
+            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
         Ok(())
     }
 }
@@ -190,9 +202,8 @@ impl D3D12RenderEngine {
                         };
 
                         if r.right > r.left && r.bottom > r.top {
-                            let tex_handle = D3D12_GPU_DESCRIPTOR_HANDLE {
-                                ptr: cmd_params.texture_id.id() as u64,
-                            };
+                            let tex_handle =
+                                self.texture_heap.textures[cmd_params.texture_id.id()].gpu_desc;
                             self.command_list.SetGraphicsRootDescriptorTable(1, tex_handle);
                             self.command_list.RSSetScissorRects(&[r]);
                             self.command_list.DrawIndexedInstanced(
@@ -634,7 +645,9 @@ impl<T> Buffer<T> {
 #[allow(unused)]
 struct Texture {
     resource: ID3D12Resource,
-    id: TextureId,
+    gpu_desc: D3D12_GPU_DESCRIPTOR_HANDLE,
+    width: u32,
+    height: u32,
 }
 
 struct TextureHeap {
@@ -704,7 +717,7 @@ impl TextureHeap {
         Ok(())
     }
 
-    unsafe fn create_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+    unsafe fn create_texture(&mut self, width: u32, height: u32) -> Result<TextureId> {
         self.resize_heap()?;
 
         let cpu_heap_start = self.srv_heap.GetCPUDescriptorHandleForHeapStart();
@@ -749,6 +762,46 @@ impl TextureHeap {
                 v,
             )
         })?;
+
+        self.device.CreateShaderResourceView(
+            &texture,
+            Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
+                Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                    Texture2D: D3D12_TEX2D_SRV {
+                        MostDetailedMip: 0,
+                        MipLevels: 1,
+                        PlaneSlice: Default::default(),
+                        ResourceMinLODClamp: Default::default(),
+                    },
+                },
+            }),
+            cpu_desc,
+        );
+
+        let id = TextureId::from(self.textures.len());
+        self.textures.push(Texture { resource: texture.clone(), gpu_desc, width, height });
+
+        Ok(id)
+    }
+
+    unsafe fn upload_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let texture = &self.textures[texture_id.id()];
+        if texture.width != width || texture.height != height {
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture.width, texture.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
+        }
 
         let upload_row_size = width * 4;
         let align = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
@@ -800,7 +853,7 @@ impl TextureHeap {
         self.command_list.Reset(&self.command_allocator, None)?;
 
         let dst_location = D3D12_TEXTURE_COPY_LOCATION {
-            pResource: ManuallyDrop::new(Some(texture.clone())),
+            pResource: ManuallyDrop::new(Some(texture.resource.clone())),
             Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
             Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 { SubresourceIndex: 0 },
         };
@@ -824,7 +877,7 @@ impl TextureHeap {
 
         self.command_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
         let barriers = [util::create_barrier(
-            &texture,
+            &texture.resource,
             D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
         )];
@@ -836,27 +889,6 @@ impl TextureHeap {
         self.fence.wait()?;
         self.fence.incr();
 
-        self.device.CreateShaderResourceView(
-            &texture,
-            Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
-                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                ViewDimension: D3D12_SRV_DIMENSION_TEXTURE2D,
-                Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                    Texture2D: D3D12_TEX2D_SRV {
-                        MostDetailedMip: 0,
-                        MipLevels: 1,
-                        PlaneSlice: Default::default(),
-                        ResourceMinLODClamp: Default::default(),
-                    },
-                },
-            }),
-            cpu_desc,
-        );
-
-        let texture_id = TextureId::from(gpu_desc.ptr as usize);
-        self.textures.push(Texture { resource: texture.clone(), id: texture_id });
-
         barriers.into_iter().for_each(util::drop_barrier);
 
         // Apparently, leaking the upload buffer into the location is necessary.
@@ -866,6 +898,6 @@ impl TextureHeap {
         // let _ = ManuallyDrop::into_inner(src_location.pResource);
         let _ = ManuallyDrop::into_inner(dst_location.pResource);
 
-        Ok(texture_id)
+        Ok(())
     }
 }

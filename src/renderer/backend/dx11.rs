@@ -4,7 +4,8 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
-use windows::core::{s, Result};
+use tracing::error;
+use windows::core::{s, Error, Result, HRESULT};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::Win32::Graphics::Direct3D::*;
@@ -12,7 +13,7 @@ use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
-use crate::util;
+use crate::{util, RenderContext};
 
 pub struct D3D11RenderEngine {
     device: ID3D11Device,
@@ -36,7 +37,7 @@ impl D3D11RenderEngine {
         let projection_buffer = Buffer::new(&device, 1, D3D11_BIND_CONSTANT_BUFFER)?;
 
         let shader_program = ShaderProgram::new(&device)?;
-        let texture_heap = TextureHeap::new(&device)?;
+        let texture_heap = TextureHeap::new(&device, &device_context)?;
 
         ctx.set_ini_filename(None);
         ctx.io_mut().backend_flags |= BackendFlags::RENDERER_HAS_VTX_OFFSET;
@@ -54,12 +55,24 @@ impl D3D11RenderEngine {
     }
 }
 
-impl RenderEngine for D3D11RenderEngine {
-    type RenderTarget = ID3D11Texture2D;
-
-    fn load_image(&mut self, data: &[u8], width: u32, height: u32) -> Result<imgui::TextureId> {
+impl RenderContext for D3D11RenderEngine {
+    fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
         unsafe { self.texture_heap.create_texture(data, width, height) }
     }
+
+    fn replace_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        unsafe { self.texture_heap.update_texture(texture_id, data, width, height) }
+    }
+}
+
+impl RenderEngine for D3D11RenderEngine {
+    type RenderTarget = ID3D11Texture2D;
 
     fn render(
         &mut self,
@@ -84,14 +97,8 @@ impl RenderEngine for D3D11RenderEngine {
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
         let fonts = ctx.fonts();
         let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id = unsafe {
-            self.texture_heap.create_texture(
-                fonts_texture.data,
-                fonts_texture.width,
-                fonts_texture.height,
-            )
-        }?;
-
+        fonts.tex_id =
+            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
         Ok(())
     }
 }
@@ -561,16 +568,23 @@ struct Texture {
     resource: ID3D11Texture2D,
     shader_resource_view: ID3D11ShaderResourceView,
     id: TextureId,
+    width: u32,
+    height: u32,
 }
 
 struct TextureHeap {
     device: ID3D11Device,
+    device_context: ID3D11DeviceContext,
     textures: Vec<Texture>,
 }
 
 impl TextureHeap {
-    fn new(device: &ID3D11Device) -> Result<Self> {
-        Ok(Self { device: device.clone(), textures: Vec::with_capacity(8) })
+    fn new(device: &ID3D11Device, device_context: &ID3D11DeviceContext) -> Result<Self> {
+        Ok(Self {
+            device: device.clone(),
+            device_context: device_context.clone(),
+            textures: Vec::with_capacity(8),
+        })
     }
 
     unsafe fn create_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
@@ -612,11 +626,37 @@ impl TextureHeap {
         })?;
 
         let id = TextureId::from(self.textures.len());
-
-        let texture = Texture { resource, shader_resource_view, id };
-        self.textures.push(texture);
+        self.textures.push(Texture { resource, shader_resource_view, id, width, height });
 
         Ok(id)
+    }
+
+    unsafe fn update_texture(
+        &mut self,
+        texture_id: TextureId,
+        data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        let texture = &mut self.textures[texture_id.id()];
+        if texture.width != width || texture.height != height {
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture.width, texture.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
+        }
+
+        self.device_context.UpdateSubresource(
+            &texture.resource,
+            0,
+            None,
+            data.as_ptr() as *const c_void,
+            width * 4,
+            0,
+        );
+
+        Ok(())
     }
 }
 

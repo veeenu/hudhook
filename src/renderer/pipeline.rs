@@ -58,9 +58,7 @@ impl<T: RenderEngine> Pipeline<T> {
 
         ctx.io_mut().display_size = [width as f32, height as f32];
 
-        render_loop.initialize(&mut ctx, &mut |data, width, height| {
-            engine.load_image(data, width, height)
-        });
+        render_loop.initialize(&mut ctx, &mut engine);
 
         if let Err(e) = engine.setup_fonts(&mut ctx) {
             return Err((e, render_loop));
@@ -110,7 +108,7 @@ impl<T: RenderEngine> Pipeline<T> {
         io.nav_active = true;
         io.nav_visible = true;
 
-        self.render_loop.before_render(&mut self.ctx);
+        self.render_loop.before_render(&mut self.ctx, &mut self.engine);
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use hudhook::{ImguiRenderLoop, TextureLoader};
+use hudhook::{ImguiRenderLoop, RenderContext};
 use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
 use image::{DynamicImage, EncodableLayout, RgbaImage};
@@ -51,11 +51,14 @@ const IMAGE_COUNT: usize = 3;
 
 pub struct HookExample {
     frame_times: Vec<Duration>,
+    first_time: Option<Instant>,
     last_time: Option<Instant>,
+    dynamic_image: DynamicImage,
     image: [RgbaImage; IMAGE_COUNT],
     image_id: [Option<TextureId>; IMAGE_COUNT],
     image_pos: [[f32; 2]; IMAGE_COUNT],
     image_vel: [[f32; 2]; IMAGE_COUNT],
+    last_upload_time: u64,
 }
 
 impl HookExample {
@@ -76,11 +79,14 @@ impl HookExample {
 
         HookExample {
             frame_times: Vec::new(),
+            first_time: None,
             last_time: None,
+            dynamic_image,
             image: [image0, image1, image2],
             image_id: [None, None, None],
             image_pos: [[16.0, 16.0], [16.0, 16.0], [16.0, 16.0]],
             image_vel: [[200.0, 200.0], [100.0, 200.0], [200.0, 100.0]],
+            last_upload_time: 0,
         }
     }
 }
@@ -92,14 +98,38 @@ impl Default for HookExample {
 }
 
 impl ImguiRenderLoop for HookExample {
-    fn initialize<'a>(&'a mut self, _ctx: &mut Context, loader: TextureLoader<'a>) {
+    fn initialize<'a>(&'a mut self, _ctx: &mut Context, render_context: &'a mut dyn RenderContext) {
         for i in 0..IMAGE_COUNT {
             let image = &self.image[i];
-            self.image_id[i] =
-                loader(image.as_bytes(), image.width() as _, image.height() as _).ok();
+            self.image_id[i] = render_context
+                .load_texture(image.as_bytes(), image.width() as _, image.height() as _)
+                .ok();
         }
 
         println!("{:?}", self.image_id);
+    }
+
+    fn before_render<'a>(
+        &'a mut self,
+        _ctx: &mut Context,
+        render_context: &'a mut dyn RenderContext,
+    ) {
+        let elapsed = self.first_time.get_or_insert(Instant::now()).elapsed().as_secs();
+        if elapsed != self.last_upload_time {
+            self.last_upload_time = elapsed;
+
+            self.dynamic_image.invert();
+            if let Some(texture) = self.image_id[0] {
+                render_context
+                    .replace_texture(
+                        texture,
+                        self.dynamic_image.as_bytes(),
+                        self.dynamic_image.width(),
+                        self.dynamic_image.height(),
+                    )
+                    .unwrap();
+            }
+        }
     }
 
     fn render(&mut self, ui: &mut imgui::Ui) {
