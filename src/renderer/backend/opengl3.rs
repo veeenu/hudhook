@@ -8,6 +8,7 @@ use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
 use once_cell::sync::OnceCell;
+use tracing::error;
 use windows::core::{s, Error, Result, HRESULT, PCSTR};
 use windows::Win32::Foundation::{FARPROC, HINSTANCE};
 use windows::Win32::Graphics::OpenGL::*;
@@ -408,13 +409,11 @@ impl TextureHeap {
     ) -> Result<()> {
         let texture_info = self.get(texture);
         if texture_info.width != width || texture_info.height != height {
-            return Result::Err(Error::new(
-                HRESULT(-1),
-                format!(
-                    "image size {width}x{height} do not match expected {}x{}",
-                    texture_info.width, texture_info.height
-                ),
-            ));
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture_info.width, texture_info.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
         }
 
         let mut bound_texture = 0;

@@ -7,6 +7,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
+use tracing::error;
 use windows::core::{s, w, Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct3D::Fxc::*;
@@ -795,13 +796,11 @@ impl TextureHeap {
     ) -> Result<()> {
         let texture = &self.textures[texture_id.id()];
         if texture.width != width || texture.height != height {
-            return Err(Error::new(
-                HRESULT(-1),
-                format!(
-                    "image size {width}x{height} do not match expected {}x{}",
-                    texture.width, texture.height
-                ),
-            ));
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture.width, texture.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
         }
 
         let upload_row_size = width * 4;

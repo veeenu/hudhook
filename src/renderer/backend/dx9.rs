@@ -4,6 +4,7 @@ use std::{mem, ptr};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
+use tracing::error;
 use windows::core::{Error, Result, HRESULT};
 use windows::Foundation::Numerics::Matrix4x4;
 use windows::Win32::Foundation::RECT;
@@ -411,13 +412,11 @@ impl TextureHeap {
     ) -> Result<()> {
         let texture = &self.textures[texture_id.id()];
         if texture.width != width || texture.height != height {
-            return Err(Error::new(
-                HRESULT(-1),
-                format!(
-                    "image size {width}x{height} do not match expected {}x{}",
-                    texture.width, texture.height
-                ),
-            ));
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture.width, texture.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
         }
 
         let mut r: D3DLOCKED_RECT = Default::default();

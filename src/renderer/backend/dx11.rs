@@ -4,6 +4,7 @@ use std::{mem, ptr, slice};
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use memoffset::offset_of;
+use tracing::error;
 use windows::core::{s, Error, Result, HRESULT};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
@@ -639,13 +640,11 @@ impl TextureHeap {
     ) -> Result<()> {
         let texture = &mut self.textures[texture_id.id()];
         if texture.width != width || texture.height != height {
-            return Err(Error::new(
-                HRESULT(-1),
-                format!(
-                    "image size {width}x{height} do not match expected {}x{}",
-                    texture.width, texture.height
-                ),
-            ));
+            error!(
+                "image size {width}x{height} do not match expected {}x{}",
+                texture.width, texture.height
+            );
+            return Err(Error::from_hresult(HRESULT(-1)));
         }
 
         self.device_context.UpdateSubresource(

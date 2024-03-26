@@ -148,6 +148,7 @@ pub trait RenderContext {
     /// Load texture and return TextureId to use. Invoke it in your
     /// [`crate::ImguiRenderLoop::initialize`] method for setting up textures.
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId, Error>;
+
     /// Upload an image to an existing texture, replacing its content. Invoke it
     /// in your [`crate::ImguiRenderLoop::before_render`] method for
     /// updating textures.
@@ -232,6 +233,8 @@ pub fn eject() {
 pub trait ImguiRenderLoop {
     /// Called once at the first occurrence of the hook. Implement this to
     /// initialize your data.
+    /// `ctx` is the imgui context, and `render_context` is meant to access
+    /// hudhook renderers' extensions such as texture management.
     fn initialize<'a>(
         &'a mut self,
         _ctx: &mut Context,
@@ -241,6 +244,8 @@ pub trait ImguiRenderLoop {
 
     /// Called before rendering each frame. Use the provided `ctx` object to
     /// modify imgui settings before rendering the UI.
+    /// `ctx` is the imgui context, and `render_context` is meant to access
+    /// hudhook renderers' extensions such as texture management.
     fn before_render<'a>(
         &'a mut self,
         _ctx: &mut Context,
