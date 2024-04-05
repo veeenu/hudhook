@@ -55,6 +55,7 @@ name = "demo_hook_opengl3"
 crate-type = ["cdylib"]
 
 [dependencies]
+bitflags = "2.5.0"
 imgui = "0.11"
 memoffset = "0.9.0"
 once_cell = { version = "1.18.0", default-features = false }

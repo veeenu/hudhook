@@ -2,6 +2,7 @@
 mod backend;
 mod input;
 mod keys;
+pub(crate) mod msg_filter;
 mod pipeline;
 
 use imgui::{Context, DrawData};

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
-use crate::{util, ImguiRenderLoop};
+use crate::{util, ImguiRenderLoop, MessageFilter};
 
 type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 
@@ -32,7 +32,7 @@ pub(crate) struct PipelineMessage(
 );
 
 pub(crate) struct PipelineSharedState {
-    pub(crate) should_block_events: AtomicBool,
+    pub(crate) message_filter: AtomicU32,
     pub(crate) wnd_proc: WndProcType,
     pub(crate) tx: Sender<PipelineMessage>,
 }
@@ -70,7 +70,7 @@ impl<T: RenderEngine> Pipeline<T> {
 
         let (tx, rx) = mpsc::channel();
         let shared_state = Arc::new(PipelineSharedState {
-            should_block_events: AtomicBool::new(false),
+            message_filter: AtomicU32::new(MessageFilter::empty().bits()),
             wnd_proc,
             tx,
         });
@@ -99,9 +99,9 @@ impl<T: RenderEngine> Pipeline<T> {
         });
         self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
 
-        let should_block_events = self.render_loop.should_block_messages(self.ctx.io_mut());
+        let message_filter = self.render_loop.set_message_filter(self.ctx.io());
 
-        self.shared_state.should_block_events.store(should_block_events, Ordering::SeqCst);
+        self.shared_state.message_filter.store(message_filter.bits(), Ordering::SeqCst);
 
         let io = self.ctx.io_mut();
 
@@ -181,9 +181,10 @@ unsafe extern "system" fn pipeline_wnd_proc(
 
     // CONCURRENCY: as the message interpretation now happens out of band, this
     // expresses the intent as of *before* the current message was received.
-    let should_block_messages = shared_state.should_block_events.load(Ordering::SeqCst);
+    let message_filter =
+        MessageFilter::from_bits_retain(shared_state.message_filter.load(Ordering::SeqCst));
 
-    if should_block_messages {
+    if message_filter.is_blocking(msg, wparam.0, lparam.0) {
         LRESULT(1)
     } else {
         CallWindowProcW(Some(shared_state.wnd_proc), hwnd, msg, wparam, lparam)
