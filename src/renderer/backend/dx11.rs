@@ -834,7 +834,7 @@ impl StateBackup {
             self.vertex_shader.as_ref(),
             if self.vs_instances_count > 0 {
                 Some(slice::from_raw_parts(self.vs_instances, self.vs_instances_count as usize))
-            } else { 
+            } else {
                 None
             },
         );
