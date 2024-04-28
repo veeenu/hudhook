@@ -821,13 +821,10 @@ impl StateBackup {
             device_context.PSSetSamplers(0, Some(&self.sampler));
         }
 
-        if self.ps_instances_count > 0
-        {
-            device_context.PSSetShader(
-                self.pixel_shader.as_ref(),
-                Some(slice::from_raw_parts(self.ps_instances, self.ps_instances_count as usize)),
-            );
-        }
+        device_context.PSSetShader(
+            self.pixel_shader.as_ref(),
+            if self.ps_instances_count > 0 { Some(slice::from_raw_parts(self.ps_instances, self.ps_instances_count as usize)) } else { None },
+        );
 
         if self.vs_instances_count > 0
         {
