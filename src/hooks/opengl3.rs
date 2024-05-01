@@ -1,6 +1,6 @@
 //! Hooks for OpenGL 3.
 
-use std::ffi::CString;
+use std::ffi::{c_void, CString};
 use std::mem;
 use std::sync::OnceLock;
 
@@ -86,7 +86,9 @@ unsafe fn get_opengl_wglswapbuffers_addr() -> OpenGl32wglSwapBuffersType {
     let wglswapbuffers_func =
         GetProcAddress(opengl32module, PCSTR(wglswapbuffers.as_ptr() as *mut _)).unwrap();
 
-    mem::transmute(wglswapbuffers_func)
+    mem::transmute::<unsafe extern "system" fn() -> isize, OpenGl32wglSwapBuffersType>(
+        wglswapbuffers_func,
+    )
 }
 
 /// Hooks for OpenGL 3.
@@ -119,7 +121,7 @@ impl ImguiOpenGl3Hooks {
         // Initialize the render loop and store detours
         RENDER_LOOP.get_or_init(move || Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
-            opengl32_wgl_swap_buffers: std::mem::transmute(
+            opengl32_wgl_swap_buffers: mem::transmute::<*mut c_void, OpenGl32wglSwapBuffersType>(
                 hook_opengl_wgl_swap_buffers.trampoline(),
             ),
         });
