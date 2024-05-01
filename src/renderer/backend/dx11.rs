@@ -823,11 +823,20 @@ impl StateBackup {
 
         device_context.PSSetShader(
             self.pixel_shader.as_ref(),
-            Some(slice::from_raw_parts(self.ps_instances, self.ps_instances_count as usize)),
+            if self.ps_instances_count > 0 {
+                Some(slice::from_raw_parts(self.ps_instances, self.ps_instances_count as usize))
+            } else {
+                None
+            },
         );
+
         device_context.VSSetShader(
             self.vertex_shader.as_ref(),
-            Some(slice::from_raw_parts(self.vs_instances, self.vs_instances_count as usize)),
+            if self.vs_instances_count > 0 {
+                Some(slice::from_raw_parts(self.vs_instances, self.vs_instances_count as usize))
+            } else {
+                None
+            },
         );
 
         device_context.IASetVertexBuffers(
