@@ -65,7 +65,11 @@ impl<T: RenderEngine> Pipeline<T> {
         }
 
         let wnd_proc = unsafe {
-            mem::transmute(SetWindowLongPtrA(hwnd, GWLP_WNDPROC, pipeline_wnd_proc as usize as _))
+            mem::transmute::<isize, WndProcType>(SetWindowLongPtrA(
+                hwnd,
+                GWLP_WNDPROC,
+                pipeline_wnd_proc as usize as _,
+            ))
         };
 
         let (tx, rx) = mpsc::channel();

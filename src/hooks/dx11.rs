@@ -133,8 +133,12 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
 
     let swap_chain = p_swap_chain.unwrap();
 
-    let present_ptr: DXGISwapChainPresentType =
-        unsafe { mem::transmute(swap_chain.vtable().Present) };
+    let present_ptr: DXGISwapChainPresentType = unsafe {
+        mem::transmute::<
+            unsafe extern "system" fn(*mut c_void, u32, u32) -> HRESULT,
+            DXGISwapChainPresentType,
+        >(swap_chain.vtable().Present)
+    };
 
     present_ptr
 }
@@ -167,7 +171,9 @@ impl ImguiDx11Hooks {
 
         RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
-            dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
+            dxgi_swap_chain_present: mem::transmute::<*mut c_void, DXGISwapChainPresentType>(
+                hook_present.trampoline(),
+            ),
         });
 
         Self([hook_present])
