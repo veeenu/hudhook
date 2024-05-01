@@ -65,7 +65,12 @@ impl<T: RenderEngine> Pipeline<T> {
         }
 
         let wnd_proc = unsafe {
-            mem::transmute::<isize, WndProcType>(SetWindowLongPtrA(
+            #[cfg(target_arch = "x86")]
+            type SwlpRet = i32;
+            #[cfg(target_arch = "x86_64")]
+            type SwlpRet = isize;
+
+            mem::transmute::<SwlpRet, WndProcType>(SetWindowLongPtrA(
                 hwnd,
                 GWLP_WNDPROC,
                 pipeline_wnd_proc as usize as _,
