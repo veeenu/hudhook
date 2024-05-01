@@ -276,9 +276,17 @@ impl ImguiDx12Hooks {
         RENDER_LOOP.get_or_init(|| Box::new(t));
 
         TRAMPOLINES.get_or_init(|| Trampolines {
-            dxgi_swap_chain_present: mem::transmute(hook_present.trampoline()),
-            dxgi_swap_chain_resize_buffers: mem::transmute(hook_resize_buffers.trampoline()),
-            d3d12_command_queue_execute_command_lists: mem::transmute(hook_cqecl.trampoline()),
+            dxgi_swap_chain_present: mem::transmute::<*mut c_void, DXGISwapChainPresentType>(
+                hook_present.trampoline(),
+            ),
+            dxgi_swap_chain_resize_buffers: mem::transmute::<
+                *mut c_void,
+                DXGISwapChainResizeBuffersType,
+            >(hook_resize_buffers.trampoline()),
+            d3d12_command_queue_execute_command_lists: mem::transmute::<
+                *mut c_void,
+                D3D12CommandQueueExecuteCommandListsType,
+            >(hook_cqecl.trampoline()),
         });
 
         Self([hook_present, hook_resize_buffers, hook_cqecl])

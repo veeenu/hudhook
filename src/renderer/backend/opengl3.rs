@@ -23,7 +23,12 @@ mod gl {
         clippy::too_many_arguments,
         clippy::unused_unit,
         clippy::upper_case_acronyms,
-        clippy::manual_non_exhaustive
+        clippy::manual_non_exhaustive,
+
+        // We support stable but lint on nightly. The following lint isn't available on stable,
+        // so allow `unknown_lints`.
+        unknown_lints,
+        clippy::missing_transmute_annotations
     )]
 
     include!(concat!(env!("OUT_DIR"), "/gl_bindings.rs"));
