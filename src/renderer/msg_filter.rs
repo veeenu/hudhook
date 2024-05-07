@@ -44,7 +44,7 @@ bitflags! {
 
 impl MessageFilter {
     /// Check whether the message ID is blocked by this filter
-    pub(crate) fn is_blocking(&self, message_id: u32, _wparam: usize, _lparam: isize) -> bool {
+    pub(crate) fn is_blocking(&self, message_id: u32) -> bool {
         if match message_id {
             0x0000..=0x03FF => self.contains(Self::RangeSystemDefined),
             WM_USER..=0x7FFF => self.contains(Self::RangePrivateReserved),
