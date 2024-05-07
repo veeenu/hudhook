@@ -4,7 +4,24 @@ use bitflags::bitflags;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 bitflags! {
-    /// Flags for filtering window messages.
+    /// Bitflag for specifying types of window message to be filtered.
+    ///
+    /// Return this on [`ImguiRenderLoop::message_filter`](crate::ImguiRenderLoop::message_filter)
+    /// to filter certain types of window message.
+    ///
+    /// You can use bitwise-or to combine multiple flags.
+    ///
+    /// Example usage:
+    /// ```no_run
+    /// // impl ImguiRenderLoop for ...
+    /// fn message_filter(&self, _io: &Io) -> MessageFilter {
+    ///     if self.visible {
+    ///         MessageFilter::InputAll | MessageFilter::WindowClose
+    ///     } else {
+    ///         MessageFilter::empty()
+    ///     }
+    /// }
+    /// ```
     #[repr(transparent)]
     pub struct MessageFilter: u32 {
         /// Blocks keyboard input event messages.
@@ -22,16 +39,16 @@ bitflags! {
         /// Blocks window close messages.
         const WindowClose = 1u32 << 10;
 
-        /// Blocks messages ID from 0 to WM_USER - 1
+        /// Blocks messages ID from 0 to `WM_USER` - 1
         /// (the range for system-defined messages).
         const RangeSystemDefined = 1u32 << 28;
-        /// Blocks messages ID from WM_USER to WM_APP - 1
+        /// Blocks messages ID from `WM_USER` to `WM_APP` - 1
         /// (the range for private window classes like form button).
         const RangePrivateReserved = 1u32 << 29;
-        /// Blocks messages ID from WM_APP to 0xBFFF
+        /// Blocks messages ID from `WM_APP` to 0xBFFF
         /// (the range for internal use of user application).
         const RangeAppPrivate = 1u32 << 30;
-        /// Blocks messages ID from 0xC000 tp 0xFFFF
+        /// Blocks messages ID from 0xC000 to 0xFFFF
         /// (the range for registered use between user applications).
         const RangeAppRegistered = 1u32 << 31;
 
