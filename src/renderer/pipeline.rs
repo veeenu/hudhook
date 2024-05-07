@@ -99,7 +99,7 @@ impl<T: RenderEngine> Pipeline<T> {
         });
         self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
 
-        let message_filter = self.render_loop.set_message_filter(self.ctx.io());
+        let message_filter = self.render_loop.message_filter(self.ctx.io());
 
         self.shared_state.message_filter.store(message_filter.bits(), Ordering::SeqCst);
 

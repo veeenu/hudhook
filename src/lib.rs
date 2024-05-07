@@ -261,9 +261,9 @@ pub trait ImguiRenderLoop {
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
 
-    /// Sets the types of window message that
+    /// Returns the types of window message that
     /// you do not want to propagate to the main window
-    fn set_message_filter(&self, _io: &Io) -> MessageFilter {
+    fn message_filter(&self, _io: &Io) -> MessageFilter {
         MessageFilter::empty()
     }
 }
