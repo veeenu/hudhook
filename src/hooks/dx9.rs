@@ -151,7 +151,24 @@ fn get_target_addrs() -> (Dx9PresentType, Dx9ResetType) {
     let present_ptr = device.vtable().Present;
     let reset_ptr = device.vtable().Reset;
 
-    unsafe { (mem::transmute(present_ptr), mem::transmute(reset_ptr)) }
+    unsafe {
+        (
+            mem::transmute::<
+                unsafe extern "system" fn(
+                    *mut c_void,
+                    *const RECT,
+                    *const RECT,
+                    HWND,
+                    *const RGNDATA,
+                ) -> HRESULT,
+                Dx9PresentType,
+            >(present_ptr),
+            mem::transmute::<
+                unsafe extern "system" fn(*mut c_void, *mut D3DPRESENT_PARAMETERS) -> HRESULT,
+                Dx9ResetType,
+            >(reset_ptr),
+        )
+    }
 }
 
 /// Hooks for DirectX 9.
@@ -182,8 +199,8 @@ impl ImguiDx9Hooks {
 
         RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
-            dx9_present: mem::transmute(hook_present.trampoline()),
-            dx9_reset: mem::transmute(hook_reset.trampoline()),
+            dx9_present: mem::transmute::<*mut c_void, Dx9PresentType>(hook_present.trampoline()),
+            dx9_reset: mem::transmute::<*mut c_void, Dx9ResetType>(hook_reset.trampoline()),
         });
 
         Self([hook_present, hook_reset])

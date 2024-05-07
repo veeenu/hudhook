@@ -1,5 +1,6 @@
 //! Facilities for injecting compiled DLLs into target processes.
 
+use std::ffi::c_void;
 use std::mem::{self, size_of};
 use std::path::PathBuf;
 
@@ -58,7 +59,7 @@ impl Process {
             WriteProcessMemory(
                 self.0,
                 dll_path_buf,
-                dll_path.as_ptr() as *const std::ffi::c_void,
+                dll_path.as_ptr() as *const c_void,
                 (MAX_PATH as usize) * size_of::<u16>(),
                 Some(&mut bytes_written),
             )
@@ -71,7 +72,12 @@ impl Process {
                 self.0,
                 None,
                 0,
-                Some(std::mem::transmute(proc_addr)),
+                proc_addr.map(|proc_addr| {
+                    mem::transmute::<
+                        unsafe extern "system" fn() -> isize,
+                        unsafe extern "system" fn(*mut c_void) -> u32,
+                    >(proc_addr)
+                }),
                 Some(dll_path_buf),
                 0,
                 None,
