@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use hudhook::{ImguiRenderLoop, RenderContext};
+use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
 use image::imageops::FilterType;
 use image::io::Reader as ImageReader;
 use image::{DynamicImage, EncodableLayout, RgbaImage};
@@ -59,6 +59,7 @@ pub struct HookExample {
     image_pos: [[f32; 2]; IMAGE_COUNT],
     image_vel: [[f32; 2]; IMAGE_COUNT],
     last_upload_time: u64,
+    main_window_movable: bool,
 }
 
 impl HookExample {
@@ -87,6 +88,7 @@ impl HookExample {
             image_pos: [[16.0, 16.0], [16.0, 16.0], [16.0, 16.0]],
             image_vel: [[200.0, 200.0], [100.0, 200.0], [200.0, 100.0]],
             last_upload_time: 0,
+            main_window_movable: true,
         }
     }
 }
@@ -184,6 +186,11 @@ impl ImguiRenderLoop for HookExample {
                 ui.text(format!("Avg:        {:8.2}", avg.as_secs_f64() * 1000.));
                 ui.text(format!("FPS:        {:8.2}", 1. / last.as_secs_f64()));
                 ui.text(format!("Avg:        {:8.2}", 1. / avg.as_secs_f64()));
+                ui.separator();
+                ui.text(format!("Main window movable: {}", self.main_window_movable));
+                if ui.button("Toggle movability") {
+                    self.main_window_movable ^= true;
+                }
             });
 
         ui.window("Image")
@@ -217,5 +224,13 @@ impl ImguiRenderLoop for HookExample {
                     }
                 }
             });
+    }
+
+    fn message_filter(&self, _io: &imgui::Io) -> MessageFilter {
+        if self.main_window_movable {
+            MessageFilter::empty()
+        } else {
+            MessageFilter::WindowControl
+        }
     }
 }

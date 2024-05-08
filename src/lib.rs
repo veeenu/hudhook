@@ -136,6 +136,8 @@ pub mod inject;
 pub mod mh;
 pub(crate) mod renderer;
 
+pub use renderer::msg_filter::MessageFilter;
+
 pub mod util;
 
 // Global state objects.
@@ -259,10 +261,10 @@ pub trait ImguiRenderLoop {
     /// Called during the window procedure.
     fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
 
-    /// If this method returns `true`, the WndProc function will not call the
-    /// procedure of the parent window.
-    fn should_block_messages(&self, _io: &Io) -> bool {
-        false
+    /// Returns the types of window message that
+    /// you do not want to propagate to the main window
+    fn message_filter(&self, _io: &Io) -> MessageFilter {
+        MessageFilter::empty()
     }
 }
 
