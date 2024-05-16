@@ -3,6 +3,7 @@ use std::mem;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use imgui::Context;
 use once_cell::sync::{Lazy, OnceCell};
@@ -45,6 +46,7 @@ pub(crate) struct Pipeline<T: RenderEngine> {
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
     queue_buffer: OnceCell<Vec<PipelineMessage>>,
+    start_of_first_frame: OnceCell<Instant>,
 }
 
 impl<T: RenderEngine> Pipeline<T> {
@@ -96,6 +98,7 @@ impl<T: RenderEngine> Pipeline<T> {
             rx,
             shared_state: Arc::clone(&shared_state),
             queue_buffer,
+            start_of_first_frame: OnceCell::new(),
         })
     }
 
@@ -123,6 +126,14 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
+        let delta_time = Instant::now()
+            .checked_duration_since(*self.start_of_first_frame.get_or_init(Instant::now))
+            .unwrap_or(Duration::ZERO)
+            .checked_sub(Duration::from_secs_f64(self.ctx.time()))
+            .unwrap_or(Duration::ZERO);
+
+        self.ctx.io_mut().update_delta_time(delta_time);
+
         let [w, h] = self.ctx.io().display_size;
         let [fsw, fsh] = self.ctx.io().display_framebuffer_scale;
 
