@@ -41,7 +41,7 @@ pub(crate) struct PipelineSharedState {
 pub(crate) struct Pipeline<T: RenderEngine> {
     hwnd: HWND,
     ctx: Context,
-    engine: T,
+    pub engine: T,
     render_loop: RenderLoop,
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
