@@ -12,7 +12,7 @@ use crate::RenderContext;
 
 pub(crate) trait RenderEngine: RenderContext {
     type RenderTarget;
-
+    fn reset(&mut self) {}
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()>;
 }
