@@ -131,7 +131,7 @@ fn handle_raw_keyboard_input(io: &mut Io, raw_keyboard: &RAWKEYBOARD) {
     // Map the virtual key if necessary.
     let virtual_key = match VIRTUAL_KEY(raw_keyboard.VKey) {
         virtual_key @ (VK_SHIFT | VK_CONTROL | VK_MENU) => {
-            match unsafe { MapVirtualKeyA(scan_code, MAPVK_VSC_TO_VK_EX) } {
+            match unsafe { MapVirtualKeyW(scan_code, MAPVK_VSC_TO_VK_EX) } {
                 0 => virtual_key.0,
                 i => i as u16,
             }
@@ -199,7 +199,7 @@ fn handle_raw_input(io: &mut Io, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM)
 fn map_vkey(wparam: u16, lparam: usize) -> VIRTUAL_KEY {
     match VIRTUAL_KEY(wparam) {
         VK_SHIFT => unsafe {
-            match MapVirtualKeyA(((lparam & 0x00ff0000) >> 16) as u32, MAPVK_VSC_TO_VK_EX) {
+            match MapVirtualKeyW(((lparam & 0x00ff0000) >> 16) as u32, MAPVK_VSC_TO_VK_EX) {
                 0 => VIRTUAL_KEY(wparam),
                 i => VIRTUAL_KEY(i as _),
             }
@@ -335,7 +335,7 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
             let y = hiwordi(lparam as u32) as f32;
             io.add_mouse_pos_event([x, y]);
         },
-        WM_CHAR => io.add_input_character(wparam as u8 as char),
+        WM_CHAR => io.add_input_character(char::from_u32(wparam as u32).unwrap()),
         WM_SIZE => {
             pipeline.resize(loword(lparam as u32) as u32, hiword(lparam as u32) as u32);
         },

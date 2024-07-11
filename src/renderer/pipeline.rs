@@ -12,7 +12,7 @@ use tracing::error;
 use windows::core::{Error, Result, HRESULT};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, DefWindowProcW, SetWindowLongPtrA, GWLP_WNDPROC,
+    CallWindowProcW, DefWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC,
 };
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
@@ -72,7 +72,7 @@ impl<T: RenderEngine> Pipeline<T> {
             #[cfg(target_arch = "x86_64")]
             type SwlpRet = isize;
 
-            mem::transmute::<SwlpRet, WndProcType>(SetWindowLongPtrA(
+            mem::transmute::<SwlpRet, WndProcType>(SetWindowLongPtrW(
                 hwnd,
                 GWLP_WNDPROC,
                 pipeline_wnd_proc as usize as _,
@@ -165,7 +165,7 @@ impl<T: RenderEngine> Pipeline<T> {
 
     pub(crate) fn cleanup(&mut self) {
         unsafe {
-            SetWindowLongPtrA(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)
+            SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)
         };
     }
 
