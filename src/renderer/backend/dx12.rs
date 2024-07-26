@@ -653,6 +653,7 @@ struct Texture {
 struct TextureHeap {
     device: ID3D12Device,
     srv_heap: ID3D12DescriptorHeap,
+    srv_staging_heap: ID3D12DescriptorHeap,
     textures: Vec<Texture>,
     command_queue: ID3D12CommandQueue,
     command_allocator: ID3D12CommandAllocator,
@@ -684,11 +685,21 @@ impl TextureHeap {
             command_list.SetName(w!("hudhook Render Engine Command List"))?;
         }
 
+        let srv_staging_heap: ID3D12DescriptorHeap = unsafe {
+            device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                NumDescriptors: 8,
+                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+                NodeMask: 0,
+            })
+        }?;
+
         let fence = Fence::new(device)?;
 
         Ok(Self {
             device: device.clone(),
             srv_heap,
+            srv_staging_heap,
             textures: Vec::new(),
             command_queue,
             command_allocator,
@@ -699,19 +710,42 @@ impl TextureHeap {
 
     unsafe fn resize_heap(&mut self) -> Result<()> {
         let mut desc = self.srv_heap.GetDesc();
+        let mut desc_staging = self.srv_staging_heap.GetDesc();
         let old_num_descriptors = desc.NumDescriptors;
 
         if old_num_descriptors <= self.textures.len() as _ {
             desc.NumDescriptors *= 2;
+            desc_staging.NumDescriptors = desc.NumDescriptors;
 
             let srv_heap: ID3D12DescriptorHeap = self.device.CreateDescriptorHeap(&desc)?;
+            let srv_staging_heap: ID3D12DescriptorHeap =
+                self.device.CreateDescriptorHeap(&desc_staging)?;
+            self.device.CopyDescriptorsSimple(
+                old_num_descriptors,
+                srv_staging_heap.GetCPUDescriptorHandleForHeapStart(),
+                self.srv_staging_heap.GetCPUDescriptorHandleForHeapStart(),
+                D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+            );
             self.device.CopyDescriptorsSimple(
                 old_num_descriptors,
                 srv_heap.GetCPUDescriptorHandleForHeapStart(),
-                self.srv_heap.GetCPUDescriptorHandleForHeapStart(),
+                srv_staging_heap.GetCPUDescriptorHandleForHeapStart(),
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
             );
             self.srv_heap = srv_heap;
+            self.srv_staging_heap = srv_staging_heap;
+
+            // Adjust texture GPU pointers.
+            let gpu_heap_start = self.srv_heap.GetGPUDescriptorHandleForHeapStart();
+            let heap_inc_size = self
+                .device
+                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+            self.textures.iter_mut().enumerate().for_each(|(texture_index, texture)| {
+                texture.gpu_desc = D3D12_GPU_DESCRIPTOR_HANDLE {
+                    ptr: gpu_heap_start.ptr + (texture_index as u32 * heap_inc_size) as u64,
+                };
+            })
         }
 
         Ok(())
@@ -720,12 +754,17 @@ impl TextureHeap {
     unsafe fn create_texture(&mut self, width: u32, height: u32) -> Result<TextureId> {
         self.resize_heap()?;
 
+        let cpu_heap_stg_start = self.srv_staging_heap.GetCPUDescriptorHandleForHeapStart();
         let cpu_heap_start = self.srv_heap.GetCPUDescriptorHandleForHeapStart();
         let gpu_heap_start = self.srv_heap.GetGPUDescriptorHandleForHeapStart();
         let heap_inc_size =
             self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
         let texture_index = self.textures.len() as u32;
+
+        let cpu_desc_stg = D3D12_CPU_DESCRIPTOR_HANDLE {
+            ptr: cpu_heap_stg_start.ptr + (texture_index * heap_inc_size) as usize,
+        };
 
         let cpu_desc = D3D12_CPU_DESCRIPTOR_HANDLE {
             ptr: cpu_heap_start.ptr + (texture_index * heap_inc_size) as usize,
@@ -778,7 +817,14 @@ impl TextureHeap {
                     },
                 },
             }),
+            cpu_desc_stg,
+        );
+
+        self.device.CopyDescriptorsSimple(
+            1,
             cpu_desc,
+            cpu_desc_stg,
+            D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
         );
 
         let id = TextureId::from(self.textures.len());
