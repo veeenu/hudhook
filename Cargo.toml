@@ -25,6 +25,9 @@ dx11 = []
 dx12 = []
 opengl3 = ["dep:gl_generator"]
 inject = []
+imgui-freetype = ["imgui/freetype"]
+imgui-docking = ["imgui/docking"]
+imgui-tables-api = ["imgui/tables-api"]
 
 [[example]]
 name = "simple_hook"
