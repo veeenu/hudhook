@@ -79,6 +79,7 @@ impl RenderContext for D3D9RenderEngine {
 
     fn replace_texture(
         &mut self,
+
         texture_id: TextureId,
         data: &[u8],
         width: u32,
@@ -90,7 +91,17 @@ impl RenderContext for D3D9RenderEngine {
 
 impl RenderEngine for D3D9RenderEngine {
     type RenderTarget = IDirect3DSurface9;
-
+    fn reset(&mut self) {
+        tracing::error!("Calling reset stuff");
+        let mut params = D3DPRESENT_PARAMETERS { ..Default::default() };
+        unsafe {
+            let result = self.device.Reset(&mut params as *mut D3DPRESENT_PARAMETERS);
+            match result {
+                Ok(_) => tracing::info!("All is good"),
+                Err(err) => tracing::error!("Error from reset: {}", err),
+            }
+        }
+    }
     fn render(
         &mut self,
         draw_data: &imgui::DrawData,
