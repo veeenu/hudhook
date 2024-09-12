@@ -1,12 +1,11 @@
 // Based on https://github.com/michaelfairley/rust-imgui-opengl-renderer/
 
 use std::ffi::{c_void, CString};
-use std::mem;
+use std::mem::{self, offset_of};
 
 use gl::types::*;
 use imgui::internal::RawWrapper;
 use imgui::{Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use memoffset::offset_of;
 use once_cell::sync::OnceCell;
 use tracing::error;
 use windows::core::{s, Error, Result, HRESULT, PCSTR};
