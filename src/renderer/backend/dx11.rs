@@ -1,9 +1,9 @@
 use std::ffi::c_void;
+use std::mem::offset_of;
 use std::{mem, ptr, slice};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use memoffset::offset_of;
 use tracing::error;
 use windows::core::{s, Error, Result, HRESULT};
 use windows::Win32::Foundation::RECT;

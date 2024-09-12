@@ -1,12 +1,11 @@
 // NOTE: see this for ManuallyDrop instances https://github.com/microsoft/windows-rs/issues/2386
 
 use std::ffi::c_void;
-use std::mem::ManuallyDrop;
+use std::mem::{offset_of, ManuallyDrop};
 use std::{mem, ptr, slice};
 
 use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
-use memoffset::offset_of;
 use tracing::error;
 use windows::core::{s, w, Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::*;
