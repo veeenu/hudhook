@@ -804,7 +804,7 @@ impl TextureHeap {
 
         let upload_row_size = width * 4;
         let align = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
-        let upload_pitch = (upload_row_size + align - 1) / align * align; // 256 bytes aligned
+        let upload_pitch = upload_row_size.div_ceil(align) * align; // 256 bytes aligned
         let upload_size = height * upload_pitch;
 
         let upload_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
