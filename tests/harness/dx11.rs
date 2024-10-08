@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
 use hudhook::util;
-use windows::core::{s, PCSTR};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
@@ -52,7 +52,7 @@ impl Dx11Harness {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
                     hInstance: hinstance.into(),
-                    lpszClassName: PCSTR("MyClass\0".as_ptr()),
+                    lpszClassName: PCSTR(c"MyClass".as_ptr().cast()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hIcon: HICON(0),
@@ -68,7 +68,7 @@ impl Dx11Harness {
                 let hwnd = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE(0),
-                        s!("MyClass\0"),
+                        PCSTR(c"MyClass".as_ptr().cast()),
                         PCSTR(caption.as_ptr().cast()),
                         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         // size and position

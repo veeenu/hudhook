@@ -20,6 +20,7 @@ fn test_inject_by_title() {
 
     std::thread::sleep(Duration::from_millis(1000));
     child.kill().expect("Couldn't kill notepad");
+    child.wait().expect("Couldn't wait on child process");
 }
 
 #[test]
@@ -36,6 +37,7 @@ fn test_inject_by_name() {
 
     std::thread::sleep(Duration::from_millis(1000));
     child.kill().expect("Couldn't kill notepad");
+    child.wait().expect("Couldn't wait on child process");
 }
 
 fn examples_path() -> PathBuf {
