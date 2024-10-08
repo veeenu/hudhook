@@ -51,6 +51,7 @@ extern "system" {
         pDetour: *mut c_void,
         ppOriginal: *mut *mut c_void,
     ) -> MH_STATUS;
+    pub fn MH_RemoveHook(pTarget: *mut c_void) -> MH_STATUS;
     pub fn MH_EnableHook(pTarget: *mut c_void) -> MH_STATUS;
     pub fn MH_QueueEnableHook(pTarget: *mut c_void) -> MH_STATUS;
     pub fn MH_DisableHook(pTarget: *mut c_void) -> MH_STATUS;
