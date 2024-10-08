@@ -41,7 +41,7 @@ impl Dx9Harness {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
                     hInstance: hinstance.into(),
-                    lpszClassName: PCSTR("MyClass\0".as_ptr()),
+                    lpszClassName: PCSTR(c"MyClass".as_ptr().cast()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hIcon: HICON(0),
@@ -57,7 +57,7 @@ impl Dx9Harness {
                 let handle = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE(0),
-                        PCSTR("MyClass\0".as_ptr()),
+                        PCSTR(c"MyClass".as_ptr().cast()),
                         PCSTR(caption.as_ptr().cast()),
                         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         // size and position

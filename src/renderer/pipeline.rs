@@ -21,7 +21,7 @@ use crate::{util, ImguiRenderLoop, MessageFilter};
 
 type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 
-static mut PIPELINE_STATES: Lazy<Mutex<HashMap<isize, Arc<PipelineSharedState>>>> =
+static PIPELINE_STATES: Lazy<Mutex<HashMap<isize, Arc<PipelineSharedState>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug)]
@@ -86,7 +86,7 @@ impl<T: RenderEngine> Pipeline<T> {
             tx,
         });
 
-        unsafe { PIPELINE_STATES.lock() }.insert(hwnd.0, Arc::clone(&shared_state));
+        PIPELINE_STATES.lock().insert(hwnd.0, Arc::clone(&shared_state));
 
         let queue_buffer = OnceCell::from(Vec::new());
 
