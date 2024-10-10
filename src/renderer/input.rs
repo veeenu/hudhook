@@ -339,6 +339,10 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
         WM_SIZE => {
             pipeline.resize(loword(lparam as u32) as u32, hiword(lparam as u32) as u32);
         },
+        WM_ACTIVATEAPP => {
+            tracing::error!("WM_ACTIVATEAPP trigered, calling reset from engine");
+            pipeline.engine.reset();
+        },
         _ => {},
     };
 
