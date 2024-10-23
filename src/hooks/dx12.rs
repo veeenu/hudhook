@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 use std::mem;
-use std::sync::OnceLock;
+use std::sync::{Mutex as StdMutex, OnceLock};
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -57,13 +57,28 @@ struct Trampolines {
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 
 static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D12RenderEngine>>> = OnceCell::new();
-static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
+// static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
+static mut COMMAND_QUEUE: StdMutex<Option<ID3D12CommandQueue>> = StdMutex::new(None);
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+
+fn set_command_queue(new_queue: ID3D12CommandQueue) {
+    unsafe {
+        let mut command_queue = COMMAND_QUEUE.lock().unwrap();
+        *command_queue = Some(new_queue);
+    }
+}
+
+fn get_command_queue() -> Option<ID3D12CommandQueue> {
+    unsafe {
+        let command_queue = COMMAND_QUEUE.lock().unwrap();
+        command_queue.clone()
+    }
+}
 
 unsafe fn init_pipeline(
     swap_chain: &IDXGISwapChain3,
 ) -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
-    let Some(command_queue) = COMMAND_QUEUE.get() else {
+    let Some(command_queue) = get_command_queue() else {
         error!("Command queue not yet initialized");
         return Err(Error::from_hresult(HRESULT(-1)));
     };
@@ -71,7 +86,7 @@ unsafe fn init_pipeline(
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
 
     let mut ctx = Context::create();
-    let engine = D3D12RenderEngine::new(command_queue, &mut ctx)?;
+    let engine = D3D12RenderEngine::new(&command_queue, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         error!("Render loop not yet initialized");
@@ -151,17 +166,10 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    COMMAND_QUEUE
-        .get_or_try_init(|| unsafe {
-            let desc = command_queue.GetDesc();
-            if desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT {
-                Ok(command_queue.clone())
-            } else {
-                Err(())
-            }
-        })
-        .ok();
-
+    let desc = command_queue.GetDesc();
+    if desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT {
+        set_command_queue(command_queue.clone());
+    }
     d3d12_command_queue_execute_command_lists(command_queue, num_command_lists, command_lists);
 }
 
@@ -309,7 +317,7 @@ impl Hooks for ImguiDx12Hooks {
     unsafe fn unhook(&mut self) {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
-        COMMAND_QUEUE.take();
+        // COMMAND_QUEUE.take();
         RENDER_LOOP.take(); // should already be null
     }
 }
