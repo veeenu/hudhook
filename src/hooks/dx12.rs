@@ -2,14 +2,17 @@
 
 use std::ffi::c_void;
 use std::mem;
+use std::ptr::null_mut;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{error, trace};
+use tracing::{error, info, trace};
+use windows::core::IUnknown;
 use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::BOOL;
+use windows::Win32::Foundation::{BOOL, E_NOINTERFACE};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device, ID3D12Resource,
@@ -24,6 +27,7 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
+use windows::Win32::System::Memory::IsBadReadPtr;
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
@@ -57,21 +61,26 @@ struct Trampolines {
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 
 static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D12RenderEngine>>> = OnceCell::new();
-static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
+static COMMAND_QUEUE_OFFSET: AtomicUsize = AtomicUsize::new(0);
 
 unsafe fn init_pipeline(
     swap_chain: &IDXGISwapChain3,
 ) -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
-    let Some(command_queue) = COMMAND_QUEUE.get() else {
-        error!("Command queue not yet initialized");
+    let command_queue_offset = COMMAND_QUEUE_OFFSET.load(Ordering::SeqCst);
+    if command_queue_offset == 0 {
+        error!("Could not find command queue offset into IDXGISwapChain3");
         return Err(Error::from_hresult(HRESULT(-1)));
-    };
+    }
+
+    let command_queue = ID3D12CommandQueue::from_raw(
+        *(swap_chain.as_raw() as *mut *mut c_void).add(command_queue_offset),
+    );
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
 
     let mut ctx = Context::create();
-    let engine = D3D12RenderEngine::new(command_queue, &mut ctx)?;
+    let engine = D3D12RenderEngine::new(&command_queue, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         error!("Render loop not yet initialized");
@@ -151,17 +160,6 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    COMMAND_QUEUE
-        .get_or_try_init(|| unsafe {
-            let desc = command_queue.GetDesc();
-            if desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT {
-                Ok(command_queue.clone())
-            } else {
-                Err(())
-            }
-        })
-        .ok();
-
     d3d12_command_queue_execute_command_lists(command_queue, num_command_lists, command_lists);
 }
 
@@ -220,6 +218,24 @@ fn get_target_addrs() -> (
             panic!("{e:?}");
         },
     };
+
+    let swap_chain_ptr = swap_chain.as_raw() as *mut *mut c_void;
+    let command_queue_ptr = command_queue.as_raw();
+    let command_queue_offset = (0..512).find(|&i| unsafe {
+        let ptr = swap_chain_ptr.add(i as usize);
+        trace!("Trying command queue offset {ptr:p} as {:p} == {command_queue_ptr:p}", *ptr);
+        if command_queue_ptr == *ptr {
+            trace!("Found command queue ptr at offset {i}");
+            true
+        } else {
+            false
+        }
+    });
+
+    match command_queue_offset {
+        Some(offset) => COMMAND_QUEUE_OFFSET.store(offset, Ordering::SeqCst),
+        None => panic!("Could not find command queue offset in IDXGISwapChain3"),
+    }
 
     let present_ptr: DXGISwapChainPresentType =
         unsafe { mem::transmute(swap_chain.vtable().Present) };
@@ -309,7 +325,6 @@ impl Hooks for ImguiDx12Hooks {
     unsafe fn unhook(&mut self) {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
-        COMMAND_QUEUE.take();
         RENDER_LOOP.take(); // should already be null
     }
 }
