@@ -80,6 +80,7 @@ features = [
   "Win32_Graphics_Gdi",
   "Win32_Graphics_OpenGL",
   "Win32_Security",
+  "Win32_System_Com",
   "Win32_System_Console",
   "Win32_System_Diagnostics_Debug",
   "Win32_System_Diagnostics_ToolHelp",
