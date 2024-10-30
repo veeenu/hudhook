@@ -340,11 +340,11 @@ unsafe fn create_shader_program(gl: &gl::Gl) -> (GLuint, GLuint, GLuint, GLuint,
     gl.DeleteShader(fragment_shader);
 
     let projection_loc =
-        gl.GetUniformLocation(program, b"projection_matrix\0".as_ptr() as _) as GLuint;
-    let position_loc = gl.GetAttribLocation(program, b"position\0".as_ptr() as _) as GLuint;
-    let color_loc = gl.GetAttribLocation(program, b"color\0".as_ptr() as _) as GLuint;
-    let uv_loc = gl.GetAttribLocation(program, b"uv\0".as_ptr() as _) as GLuint;
-    let texture_loc = gl.GetUniformLocation(program, b"tex\0".as_ptr() as _) as GLuint;
+        gl.GetUniformLocation(program, c"projection_matrix".as_ptr() as _) as GLuint;
+    let position_loc = gl.GetAttribLocation(program, c"position".as_ptr() as _) as GLuint;
+    let color_loc = gl.GetAttribLocation(program, c"color".as_ptr() as _) as GLuint;
+    let uv_loc = gl.GetAttribLocation(program, c"uv".as_ptr() as _) as GLuint;
+    let texture_loc = gl.GetUniformLocation(program, c"tex".as_ptr() as _) as GLuint;
 
     (program, projection_loc, position_loc, color_loc, uv_loc, texture_loc)
 }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use tracing::trace;
-use windows::core::{s, PCSTR};
+use windows::core::PCSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
 use windows::Win32::Graphics::OpenGL::{
@@ -43,7 +43,7 @@ impl Opengl3Harness {
                     style: CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(window_proc),
                     hInstance: hinstance.into(),
-                    lpszClassName: s!("MyClass\0"),
+                    lpszClassName: PCSTR(c"MyClass".as_ptr().cast()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hIcon: HICON::default(),
@@ -59,7 +59,7 @@ impl Opengl3Harness {
                 let hwnd = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE::default(),
-                        PCSTR("MyClass\0".as_ptr()),
+                        PCSTR(c"MyClass".as_ptr().cast()),
                         PCSTR(caption.as_ptr().cast()),
                         WS_OVERLAPPEDWINDOW | WS_VISIBLE, // dwStyle
                         // size and position

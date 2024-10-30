@@ -111,6 +111,7 @@
 //! }
 //! ```
 #![allow(clippy::needless_doctest_main)]
+#![allow(static_mut_refs)]
 #![deny(missing_docs)]
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -394,7 +395,6 @@ impl Hudhook {
 ///         });
 ///     }
 /// }
-
 pub struct HudhookBuilder(Hudhook);
 
 impl HudhookBuilder {
