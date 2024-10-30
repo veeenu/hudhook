@@ -47,7 +47,7 @@ pub fn setup_tracing() {
         .init();
 }
 
-const IMAGE_COUNT: usize = 3;
+const IMAGE_COUNT: usize = 16;
 
 pub struct HookExample {
     frame_times: Vec<Duration>,
@@ -75,18 +75,43 @@ impl HookExample {
             .into_rgba8();
 
         let dynamic_image = DynamicImage::ImageRgba8(image0.clone());
-        let image1 = dynamic_image.resize(29, 29, FilterType::Lanczos3).to_rgba8();
-        let image2 = dynamic_image.resize(65, 65, FilterType::Lanczos3).to_rgba8();
+
+        let image: [RgbaImage; IMAGE_COUNT] = (0..IMAGE_COUNT)
+            .map(|i| {
+                if i == 0 {
+                    image0.clone()
+                } else {
+                    dynamic_image
+                        .resize((i + 1) as u32 * 10, (i + 1) as u32 * 10, FilterType::Lanczos3)
+                        .to_rgba8()
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+
+        let image_vel: [[f32; 2]; IMAGE_COUNT] = (0..IMAGE_COUNT)
+            .map(|i| {
+                let i = i + 1;
+                if i % 2 == 0 {
+                    [i as f32 * 10.0, i as f32 * 20.0]
+                } else {
+                    [i as f32 * 20.0, i as f32 * 10.0]
+                }
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
 
         HookExample {
             frame_times: Vec::new(),
             first_time: None,
             last_time: None,
             dynamic_image,
-            image: [image0, image1, image2],
-            image_id: [None, None, None],
-            image_pos: [[16.0, 16.0], [16.0, 16.0], [16.0, 16.0]],
-            image_vel: [[200.0, 200.0], [100.0, 200.0], [200.0, 100.0]],
+            image,
+            image_id: [None; IMAGE_COUNT],
+            image_pos: [[16.0, 16.0]; IMAGE_COUNT],
+            image_vel,
             last_upload_time: 0,
             main_window_movable: true,
         }
@@ -197,30 +222,46 @@ impl ImguiRenderLoop for HookExample {
             .size([376.0, 568.0], Condition::FirstUseEver)
             .position([408.0, 16.0], Condition::FirstUseEver)
             .build(|| {
-                for i in 0..IMAGE_COUNT {
-                    let pos = &mut self.image_pos[i];
-                    let vel = &mut self.image_vel[i];
-                    let image = &self.image[i];
-                    let width = image.width() as f32;
-                    let height = image.height() as f32;
+                let _token = ui.tab_bar("##tab_bar");
 
-                    let next_x = pos[0] + vel[0] * frame_time;
-                    let next_y = pos[1] + vel[1] * frame_time;
+                if ui.tab_item("Animated").is_some() {
+                    for i in 0..IMAGE_COUNT {
+                        let pos = &mut self.image_pos[i];
+                        let vel = &mut self.image_vel[i];
+                        let image = &self.image[i];
+                        let width = image.width() as f32;
+                        let height = image.height() as f32;
 
-                    if next_x < 16. || next_x > 376. - 16. - width {
-                        vel[0] = -vel[0];
+                        let next_x = pos[0] + vel[0] * frame_time;
+                        let next_y = pos[1] + vel[1] * frame_time;
+
+                        if next_x < 16. || next_x > 376. - 16. - width {
+                            vel[0] = -vel[0];
+                        }
+                        pos[0] = next_x.clamp(16., 376. - 16. - width);
+
+                        if next_y < 16. || next_y > 568. - 16. - height {
+                            vel[1] = -vel[1];
+                        }
+                        pos[1] = next_y.clamp(16., 568. - 16. - height);
+
+                        ui.set_cursor_pos(*pos);
+
+                        if let Some(tex_id) = self.image_id[i] {
+                            Image::new(tex_id, [width, height]).build(ui);
+                        }
                     }
-                    pos[0] = next_x.clamp(16., 376. - 16. - width);
+                }
 
-                    if next_y < 16. || next_y > 568. - 16. - height {
-                        vel[1] = -vel[1];
-                    }
-                    pos[1] = next_y.clamp(16., 568. - 16. - height);
-
-                    ui.set_cursor_pos(*pos);
-
-                    if let Some(tex_id) = self.image_id[i] {
-                        Image::new(tex_id, [width, height]).build(ui);
+                if ui.tab_item("Image list").is_some() {
+                    for i in 0..IMAGE_COUNT {
+                        if let Some(tex_id) = self.image_id[i] {
+                            let image = &self.image[i];
+                            let width = image.width() as f32;
+                            let height = image.height() as f32;
+                            ui.text(format!("Image {i}"));
+                            Image::new(tex_id, [width, height]).build(ui);
+                        }
                     }
                 }
             });
