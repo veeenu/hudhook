@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 use windows::core::{Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -24,7 +24,6 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
-use windows::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, PAGE_READWRITE};
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
@@ -115,32 +114,18 @@ impl InitializationContext {
         command_queue: &ID3D12CommandQueue,
     ) -> bool {
         let swap_chain_ptr = swap_chain.as_raw() as *mut *mut c_void;
-        let mut mbi = MEMORY_BASIC_INFORMATION::default();
+        let readable_ptrs = util::readable_region(swap_chain_ptr, 512);
 
-        for i in 0..512 {
-            let command_queue_ptr = swap_chain_ptr.add(i);
-            if VirtualQuery(Some(command_queue_ptr as *const c_void), &mut mbi, size_of_val(&mbi))
-                == 0
-            {
-                continue;
-            }
-
-            trace!(
-                "Offset {i} pointer {command_queue_ptr:p} against {:p} has protect {:?}",
-                command_queue.as_raw(),
-                mbi.Protect
+        let has_correct_ptr = readable_ptrs.iter().any(|&ptr| ptr == command_queue.as_raw());
+        if !has_correct_ptr && readable_ptrs.len() != 512 {
+            warn!(
+                "Didn't find command queue pointer in swap chain vtable
+                    ({} out of 512 pointers were readable)",
+                readable_ptrs.len()
             );
-
-            if !mbi.Protect.contains(PAGE_READWRITE) {
-                continue;
-            }
-
-            if *command_queue_ptr == command_queue.as_raw() {
-                return true;
-            }
         }
 
-        false
+        has_correct_ptr
     }
 }
 
