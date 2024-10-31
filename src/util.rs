@@ -348,3 +348,46 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     // - `ptr` is a valid pointer to `limit` elements of type `T` and is properly aligned
     std::slice::from_raw_parts(ptr, limit)
 }
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::System::Memory::{VirtualAlloc, VirtualProtect, MEM_COMMIT, PAGE_NOACCESS};
+
+    use super::*;
+
+    #[test]
+    fn test_readable_region() -> windows::core::Result<()> {
+        const PAGE_SIZE: usize = 0x1000;
+
+        let region = unsafe { VirtualAlloc(None, 2 * PAGE_SIZE, MEM_COMMIT, PAGE_READWRITE) };
+        if region.is_null() {
+            return Err(windows::core::Error::from_win32());
+        }
+
+        // Make the second page unreadable
+        let mut old_protect = PAGE_PROTECTION_FLAGS::default();
+        unsafe {
+            VirtualProtect(
+                (region as usize + PAGE_SIZE) as _,
+                PAGE_SIZE,
+                PAGE_NOACCESS,
+                &mut old_protect,
+            )
+        }?;
+        assert_eq!(old_protect, PAGE_READWRITE);
+
+        let slice = unsafe { readable_region::<u8>(region as _, PAGE_SIZE) };
+        assert_eq!(slice.len(), PAGE_SIZE);
+
+        let slice = unsafe { readable_region::<u8>(region as _, PAGE_SIZE + 1) };
+        assert_eq!(slice.len(), PAGE_SIZE);
+
+        let slice = unsafe { readable_region::<u8>((region as usize + PAGE_SIZE) as _, 1) };
+        assert_eq!(slice.is_empty(), true);
+
+        let slice = unsafe { readable_region::<u8>((region as usize + PAGE_SIZE - 1) as _, 2) };
+        assert_eq!(slice.len(), 1);
+
+        Ok(())
+    }
+}
