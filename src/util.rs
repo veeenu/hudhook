@@ -288,8 +288,8 @@ impl Fence {
 
 /// Returns a slice of **up to** `limit` elements of type `T` starting at `ptr`.
 ///
-/// If the memory protection of some pages in this region prevents reading from it,
-/// the slice is truncated to the first `N` consecutive readable elements.
+/// If the memory protection of some pages in this region prevents reading from
+/// it, the slice is truncated to the first `N` consecutive readable elements.
 ///
 /// # Safety
 ///
@@ -321,8 +321,8 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     };
     let page_align_mask = page_size_bytes - 1;
 
-    // Calculate the starting address of the first and last pages that need to be readable
-    // in order to read `limit` elements of type `T` from `ptr`
+    // Calculate the starting address of the first and last pages that need to be
+    // readable in order to read `limit` elements of type `T` from `ptr`
     let first_page_addr = (ptr as usize) & !page_align_mask;
     let last_page_addr = (ptr as usize + (limit * size_of::<T>()) - 1) & !page_align_mask;
 
@@ -345,7 +345,8 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     }
 
     // SAFETY:
-    // - `ptr` is a valid pointer to `limit` elements of type `T` and is properly aligned
+    // - `ptr` is a valid pointer to `limit` elements of type `T` and is properly
+    //   aligned
     std::slice::from_raw_parts(ptr, limit)
 }
 
