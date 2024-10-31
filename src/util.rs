@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(slice.len(), PAGE_SIZE);
 
         let slice = unsafe { readable_region::<u8>((region as usize + PAGE_SIZE) as _, 1) };
-        assert_eq!(slice.is_empty(), true);
+        assert!(slice.is_empty());
 
         let slice = unsafe { readable_region::<u8>((region as usize + PAGE_SIZE - 1) as _, 2) };
         assert_eq!(slice.len(), 1);
