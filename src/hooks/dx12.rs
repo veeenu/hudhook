@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{error, trace, warn};
+use tracing::{debug, error, trace, warn};
 use windows::core::{Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -116,16 +116,23 @@ impl InitializationContext {
         let swap_chain_ptr = swap_chain.as_raw() as *mut *mut c_void;
         let readable_ptrs = util::readable_region(swap_chain_ptr, 512);
 
-        let has_correct_ptr = readable_ptrs.iter().any(|&ptr| ptr == command_queue.as_raw());
-        if !has_correct_ptr && readable_ptrs.len() != 512 {
-            warn!(
-                "Didn't find command queue pointer in swap chain vtable
-                    ({} out of 512 pointers were readable)",
-                readable_ptrs.len()
-            );
+        match readable_ptrs.iter().position(|&ptr| ptr == command_queue.as_raw()) {
+            Some(idx) => {
+                debug!(
+                    "Found command queue pointer in swap chain struct at offset +0x{:x}",
+                    idx * mem::size_of::<usize>(),
+                );
+                true
+            },
+            None => {
+                warn!(
+                    "Couldn't find command queue pointer in swap chain struct ({} out of 512 \
+                     pointers were readable)",
+                    readable_ptrs.len()
+                );
+                false
+            },
         }
-
-        has_correct_ptr
     }
 }
 
