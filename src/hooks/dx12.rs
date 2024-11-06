@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{error, trace};
+use tracing::{debug, error, trace, warn};
 use windows::core::{Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -56,22 +56,101 @@ struct Trampolines {
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
 
+enum InitializationContext {
+    Empty,
+    WithSwapChain(IDXGISwapChain3),
+    Complete(IDXGISwapChain3, ID3D12CommandQueue),
+    Done,
+}
+
+impl InitializationContext {
+    // Transition to a state where the swap chain is set. Ignore other mutations.
+    fn insert_swap_chain(&mut self, swap_chain: &IDXGISwapChain3) {
+        *self = match mem::replace(self, InitializationContext::Empty) {
+            InitializationContext::Empty => {
+                InitializationContext::WithSwapChain(swap_chain.clone())
+            },
+            s => s,
+        }
+    }
+
+    // Transition to a complete state if the swap chain is set and the command queue
+    // is associated with it.
+    fn insert_command_queue(&mut self, command_queue: &ID3D12CommandQueue) {
+        *self = match mem::replace(self, InitializationContext::Empty) {
+            InitializationContext::WithSwapChain(swap_chain) => {
+                if unsafe { Self::check_command_queue(&swap_chain, command_queue) } {
+                    trace!(
+                        "Found command queue matching swap chain {swap_chain:?} at \
+                         {command_queue:?}"
+                    );
+                    InitializationContext::Complete(swap_chain, command_queue.clone())
+                } else {
+                    InitializationContext::WithSwapChain(swap_chain)
+                }
+            },
+            s => s,
+        }
+    }
+
+    // Retrieve the values if the context is complete.
+    fn get(&self) -> Option<(IDXGISwapChain3, ID3D12CommandQueue)> {
+        if let InitializationContext::Complete(swap_chain, command_queue) = self {
+            Some((swap_chain.clone(), command_queue.clone()))
+        } else {
+            None
+        }
+    }
+
+    // Mark the context as done so no further operations are executed on it.
+    fn done(&mut self) {
+        if let InitializationContext::Complete(..) = self {
+            *self = InitializationContext::Done;
+        }
+    }
+
+    unsafe fn check_command_queue(
+        swap_chain: &IDXGISwapChain3,
+        command_queue: &ID3D12CommandQueue,
+    ) -> bool {
+        let swap_chain_ptr = swap_chain.as_raw() as *mut *mut c_void;
+        let readable_ptrs = util::readable_region(swap_chain_ptr, 512);
+
+        match readable_ptrs.iter().position(|&ptr| ptr == command_queue.as_raw()) {
+            Some(idx) => {
+                debug!(
+                    "Found command queue pointer in swap chain struct at offset +0x{:x}",
+                    idx * mem::size_of::<usize>(),
+                );
+                true
+            },
+            None => {
+                warn!(
+                    "Couldn't find command queue pointer in swap chain struct ({} out of 512 \
+                     pointers were readable)",
+                    readable_ptrs.len()
+                );
+                false
+            },
+        }
+    }
+}
+
+static INITIALIZATION_CONTEXT: Mutex<InitializationContext> =
+    Mutex::new(InitializationContext::Empty);
 static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D12RenderEngine>>> = OnceCell::new();
-static mut COMMAND_QUEUE: OnceCell<ID3D12CommandQueue> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
-unsafe fn init_pipeline(
-    swap_chain: &IDXGISwapChain3,
-) -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
-    let Some(command_queue) = COMMAND_QUEUE.get() else {
-        error!("Command queue not yet initialized");
+unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
+    let Some((swap_chain, command_queue)) = ({ INITIALIZATION_CONTEXT.lock().get() }) else {
+        error!("Initialization context incomplete");
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
     let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
 
     let mut ctx = Context::create();
-    let engine = D3D12RenderEngine::new(command_queue, &mut ctx)?;
+    let engine = D3D12RenderEngine::new(&command_queue, &mut ctx)?;
 
     let Some(render_loop) = RENDER_LOOP.take() else {
         error!("Render loop not yet initialized");
@@ -83,12 +162,16 @@ unsafe fn init_pipeline(
         e
     })?;
 
+    {
+        INITIALIZATION_CONTEXT.lock().done();
+    }
+
     Ok(Mutex::new(pipeline))
 }
 
 fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
     unsafe {
-        let pipeline = PIPELINE.get_or_try_init(|| init_pipeline(swap_chain))?;
+        let pipeline = PIPELINE.get_or_try_init(|| init_pipeline())?;
 
         let Some(mut pipeline) = pipeline.try_lock() else {
             error!("Could not lock pipeline");
@@ -111,6 +194,10 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
+    {
+        INITIALIZATION_CONTEXT.lock().insert_swap_chain(&swap_chain);
+    }
+
     let Trampolines { dxgi_swap_chain_present, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
@@ -148,19 +235,12 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
          {command_lists:p}) invoked",
     );
 
+    {
+        INITIALIZATION_CONTEXT.lock().insert_command_queue(&command_queue);
+    }
+
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
-
-    COMMAND_QUEUE
-        .get_or_try_init(|| unsafe {
-            let desc = command_queue.GetDesc();
-            if desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT {
-                Ok(command_queue.clone())
-            } else {
-                Err(())
-            }
-        })
-        .ok();
 
     d3d12_command_queue_execute_command_lists(command_queue, num_command_lists, command_lists);
 }
@@ -309,7 +389,7 @@ impl Hooks for ImguiDx12Hooks {
     unsafe fn unhook(&mut self) {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
-        COMMAND_QUEUE.take();
         RENDER_LOOP.take(); // should already be null
+        *INITIALIZATION_CONTEXT.lock() = InitializationContext::Empty;
     }
 }
