@@ -4,7 +4,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/veeenu/hudhook)](https://github.com/veeenu/hudhook/releases)
 [![Crates.io Version](https://img.shields.io/crates/v/hudhook)](https://crates.io/crates/hudhook)
 [![GitHub License](https://img.shields.io/github/license/veeenu/hudhook)](https://github.com/veeenu/hudhook/blob/main/LICENSE)
-[![Discord](https://img.shields.io/discord/267623298647457802)](https://discord.gg/CVHbN7eF)
+[![Discord](https://img.shields.io/discord/267623298647457802)](https://discord.gg/jhF3jTTCUs)
 [![book](https://img.shields.io/badge/docs-book-brightgreen)](https://veeenu.github.io/hudhook)
 [![rustdoc](https://img.shields.io/badge/docs-rustdoc-brightgreen)](https://veeenu.github.io/hudhook/rustdoc/hudhook)
 [![Patreon](https://img.shields.io/badge/Support_me-Patreon-orange)](https://www.patreon.com/johndisandonato)
