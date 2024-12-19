@@ -3,7 +3,7 @@ use std::io::Cursor;
 use std::sync::Mutex;
 
 use hudhook::*;
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use image::{EncodableLayout, RgbaImage};
 use imgui::{Condition, Image, TextureId};
 use tracing_subscriber::prelude::*;
