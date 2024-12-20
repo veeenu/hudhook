@@ -1,8 +1,7 @@
 use std::io::Cursor;
 
 use hudhook::{ImguiRenderLoop, RenderContext};
-use image::ImageReader;
-use image::{EncodableLayout, RgbaImage};
+use image::{EncodableLayout, ImageReader, RgbaImage};
 use imgui::{Condition, Context, Image, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};

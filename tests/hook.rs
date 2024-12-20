@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use hudhook::{ImguiRenderLoop, MessageFilter, RenderContext};
 use image::imageops::FilterType;
-use image::ImageReader;
-use image::{DynamicImage, EncodableLayout, RgbaImage};
+use image::{DynamicImage, EncodableLayout, ImageReader, RgbaImage};
 use imgui::{Condition, Context, Image, StyleColor, TextureId};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
