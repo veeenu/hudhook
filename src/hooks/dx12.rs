@@ -116,7 +116,7 @@ impl InitializationContext {
         let swap_chain_ptr = swap_chain.as_raw() as *mut *mut c_void;
         let readable_ptrs = util::readable_region(swap_chain_ptr, 512);
 
-        match readable_ptrs.iter().position(|&ptr| ptr == command_queue.as_raw()) {
+        match readable_ptrs.iter().position(|&ptr| std::ptr::eq(ptr, command_queue.as_raw())) {
             Some(idx) => {
                 debug!(
                     "Found command queue pointer in swap chain struct at offset +0x{:x}",

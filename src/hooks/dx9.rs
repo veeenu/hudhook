@@ -79,10 +79,10 @@ fn render(device: &IDirect3DDevice9) -> Result<()> {
     let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO)? };
 
     unsafe { device.BeginScene() }?;
-    pipeline.render(surface)?;
+    let render_result = pipeline.render(surface);
     unsafe { device.EndScene() }?;
 
-    Ok(())
+    render_result
 }
 
 unsafe extern "system" fn dx9_present_impl(
