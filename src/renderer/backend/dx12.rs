@@ -15,8 +15,11 @@ use windows::Win32::Graphics::Direct3D12::*;
 use windows::Win32::Graphics::Dxgi::Common::*;
 
 use crate::renderer::RenderEngine;
-use crate::util::{self, Fence};
+use crate::util;
 use crate::RenderContext;
+
+#[cfg(feature = "fenced_dx12")]
+use crate::util::Fence;
 
 pub struct D3D12RenderEngine {
     device: ID3D12Device,
@@ -37,6 +40,7 @@ pub struct D3D12RenderEngine {
     index_buffer: Buffer<u16>,
     projection_buffer: [[f32; 4]; 4],
 
+    #[cfg(feature = "fenced_dx12")]
     fence: Fence,
 }
 
@@ -53,6 +57,7 @@ impl D3D12RenderEngine {
         let vertex_buffer = Buffer::new(&device, 5000)?;
         let index_buffer = Buffer::new(&device, 10000)?;
 
+        #[cfg(feature = "fenced_dx12")]
         let fence = Fence::new(&device)?;
 
         ctx.set_ini_filename(None);
@@ -72,6 +77,7 @@ impl D3D12RenderEngine {
             vertex_buffer,
             index_buffer,
             projection_buffer: Default::default(),
+            #[cfg(feature = "fenced_dx12")]
             fence,
         })
     }
@@ -128,10 +134,12 @@ impl RenderEngine for D3D12RenderEngine {
             self.command_list.ResourceBarrier(&rtv_to_present_barriers);
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
-            self.fence.wait()?;
-            self.fence.incr();
-
+            #[cfg(feature = "fenced_dx12")]
+            {
+                self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
+                self.fence.wait()?;
+                self.fence.incr();
+            }
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
         }
@@ -657,6 +665,7 @@ struct TextureHeap {
     command_queue: ID3D12CommandQueue,
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
+    #[cfg(feature = "fenced_dx12")]
     fence: Fence,
 }
 
@@ -693,8 +702,6 @@ impl TextureHeap {
             })
         }?;
 
-        let fence = Fence::new(device)?;
-
         Ok(Self {
             device: device.clone(),
             srv_heap,
@@ -703,7 +710,8 @@ impl TextureHeap {
             command_queue,
             command_allocator,
             command_list,
-            fence,
+            #[cfg(feature = "fenced_dx12")]
+            fence: Fence::new(device)?,
         })
     }
 
@@ -930,10 +938,12 @@ impl TextureHeap {
         self.command_list.ResourceBarrier(&barriers);
         self.command_list.Close()?;
         self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-        self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
-        self.fence.wait()?;
-        self.fence.incr();
-
+        #[cfg(feature = "fenced_dx12")]
+        {
+            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
+            self.fence.wait()?;
+            self.fence.incr();
+        }
         barriers.into_iter().for_each(util::drop_barrier);
 
         // Apparently, leaking the upload buffer into the location is necessary.

@@ -19,7 +19,7 @@ targets = [
 ]
 
 [features]
-default = ["dx9", "dx11", "dx12", "opengl3", "inject"]
+default = ["dx9", "dx11", "dx12", "fenced_dx12", "opengl3", "inject"]
 dx9 = []
 dx11 = []
 dx12 = []
@@ -28,6 +28,7 @@ inject = []
 imgui-freetype = ["imgui/freetype"]
 imgui-docking = ["imgui/docking"]
 imgui-tables-api = ["imgui/tables-api"]
+fenced_dx12 = []
 
 [[example]]
 name = "simple_hook"
