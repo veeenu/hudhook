@@ -3,7 +3,7 @@
 
 use std::ffi::{c_void, OsString};
 use std::fmt::Display;
-use std::mem::ManuallyDrop;
+use std::mem::{size_of, ManuallyDrop};
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
