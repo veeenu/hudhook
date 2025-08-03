@@ -3,6 +3,9 @@
 use std::ffi::c_void;
 use std::mem;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::Duration;
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -28,7 +31,7 @@ use windows::Win32::Graphics::Dxgi::{
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D12RenderEngine, Pipeline};
-use crate::{util, Hooks, ImguiRenderLoop};
+use crate::{util, Hooks, ImguiRenderLoop, WAITING_TO_DISABLE, PRESENT_WAITING_FOR_DISABLE, DISABLE_FINISHED};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(this: IDXGISwapChain3, sync_interval: u32, flags: u32) -> HRESULT;
@@ -207,7 +210,20 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     }
 
     trace!("Call IDXGISwapChain::Present trampoline");
-    dxgi_swap_chain_present(swap_chain, sync_interval, flags)
+    let result = dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+
+    if WAITING_TO_DISABLE.load(Ordering::SeqCst) {
+        PRESENT_WAITING_FOR_DISABLE.store(true, Ordering::SeqCst);
+        loop {
+            if DISABLE_FINISHED.load(Ordering::SeqCst) {
+                break;
+            }
+            trace!("Waiting for disable to finish...");
+            thread::sleep(Duration::from_millis(1)); // Sleep briefly to reduce CPU use
+        }
+    }
+
+    result
 }
 
 unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
@@ -390,6 +406,7 @@ impl Hooks for ImguiDx12Hooks {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
         RENDER_LOOP.take(); // should already be null
+
         *INITIALIZATION_CONTEXT.lock() = InitializationContext::Empty;
     }
 }

@@ -116,10 +116,11 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
-use tracing::error;
+use tracing::{warn, error, trace};
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
@@ -145,6 +146,10 @@ pub mod util;
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
+static WAITING_TO_DISABLE: AtomicBool = AtomicBool::new(false);
+static PRESENT_WAITING_FOR_DISABLE: AtomicBool = AtomicBool::new(false);
+static DISABLE_FINISHED: AtomicBool = AtomicBool::new(false);
+
 
 /// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
 pub trait RenderContext {
@@ -215,6 +220,7 @@ pub fn free_console() -> Result<(), Error> {
 /// Befor calling [`eject`], make sure to perform any manual cleanup (e.g.
 /// dropping/resetting the contents of static mutable variables).
 pub fn eject() {
+    trace!("Ejecting");
     thread::spawn(|| unsafe {
         if let Err(e) = free_console() {
             error!("{e:?}");
@@ -226,9 +232,14 @@ pub fn eject() {
             }
         }
 
+        // Crashes often occur without a sleep here for at least a frame,
+        // this could probably be improved with some knowledge of what
+        // might still be accessing the dll
+        thread::sleep(Duration::from_millis(50));
         if let Some(module) = MODULE.take() {
             FreeLibraryAndExitThread(module, 0);
         }
+        trace!("Finished ejecting!");
     });
 }
 
@@ -313,7 +324,10 @@ impl Hudhook {
     fn new() -> Self {
         // Initialize minhook.
         match unsafe { MH_Initialize() } {
-            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+            MH_STATUS::MH_OK => {},
+            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED => {
+                warn!("Minhook already initialized");
+            },
             status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
             _ => unreachable!(),
         }
@@ -343,6 +357,18 @@ impl Hudhook {
 
     /// Disable and cleanup the hooks.
     pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
+        trace!("Unapply hook");
+        WAITING_TO_DISABLE.store(true, Ordering::SeqCst);
+
+        loop {
+            if PRESENT_WAITING_FOR_DISABLE.load(Ordering::SeqCst) {
+                break;
+            }
+            trace!("Waiting for present...");
+            thread::sleep(Duration::from_millis(1)); // Sleep briefly to reduce CPU use
+        }
+
+        trace!("Removing hook");
         // Queue disabling all the hooks.
         for hook in self.hooks() {
             unsafe { hook.queue_disable()? };
@@ -354,10 +380,13 @@ impl Hudhook {
         // Uninitialize minhook.
         unsafe { MH_Uninitialize().ok_context("MH_Uninitialize")? };
 
+        DISABLE_FINISHED.store(true, Ordering::SeqCst);
+
         // Invoke cleanup for all hooks.
         for hook in &mut self.0 {
             unsafe { hook.unhook() };
         }
+        trace!("Finished removing hook");
 
         Ok(())
     }
