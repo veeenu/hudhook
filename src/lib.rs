@@ -120,6 +120,7 @@ use std::time::Duration;
 
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 use tracing::{warn, error, trace};
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
@@ -131,6 +132,7 @@ use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
+
 
 pub mod hooks;
 #[cfg(feature = "inject")]
@@ -146,9 +148,8 @@ pub mod util;
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
-static WAITING_TO_DISABLE: AtomicBool = AtomicBool::new(false);
-static PRESENT_WAITING_FOR_DISABLE: AtomicBool = AtomicBool::new(false);
-static DISABLE_FINISHED: AtomicBool = AtomicBool::new(false);
+static EJECT_REQUESTED: AtomicBool = AtomicBool::new(false);
+static HOOK_USAGE_LOCK: RwLock::<bool> = RwLock::new(false);
 
 
 /// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
@@ -220,22 +221,26 @@ pub fn free_console() -> Result<(), Error> {
 /// Befor calling [`eject`], make sure to perform any manual cleanup (e.g.
 /// dropping/resetting the contents of static mutable variables).
 pub fn eject() {
-    trace!("Ejecting");
+    trace!("Requesting eject");
+    EJECT_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Perform the ejection that was previously requested
+unsafe fn perform_eject() {
+    trace!("Performing eject");
+    if let Err(e) = free_console() {
+        error!("{e:?}");
+    }
+
+    if let Some(mut hudhook) = HUDHOOK.take() {
+        if let Err(e) = hudhook.unapply() {
+            error!("Couldn't unapply hooks: {e:?}");
+        }
+    }
+
     thread::spawn(|| unsafe {
-        if let Err(e) = free_console() {
-            error!("{e:?}");
-        }
+        let _hook_usage_lock = HOOK_USAGE_LOCK.write();
 
-        if let Some(mut hudhook) = HUDHOOK.take() {
-            if let Err(e) = hudhook.unapply() {
-                error!("Couldn't unapply hooks: {e:?}");
-            }
-        }
-
-        // Crashes often occur without a sleep here for at least a frame,
-        // this could probably be improved with some knowledge of what
-        // might still be accessing the dll
-        thread::sleep(Duration::from_millis(50));
         if let Some(module) = MODULE.take() {
             FreeLibraryAndExitThread(module, 0);
         }
@@ -358,17 +363,6 @@ impl Hudhook {
     /// Disable and cleanup the hooks.
     pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
         trace!("Unapply hook");
-        WAITING_TO_DISABLE.store(true, Ordering::SeqCst);
-
-        loop {
-            if PRESENT_WAITING_FOR_DISABLE.load(Ordering::SeqCst) {
-                break;
-            }
-            trace!("Waiting for present...");
-            thread::sleep(Duration::from_millis(1)); // Sleep briefly to reduce CPU use
-        }
-
-        trace!("Removing hook");
         // Queue disabling all the hooks.
         for hook in self.hooks() {
             unsafe { hook.queue_disable()? };
@@ -379,8 +373,6 @@ impl Hudhook {
 
         // Uninitialize minhook.
         unsafe { MH_Uninitialize().ok_context("MH_Uninitialize")? };
-
-        DISABLE_FINISHED.store(true, Ordering::SeqCst);
 
         // Invoke cleanup for all hooks.
         for hook in &mut self.0 {
