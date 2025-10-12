@@ -8,6 +8,7 @@ use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use parking_lot::{RwLock, RwLockReadGuard};
 use tracing::{debug, error};
 use windows::core::s;
 use windows::Win32::Foundation::{HANDLE, HMODULE, HWND, MAX_PATH, RECT};
@@ -348,6 +349,50 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     // - `ptr` is a valid pointer to `limit` elements of type `T` and is properly
     //   aligned
     std::slice::from_raw_parts(ptr, limit)
+}
+
+/// Implements a barrier to coordinate ejection of hooks
+///
+/// # Usave
+/// - Hooked functions should call and maintain a guard from
+///   `acquire_ejection_guard()` while they are in progress.
+/// - Ejecting code should call `hudhook.unapply()` to ensure that no more
+///   ejection guards will be acquired and then call `wait_for_all_blocks()` to
+///   allow all hooks to exit before calling `FreeLibraryAndExitThread()`
+///
+/// This is implemented with a RwLock which allows us to have multiple
+/// ejection guards in place without blocking each other, and then wait
+/// for all the guards to complete before ejecting.
+pub struct HookEjectionBarrier(RwLock<()>);
+impl HookEjectionBarrier {
+    /// Construct a new ejection barrier
+    pub const fn new() -> Self {
+        Self(RwLock::new(()))
+    }
+
+    /// Acquire a guard to prevent ejection while the guard exists
+    ///
+    /// Multiple guards can be acquired simultaneously and do not block
+    /// each other.
+    pub fn acquire_ejection_guard(&self) -> RwLockReadGuard<'_, ()> {
+        self.0.read()
+    }
+
+    /// Wait for ejection to be safe.
+    ///
+    /// All ejection guards will be awaited before continuing. After this
+    /// is called `acquire_ejection_guard()` should not be called again.
+    pub fn wait_for_all_guards(&self) {
+        // Note: We immediately drop the write lock once acquired, we just
+        // need to ensure that all read locks have also been dropped.
+        let _wait_guard = self.0.write();
+    }
+}
+
+impl Default for HookEjectionBarrier {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

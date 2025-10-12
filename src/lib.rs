@@ -116,12 +116,10 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
 
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
-use parking_lot::RwLock;
-use tracing::{warn, error, trace};
+use tracing::{error, trace, warn};
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
@@ -132,7 +130,7 @@ use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
-
+use crate::util::HookEjectionBarrier;
 
 pub mod hooks;
 #[cfg(feature = "inject")]
@@ -149,8 +147,7 @@ static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
 static EJECT_REQUESTED: AtomicBool = AtomicBool::new(false);
-static HOOK_USAGE_LOCK: RwLock::<bool> = RwLock::new(false);
-
+static HOOK_EJECTION_BARRIER: HookEjectionBarrier = HookEjectionBarrier::new();
 
 /// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
 pub trait RenderContext {
@@ -239,7 +236,12 @@ unsafe fn perform_eject() {
     }
 
     thread::spawn(|| unsafe {
-        let _hook_usage_lock = HOOK_USAGE_LOCK.write();
+        // Wait for all hook ejection guards to complete. As we have
+        // already called `hudhook.unapply()` above any future invocations
+        // of the hooked functions will call the original code, so we just
+        // have to wait for the previous hook invocations to complete before
+        // we continue to free the library.
+        HOOK_EJECTION_BARRIER.wait_for_all_guards();
 
         if let Some(module) = MODULE.take() {
             FreeLibraryAndExitThread(module, 0);
