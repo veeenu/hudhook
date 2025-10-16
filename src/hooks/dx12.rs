@@ -31,10 +31,10 @@ use crate::renderer::{D3D12RenderEngine, Pipeline};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
-    unsafe extern "system" fn(This: IDXGISwapChain3, SyncInterval: u32, Flags: u32) -> HRESULT;
+    unsafe extern "system" fn(this: IDXGISwapChain3, sync_interval: u32, flags: u32) -> HRESULT;
 
 type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
-    This: IDXGISwapChain3,
+    this: IDXGISwapChain3,
     buffer_count: u32,
     width: u32,
     height: u32,
@@ -43,7 +43,7 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
 ) -> HRESULT;
 
 type D3D12CommandQueueExecuteCommandListsType = unsafe extern "system" fn(
-    This: ID3D12CommandQueue,
+    this: ID3D12CommandQueue,
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 );

@@ -31,7 +31,7 @@ use crate::renderer::{D3D11RenderEngine, Pipeline};
 use crate::{util, Hooks, ImguiRenderLoop};
 
 type DXGISwapChainPresentType =
-    unsafe extern "system" fn(This: IDXGISwapChain, SyncInterval: u32, Flags: u32) -> HRESULT;
+    unsafe extern "system" fn(this: IDXGISwapChain, sync_interval: u32, flags: u32) -> HRESULT;
 
 struct Trampolines {
     dxgi_swap_chain_present: DXGISwapChainPresentType,

@@ -1,3 +1,5 @@
 [alias]
 c = "xwin clippy --target x86_64-pc-windows-msvc --all"
 t = "xwin test --target x86_64-pc-windows-msvc"
+cg = "clippy --target x86_64-pc-windows-gnu --all"
+tg = "test --target x86_64-pc-windows-gnu"
