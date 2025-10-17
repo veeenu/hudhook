@@ -2,6 +2,7 @@
 
 use std::ffi::c_void;
 use std::mem;
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use imgui::Context;
@@ -28,7 +29,7 @@ use windows::Win32::Graphics::Dxgi::{
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D12RenderEngine, Pipeline};
-use crate::{util, Hooks, ImguiRenderLoop};
+use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(this: IDXGISwapChain3, sync_interval: u32, flags: u32) -> HRESULT;
@@ -194,6 +195,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
     {
         INITIALIZATION_CONTEXT.lock().insert_swap_chain(&swap_chain);
     }
@@ -207,7 +209,13 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     }
 
     trace!("Call IDXGISwapChain::Present trampoline");
-    dxgi_swap_chain_present(swap_chain, sync_interval, flags)
+    let result = dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
+        perform_eject();
+    }
+
+    result
 }
 
 unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
@@ -218,6 +226,7 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     new_format: DXGI_FORMAT,
     flags: u32,
 ) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
     let Trampolines { dxgi_swap_chain_resize_buffers, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
@@ -230,6 +239,7 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     num_command_lists: u32,
     command_lists: *mut ID3D12CommandList,
 ) {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
     trace!(
         "ID3D12CommandQueue::ExecuteCommandLists({command_queue:?}, {num_command_lists}, \
          {command_lists:p}) invoked",
@@ -390,6 +400,7 @@ impl Hooks for ImguiDx12Hooks {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
         RENDER_LOOP.take(); // should already be null
+
         *INITIALIZATION_CONTEXT.lock() = InitializationContext::Empty;
     }
 }

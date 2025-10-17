@@ -5,3 +5,4 @@ Cargo.lock
 
 .idea
 vkd3d-proton.cache*
+*.swp

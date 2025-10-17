@@ -119,7 +119,7 @@ use std::thread;
 
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
-use tracing::error;
+use tracing::{error, trace, warn};
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
@@ -130,6 +130,7 @@ use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
 pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
+use crate::util::HookEjectionBarrier;
 
 pub mod hooks;
 #[cfg(feature = "inject")]
@@ -145,6 +146,8 @@ pub mod util;
 static mut MODULE: OnceCell<HINSTANCE> = OnceCell::new();
 static mut HUDHOOK: OnceCell<Hudhook> = OnceCell::new();
 static CONSOLE_ALLOCATED: AtomicBool = AtomicBool::new(false);
+static EJECT_REQUESTED: AtomicBool = AtomicBool::new(false);
+static HOOK_EJECTION_BARRIER: HookEjectionBarrier = HookEjectionBarrier::new();
 
 /// Texture Loader for ImguiRenderLoop callbacks to load and replace textures
 pub trait RenderContext {
@@ -215,20 +218,35 @@ pub fn free_console() -> Result<(), Error> {
 /// Befor calling [`eject`], make sure to perform any manual cleanup (e.g.
 /// dropping/resetting the contents of static mutable variables).
 pub fn eject() {
-    thread::spawn(|| unsafe {
-        if let Err(e) = free_console() {
-            error!("{e:?}");
-        }
+    trace!("Requesting eject");
+    EJECT_REQUESTED.store(true, Ordering::SeqCst);
+}
 
-        if let Some(mut hudhook) = HUDHOOK.take() {
-            if let Err(e) = hudhook.unapply() {
-                error!("Couldn't unapply hooks: {e:?}");
-            }
+/// Perform the ejection that was previously requested
+unsafe fn perform_eject() {
+    trace!("Performing eject");
+    if let Err(e) = free_console() {
+        error!("{e:?}");
+    }
+
+    if let Some(mut hudhook) = HUDHOOK.take() {
+        if let Err(e) = hudhook.unapply() {
+            error!("Couldn't unapply hooks: {e:?}");
         }
+    }
+
+    thread::spawn(|| unsafe {
+        // Wait for all hook ejection guards to complete. As we have
+        // already called `hudhook.unapply()` above any future invocations
+        // of the hooked functions will call the original code, so we just
+        // have to wait for the previous hook invocations to complete before
+        // we continue to free the library.
+        HOOK_EJECTION_BARRIER.wait_for_all_guards();
 
         if let Some(module) = MODULE.take() {
             FreeLibraryAndExitThread(module, 0);
         }
+        trace!("Finished ejecting!");
     });
 }
 
@@ -313,7 +331,10 @@ impl Hudhook {
     fn new() -> Self {
         // Initialize minhook.
         match unsafe { MH_Initialize() } {
-            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED | MH_STATUS::MH_OK => {},
+            MH_STATUS::MH_OK => {},
+            MH_STATUS::MH_ERROR_ALREADY_INITIALIZED => {
+                warn!("Minhook already initialized");
+            },
             status @ MH_STATUS::MH_ERROR_MEMORY_ALLOC => panic!("MH_Initialize: {status:?}"),
             _ => unreachable!(),
         }
@@ -343,6 +364,7 @@ impl Hudhook {
 
     /// Disable and cleanup the hooks.
     pub fn unapply(&mut self) -> Result<(), MH_STATUS> {
+        trace!("Unapply hook");
         // Queue disabling all the hooks.
         for hook in self.hooks() {
             unsafe { hook.queue_disable()? };
@@ -358,6 +380,7 @@ impl Hudhook {
         for hook in &mut self.0 {
             unsafe { hook.unhook() };
         }
+        trace!("Finished removing hook");
 
         Ok(())
     }
