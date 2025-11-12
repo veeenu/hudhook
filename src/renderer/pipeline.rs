@@ -111,9 +111,20 @@ impl<T: RenderEngine> Pipeline<T> {
         });
         self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
 
-        let message_filter = self.render_loop.message_filter(self.ctx.io());
-
-        self.shared_state.message_filter.store(message_filter.bits(), Ordering::SeqCst);
+        let io_ro = self.ctx.io();
+        let message_filter = self.render_loop.message_filter(io_ro);
+        let mut filter_bits = message_filter.bits();
+        // We should not dispatch mouse/keyboard events to main game/application if
+        // these fields are true, as described in imgui.h comments.
+        // This prevents some unintentional inputs to main game while operating on
+        // imgui windows.
+        if io_ro.want_capture_mouse {
+            filter_bits |= MessageFilter::InputMouse.bits();
+        }
+        if io_ro.want_capture_keyboard {
+            filter_bits |= MessageFilter::InputKeyboard.bits();
+        }
+        self.shared_state.message_filter.store(filter_bits, Ordering::SeqCst);
 
         let io = self.ctx.io_mut();
 

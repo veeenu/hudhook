@@ -75,6 +75,11 @@ impl MessageFilter {
         match message_id {
             WM_KEYFIRST..=WM_KEYLAST => self.contains(Self::InputKeyboard),
             WM_MOUSEFIRST..=WM_MOUSELAST => self.contains(Self::InputMouse),
+            // WM_MOUSEHOVER = 0x2A1  WM_MOUSELEAVE = 0x2A3
+            0x02A1 | 0x02A3 | WM_NCMOUSEHOVER | WM_NCMOUSELEAVE | WM_NCHITTEST
+            => self.contains(Self::InputMouse),
+            WM_NCMOUSEMOVE..=WM_NCXBUTTONDBLCLK => self.contains(Self::InputMouse),
+            WM_NCPOINTERUPDATE..=WM_POINTERROUTEDRELEASED => self.contains(Self::InputMouse),
             WM_INPUT => self.contains(Self::InputRaw),
 
             WM_MOUSEACTIVATE | WM_ACTIVATEAPP | WM_ACTIVATE | WM_SETFOCUS | WM_KILLFOCUS
