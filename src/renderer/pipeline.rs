@@ -75,7 +75,7 @@ impl<T: RenderEngine> Pipeline<T> {
             mem::transmute::<SwlpRet, WndProcType>(SetWindowLongPtrW(
                 hwnd,
                 GWLP_WNDPROC,
-                pipeline_wnd_proc as usize as _,
+                pipeline_wnd_proc as *const () as _,
             ))
         };
 
