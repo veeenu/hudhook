@@ -2,6 +2,7 @@
 
 use std::ffi::c_void;
 use std::mem;
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use imgui::Context;
@@ -28,7 +29,7 @@ use windows::Win32::Graphics::Dxgi::{
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D11RenderEngine, Pipeline};
-use crate::{util, Hooks, ImguiRenderLoop};
+use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(this: IDXGISwapChain, sync_interval: u32, flags: u32) -> HRESULT;
@@ -83,6 +84,8 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     sync_interval: u32,
     flags: u32,
 ) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
     let Trampolines { dxgi_swap_chain_present } =
         TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
 
@@ -91,7 +94,11 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
     }
 
     trace!("Call IDXGISwapChain::Present trampoline");
-    dxgi_swap_chain_present(swap_chain, sync_interval, flags)
+    let result = dxgi_swap_chain_present(swap_chain, sync_interval, flags);
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
+        perform_eject();
+    }
+    result
 }
 
 fn get_target_addrs() -> DXGISwapChainPresentType {
