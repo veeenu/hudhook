@@ -20,6 +20,6 @@ fn test_imgui_dx12() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
-    thread::sleep(Duration::from_millis(25000));
+    thread::sleep(Duration::from_millis(7000));
     drop(dx12_harness);
 }

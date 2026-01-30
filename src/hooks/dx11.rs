@@ -12,7 +12,7 @@ use tracing::{error, trace};
 use windows::core::{Error, Interface, Result, HRESULT};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_NULL, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
+    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
@@ -110,7 +110,7 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
     unsafe {
         D3D11CreateDeviceAndSwapChain(
             None,
-            D3D_DRIVER_TYPE_NULL,
+            D3D_DRIVER_TYPE_HARDWARE,
             None,
             D3D11_CREATE_DEVICE_FLAG(0),
             Some(&[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0]),
