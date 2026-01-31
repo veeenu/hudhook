@@ -105,6 +105,10 @@ impl RenderEngine for D3D11RenderEngine {
 
 impl D3D11RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
+        if draw_data.total_vtx_count <= 0 {
+            return Ok(());
+        }
+
         self.vertex_buffer.clear();
         self.index_buffer.clear();
         self.projection_buffer.clear();
