@@ -150,7 +150,7 @@ impl RenderEngine for D3D12RenderEngine {
 
 impl D3D12RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
-        if draw_data.total_vtx_count <= 0 {
+        if draw_data.total_vtx_count == 0 {
             return Ok(());
         }
 
