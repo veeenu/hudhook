@@ -119,7 +119,7 @@ impl D3D9RenderEngine {
         if draw_data.total_vtx_count == 0 {
             return Ok(());
         }
-        
+
         self.vertex_buffer.clear();
         self.index_buffer.clear();
 
