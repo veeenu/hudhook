@@ -2,6 +2,7 @@
 
 use std::ffi::c_void;
 use std::mem;
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use imgui::Context;
@@ -20,7 +21,7 @@ use windows::Win32::Graphics::Gdi::RGNDATA;
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D9RenderEngine, Pipeline};
-use crate::{util, Hooks, ImguiRenderLoop};
+use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type Dx9PresentType = unsafe extern "system" fn(
     this: IDirect3DDevice9,
@@ -92,6 +93,8 @@ unsafe extern "system" fn dx9_present_impl(
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
     let Trampolines { dx9_present, .. } =
         TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 
@@ -100,12 +103,18 @@ unsafe extern "system" fn dx9_present_impl(
     }
 
     trace!("Call IDirect3DDevice9::Present trampoline");
-    dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
+    let result = dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
+        perform_eject();
+    }
+    result
 }
 unsafe extern "system" fn dx9_reset_impl(
     this: IDirect3DDevice9,
     present_params: *const D3DPRESENT_PARAMETERS,
 ) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
     let Trampolines { dx9_reset, .. } =
         TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 

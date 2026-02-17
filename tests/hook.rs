@@ -60,6 +60,7 @@ pub struct HookExample {
     image_vel: [[f32; 2]; IMAGE_COUNT],
     last_upload_time: u64,
     main_window_movable: bool,
+    startup: Instant,
 }
 
 impl HookExample {
@@ -114,6 +115,7 @@ impl HookExample {
             image_vel,
             last_upload_time: 0,
             main_window_movable: true,
+            startup: Instant::now(),
         }
     }
 }
@@ -265,6 +267,11 @@ impl ImguiRenderLoop for HookExample {
                     }
                 }
             });
+
+        if self.startup.elapsed() > Duration::from_millis(5000) {
+            println!("Ejecting!");
+            hudhook::eject();
+        }
     }
 
     fn message_filter(&self, _io: &imgui::Io) -> MessageFilter {
