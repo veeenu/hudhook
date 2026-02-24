@@ -173,6 +173,10 @@ impl<T: RenderEngine> Pipeline<T> {
         self.cleanup();
         self.render_loop
     }
+
+    pub(crate) fn message_filter(&mut self) -> MessageFilter {
+        self.render_loop.message_filter(self.ctx.io())
+    }
 }
 
 unsafe extern "system" fn pipeline_wnd_proc(
