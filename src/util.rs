@@ -268,14 +268,19 @@ impl Fence {
         self.value.load(Ordering::SeqCst)
     }
 
-    /// Atomically increase the fence value.
-    pub fn incr(&self) {
-        self.value.fetch_add(1, Ordering::SeqCst);
+    /// Atomically increase the fence value, returning the previous value.
+    pub fn incr(&self) -> u64 {
+        self.value.fetch_add(1, Ordering::SeqCst)
     }
 
     /// Wait for completion of the fence.
     pub fn wait(&self) -> windows::core::Result<()> {
         let value = self.value();
+        self.wait_for_value(value)
+    }
+
+    /// Wait for a specific fence value to be completed by the GPU.
+    pub fn wait_for_value(&self, value: u64) -> windows::core::Result<()> {
         unsafe {
             if self.fence.GetCompletedValue() < value {
                 self.fence.SetEventOnCompletion(value, self.event)?;
