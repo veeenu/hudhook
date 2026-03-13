@@ -170,11 +170,12 @@ pub trait RenderContext {
 /// Defines the `on_wnd_proc` state.
 #[derive(PartialEq, Eq)]
 pub enum OnWndProcState {
-    /// Pre - this was called **before** the internal `wnd_proc` logic has been
-    /// processed.
+    /// Pre - this was called **before** the internal `wnd_proc` logic has
+    /// been processed.
     Pre,
 
-    /// Post - this was called **after** the internal `wnd_proc` has been processed.
+    /// Post - this was called **after** the internal `wnd_proc` has been
+    /// processed.
     Post,
 }
 
