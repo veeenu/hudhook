@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::keys::vk_to_imgui;
 use crate::renderer::{Pipeline, RenderEngine};
-use crate::MessageFilter;
+use crate::{MessageFilter, OnWndProc, OnWndProcState};
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -278,10 +278,25 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
     LPARAM(lparam): LPARAM,
     pipeline: &mut Pipeline<T>,
 ) {
-    let block_mouse_move = pipeline.message_filter().contains(MessageFilter::InputMouseMove)
-        || pipeline.message_filter().contains(MessageFilter::InputAll);
+    let wnd_proc_decision = pipeline.render_loop().on_wnd_proc(
+        hwnd,
+        umsg,
+        WPARAM(wparam),
+        LPARAM(lparam),
+        OnWndProcState::Pre,
+    );
 
     let io = pipeline.context().io_mut();
+    if wnd_proc_decision == OnWndProc::Break {
+        pipeline.render_loop().on_wnd_proc(
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            OnWndProcState::Post,
+        );
+        return;
+    }
 
     match umsg {
         WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
@@ -335,11 +350,9 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
             io.add_mouse_wheel_event([(wheel_delta_wparam as i16 as f32) / wheel_delta, 0.0]);
         },
         WM_MOUSEMOVE => {
-            if !block_mouse_move {
-                let x = lowordi(lparam as u32) as f32;
-                let y = hiwordi(lparam as u32) as f32;
-                io.add_mouse_pos_event([x, y]);
-            }
+            let x = lowordi(lparam as u32) as f32;
+            let y = hiwordi(lparam as u32) as f32;
+            io.add_mouse_pos_event([x, y]);
         },
         WM_CHAR => io.add_input_character(char::from_u32(wparam as u32).unwrap()),
         WM_SIZE => {
@@ -348,5 +361,11 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
         _ => {},
     };
 
-    pipeline.render_loop().on_wnd_proc(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+    pipeline.render_loop().on_wnd_proc(
+        hwnd,
+        umsg,
+        WPARAM(wparam),
+        LPARAM(lparam),
+        OnWndProcState::Post,
+    );
 }

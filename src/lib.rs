@@ -167,6 +167,28 @@ pub trait RenderContext {
     ) -> Result<(), Error>;
 }
 
+/// Defines the `on_wnd_proc` state.
+#[derive(PartialEq, Eq)]
+pub enum OnWndProcState {
+    /// Pre - this was called **before** the internal `wnd_proc` logic had been processed.
+    Pre,
+
+    /// Post - this was called **after** the internal `wnd_proc` had been processed.
+    Post,
+}
+
+/// Defines what to do with the incoming `wnd_proc` call.
+#[derive(PartialEq, Eq)]
+pub enum OnWndProc {
+    /// Continue - the control-flow proceeds as usual.
+    Continue,
+
+    /// Break - the control-flow is aborted.
+    ///
+    /// **Note**: This only takes effect in case the `on_wnd_proc` call is `pre`, not `post`.
+    Break,
+}
+
 /// Allocate a Windows console.
 pub fn alloc_console() -> Result<(), Error> {
     if !CONSOLE_ALLOCATED.swap(true, Ordering::SeqCst) {
@@ -278,7 +300,16 @@ pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut Ui);
 
     /// Called during the window procedure.
-    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
+    fn on_wnd_proc(
+        &self,
+        _hwnd: HWND,
+        _umsg: u32,
+        _wparam: WPARAM,
+        _lparam: LPARAM,
+        _state: OnWndProcState,
+    ) -> OnWndProc {
+        OnWndProc::Continue
+    }
 
     /// Returns the types of window message that
     /// you do not want to propagate to the main window
