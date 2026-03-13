@@ -26,8 +26,6 @@ bitflags! {
     pub struct MessageFilter: u32 {
         /// Blocks keyboard input event messages.
         const InputKeyboard = 1u32 << 0;
-        /// Blocks mouse move event messages.
-        const InputMouseMove = 1u32 << 1;
         /// Blocks mouse input event message.
         const InputMouse = 1u32 << 2;
         /// Blocks raw input event messages.
@@ -55,7 +53,7 @@ bitflags! {
         const RangeAppRegistered = 1u32 << 31;
 
         /// Blocks keyboard, mouse, raw input messages.
-        const InputAll = Self::InputKeyboard.bits() | Self::InputMouseMove.bits() | Self::InputMouse.bits() | Self::InputRaw.bits();
+        const InputAll = Self::InputKeyboard.bits() | Self::InputMouse.bits() | Self::InputRaw.bits();
         /// Blocks window focus, control, close messages.
         const WindowAll = Self::WindowFocus.bits() | Self::WindowControl.bits() | Self::WindowClose.bits();
     }
@@ -76,10 +74,7 @@ impl MessageFilter {
 
         match message_id {
             WM_KEYFIRST..=WM_KEYLAST => self.contains(Self::InputKeyboard),
-            WM_MOUSEFIRST..=WM_MOUSELAST => {
-                self.contains(Self::InputMouse)
-                    || (message_id == WM_MOUSEMOVE && self.contains(Self::InputMouseMove))
-            },
+            WM_MOUSEFIRST..=WM_MOUSELAST => self.contains(Self::InputMouse),
             WM_INPUT => self.contains(Self::InputRaw),
 
             WM_MOUSEACTIVATE | WM_ACTIVATEAPP | WM_ACTIVATE | WM_SETFOCUS | WM_KILLFOCUS
