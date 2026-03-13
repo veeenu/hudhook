@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::keys::vk_to_imgui;
 use crate::renderer::{Pipeline, RenderEngine};
-use crate::{MessageFilter, OnWndProc, OnWndProcState};
+use crate::{OnWndProc, OnWndProcState};
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;

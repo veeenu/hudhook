@@ -170,10 +170,11 @@ pub trait RenderContext {
 /// Defines the `on_wnd_proc` state.
 #[derive(PartialEq, Eq)]
 pub enum OnWndProcState {
-    /// Pre - this was called **before** the internal `wnd_proc` logic had been processed.
+    /// Pre - this was called **before** the internal `wnd_proc` logic has been
+    /// processed.
     Pre,
 
-    /// Post - this was called **after** the internal `wnd_proc` had been processed.
+    /// Post - this was called **after** the internal `wnd_proc` has been processed.
     Post,
 }
 
@@ -185,7 +186,8 @@ pub enum OnWndProc {
 
     /// Break - the control-flow is aborted.
     ///
-    /// **Note**: This only takes effect in case the `on_wnd_proc` call is `pre`, not `post`.
+    /// **Note**: This only takes effect in case the `on_wnd_proc` call is
+    /// `pre`, not `post`.
     Break,
 }
 
