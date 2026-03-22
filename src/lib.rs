@@ -117,9 +117,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
+pub use imgui;
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
+pub use tracing;
 use tracing::{error, trace, warn};
+pub use windows;
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
@@ -127,7 +130,6 @@ use windows::Win32::System::Console::{
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
-pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 use crate::util::HookEjectionBarrier;
