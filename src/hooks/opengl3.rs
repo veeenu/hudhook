@@ -2,6 +2,7 @@
 
 use std::ffi::{c_void, CString};
 use std::mem;
+use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 
 use imgui::Context;
@@ -14,7 +15,7 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::mh::MhHook;
 use crate::renderer::{OpenGl3RenderEngine, Pipeline};
-use crate::{Hooks, ImguiRenderLoop};
+use crate::{perform_eject, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();
 
@@ -63,6 +64,8 @@ fn render(dc: HDC) -> Result<()> {
 }
 
 unsafe extern "system" fn opengl32_wgl_swap_buffers_impl(dc: HDC) {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
     let Trampolines { opengl32_wgl_swap_buffers } =
         TRAMPOLINES.get().expect("OpenGL3 trampolines uninitialized");
 
@@ -72,6 +75,9 @@ unsafe extern "system" fn opengl32_wgl_swap_buffers_impl(dc: HDC) {
 
     trace!("Call OpenGL3 wglSwapBuffers trampoline");
     opengl32_wgl_swap_buffers(dc);
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
+        perform_eject();
+    }
 }
 
 // Get the address of wglSwapBuffers in opengl32.dll

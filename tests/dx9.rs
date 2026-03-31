@@ -20,6 +20,6 @@ fn test_imgui_dx9() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
-    thread::sleep(Duration::from_millis(5000));
+    thread::sleep(Duration::from_millis(7000));
     drop(dx9_harness);
 }

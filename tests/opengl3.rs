@@ -21,6 +21,6 @@ fn test_imgui_opengl3() {
         eprintln!("Couldn't apply hooks: {e:?}");
     }
 
-    thread::sleep(Duration::from_millis(5000));
+    thread::sleep(Duration::from_millis(7000));
     drop(opengl3_harness);
 }
