@@ -185,7 +185,7 @@ pub fn win_size(hwnd: HWND) -> (i32, i32) {
 
 /// Returns the path of the current module.
 pub fn get_dll_path() -> Option<PathBuf> {
-    let mut hmodule = HMODULE(0);
+    let mut hmodule = HMODULE(std::ptr::null_mut());
     if let Err(e) = unsafe {
         GetModuleHandleExA(
             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
@@ -198,7 +198,7 @@ pub fn get_dll_path() -> Option<PathBuf> {
     }
 
     let mut sz_filename = [0u16; MAX_PATH as usize];
-    let len = unsafe { GetModuleFileNameW(hmodule, &mut sz_filename) } as usize;
+    let len = unsafe { GetModuleFileNameW(Some(hmodule), &mut sz_filename) } as usize;
 
     Some(OsString::from_wide(&sz_filename[..len]).into())
 }

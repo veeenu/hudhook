@@ -9,7 +9,7 @@ use imgui::{Context, DrawCmd, DrawData, DrawIdx, DrawVert, TextureId};
 use once_cell::sync::OnceCell;
 use tracing::error;
 use windows::core::{s, Error, Result, HRESULT, PCSTR};
-use windows::Win32::Foundation::{FARPROC, HINSTANCE};
+use windows::Win32::Foundation::{FARPROC, HMODULE};
 use windows::Win32::Graphics::OpenGL::*;
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 
@@ -34,14 +34,15 @@ mod gl {
 }
 
 unsafe fn load_func(function_string: CString) -> *const c_void {
-    static OPENGL3_LIB: OnceCell<HINSTANCE> = OnceCell::new();
+    static OPENGL3_LIB: OnceCell<usize> = OnceCell::new();
     let module = OPENGL3_LIB
-        .get_or_init(|| LoadLibraryA(s!("opengl32.dll\0")).expect("LoadLibraryA").into());
+        .get_or_init(|| LoadLibraryA(s!("opengl32.dll\0")).expect("LoadLibraryA").0 as usize);
 
     if let Some(wgl_proc_address) = wglGetProcAddress(PCSTR(function_string.as_ptr() as _)) {
         wgl_proc_address as _
     } else {
-        let proc_address: FARPROC = GetProcAddress(*module, PCSTR(function_string.as_ptr() as _));
+        let proc_address: FARPROC =
+            GetProcAddress(HMODULE(*module as *mut c_void), PCSTR(function_string.as_ptr() as _));
         proc_address.unwrap() as _
     }
 }

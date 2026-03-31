@@ -9,8 +9,8 @@ use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{error, trace};
-use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::BOOL;
+use windows::core::{Error, Interface, Result, BOOL, HRESULT};
+use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0,
 };
@@ -23,13 +23,14 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGISwapChain, DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
 use super::DummyHwnd;
 use crate::mh::MhHook;
 use crate::renderer::{D3D11RenderEngine, Pipeline};
-use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
+use crate::{perform_eject, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type DXGISwapChainPresentType =
     unsafe extern "system" fn(this: IDXGISwapChain, sync_interval: u32, flags: u32) -> HRESULT;
@@ -43,7 +44,7 @@ static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D11RenderEngine>>> = OnceCell::ne
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
 unsafe fn init_pipeline(swap_chain: &IDXGISwapChain) -> Result<Mutex<Pipeline<D3D11RenderEngine>>> {
-    let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
+    let hwnd = unsafe { swap_chain.GetDesc() }?.OutputWindow;
 
     let mut ctx = Context::create();
     let engine = D3D11RenderEngine::new(&swap_chain.GetDevice()?, &mut ctx)?;
@@ -111,7 +112,7 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
         D3D11CreateDeviceAndSwapChain(
             None,
             D3D_DRIVER_TYPE_HARDWARE,
-            None,
+            HMODULE(std::ptr::null_mut()),
             D3D11_CREATE_DEVICE_FLAG(0),
             Some(&[D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_11_0]),
             D3D11_SDK_VERSION,
@@ -142,7 +143,7 @@ fn get_target_addrs() -> DXGISwapChainPresentType {
 
     let present_ptr: DXGISwapChainPresentType = unsafe {
         mem::transmute::<
-            unsafe extern "system" fn(*mut c_void, u32, u32) -> HRESULT,
+            unsafe extern "system" fn(*mut c_void, u32, DXGI_PRESENT) -> HRESULT,
             DXGISwapChainPresentType,
         >(swap_chain.vtable().Present)
     };

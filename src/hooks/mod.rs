@@ -4,8 +4,8 @@ use std::mem;
 use std::sync::OnceLock;
 
 use tracing::{debug, error};
-use windows::core::w;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, WPARAM};
+use windows::core::{w, BOOL};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -100,10 +100,11 @@ impl DummyHwnd {
                 100,
                 None,
                 None,
-                wndclass.hInstance,
+                Some(wndclass.hInstance),
                 None,
             )
         };
+        let hwnd = hwnd.expect("CreateWindowExW");
         debug!("{:?}", hwnd);
 
         Self(hwnd, wndclass)
@@ -122,7 +123,7 @@ impl Drop for DummyHwnd {
             if let Err(e) = DestroyWindow(self.0) {
                 error!("DestroyWindow: {e}");
             }
-            if let Err(e) = UnregisterClassW(self.1.lpszClassName, self.1.hInstance) {
+            if let Err(e) = UnregisterClassW(self.1.lpszClassName, Some(self.1.hInstance)) {
                 error!("UnregisterClass: {e}");
             }
         }

@@ -163,7 +163,7 @@ fn handle_raw_input(io: &mut Io, WPARAM(wparam): WPARAM, LPARAM(lparam): LPARAM)
     // Read the raw input data.
     let r = unsafe {
         GetRawInputData(
-            HRAWINPUT(lparam),
+            HRAWINPUT(lparam as *mut c_void),
             RID_INPUT,
             Some(&mut raw_data as *mut _ as *mut c_void),
             &mut raw_data_size,

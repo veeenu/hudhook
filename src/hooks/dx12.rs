@@ -9,8 +9,7 @@ use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{debug, error, trace, warn};
-use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::BOOL;
+use windows::core::{Error, Interface, Result, BOOL, HRESULT};
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12CreateDevice, ID3D12CommandList, ID3D12CommandQueue, ID3D12Device, ID3D12Resource,
@@ -21,8 +20,8 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    CreateDXGIFactory2, IDXGIFactory2, IDXGISwapChain, IDXGISwapChain3, DXGI_SWAP_CHAIN_DESC,
-    DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
+    CreateDXGIFactory2, IDXGIFactory2, IDXGISwapChain, IDXGISwapChain3, DXGI_CREATE_FACTORY_FLAGS,
+    DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH, DXGI_SWAP_EFFECT_FLIP_DISCARD,
     DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
@@ -178,7 +177,7 @@ unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    let hwnd = util::try_out_param(|v| swap_chain.GetDesc(v)).map(|desc| desc.OutputWindow)?;
+    let hwnd = unsafe { swap_chain.GetDesc() }?.OutputWindow;
 
     let mut ctx = Context::create();
     let engine = D3D12RenderEngine::new(&command_queue, &mut ctx)?;
@@ -293,7 +292,8 @@ fn get_target_addrs() -> (
 ) {
     let dummy_hwnd = DummyHwnd::new();
 
-    let factory: IDXGIFactory2 = unsafe { CreateDXGIFactory2(0) }.unwrap();
+    let factory: IDXGIFactory2 =
+        unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0)) }.unwrap();
     let adapter = unsafe { factory.EnumAdapters(0) }.unwrap();
 
     let device: ID3D12Device =

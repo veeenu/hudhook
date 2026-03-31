@@ -6,9 +6,9 @@ use imgui::internal::RawWrapper;
 use imgui::{BackendFlags, Context, DrawCmd, DrawData, DrawIdx, TextureId};
 use tracing::error;
 use windows::core::{Error, Result, HRESULT};
-use windows::Foundation::Numerics::Matrix4x4;
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D9::*;
+use windows_numerics::Matrix4x4;
 
 use crate::renderer::RenderEngine;
 use crate::{util, RenderContext};

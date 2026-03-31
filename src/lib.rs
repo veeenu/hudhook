@@ -259,7 +259,7 @@ unsafe fn perform_eject() {
         HOOK_EJECTION_BARRIER.wait_for_all_guards();
 
         if let Some(module) = MODULE.take() {
-            FreeLibraryAndExitThread(module, 0);
+            FreeLibraryAndExitThread(module.into(), 0);
         }
         trace!("Finished ejecting!");
     });
