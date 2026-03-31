@@ -1,12 +1,12 @@
 use std::ffi::CString;
 use std::mem::MaybeUninit;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, D3DADAPTER_DEFAULT, D3DCLEAR_TARGET, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
     D3DDEVTYPE_HAL, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
@@ -16,8 +16,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    HCURSOR, HICON, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 pub struct Dx9Harness {
@@ -44,16 +44,15 @@ impl Dx9Harness {
                     lpszClassName: PCSTR(c"MyClass".as_ptr().cast()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
-                    hIcon: HICON(0),
-                    hCursor: HCURSOR(0),
-                    hbrBackground: HBRUSH(0),
+                    hIcon: HICON::default(),
+                    hCursor: HCURSOR::default(),
+                    hbrBackground: HBRUSH::default(),
                     lpszMenuName: PCSTR(null_mut()),
                 };
                 unsafe { RegisterClassA(&wnd_class) };
                 let mut rect = RECT { left: 0, top: 0, right: 800, bottom: 600 };
-                unsafe {
-                    AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))
-                };
+                unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, false) }
+                    .unwrap();
                 let handle = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE(0),
@@ -65,12 +64,13 @@ impl Dx9Harness {
                         100,
                         rect.right - rect.left,
                         rect.bottom - rect.top,
-                        HWND(0),
-                        HMENU(0),
-                        hinstance,
+                        None,
+                        None,
+                        Some(hinstance.into()),
                         None,
                     )
-                };
+                }
+                .unwrap();
 
                 let direct3d = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
                 let mut device = None;
@@ -81,30 +81,34 @@ impl Dx9Harness {
                         handle,
                         D3DCREATE_SOFTWARE_VERTEXPROCESSING as _,
                         &mut D3DPRESENT_PARAMETERS {
-                            Windowed: BOOL::from(true),
+                            Windowed: true.into(),
                             SwapEffect: D3DSWAPEFFECT_DISCARD,
                             ..Default::default()
                         },
                         &mut device,
                     )
-                };
+                }
+                .unwrap();
                 let device = device.unwrap();
 
-                unsafe { SetTimer(handle, 0, 100, None) };
+                unsafe { SetTimer(Some(handle), 0, 100, None) };
 
                 loop {
                     eprintln!("Present...");
                     unsafe {
-                        device.Clear(0, null(), D3DCLEAR_TARGET as _, 0x0022cc22, 1.0, 0);
-                        device.Present(null(), null(), None, null());
-                    }
-
-                    eprintln!("Handle message");
-                    if !handle_message(handle) {
-                        break;
+                        device
+                            .Clear(0, std::ptr::null(), D3DCLEAR_TARGET as _, 0x0022cc22, 1.0, 0)
+                            .unwrap();
+                        device
+                            .Present(std::ptr::null(), std::ptr::null(), handle, std::ptr::null())
+                            .unwrap();
                     }
 
                     if done.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    if !handle_message(handle) {
                         break;
                     }
                 }
@@ -122,22 +126,20 @@ impl Drop for Dx9Harness {
     }
 }
 
-#[allow(unused)]
 fn handle_message(window: HWND) -> bool {
+    let mut msg = MaybeUninit::uninit();
     unsafe {
-        let mut msg = MaybeUninit::uninit();
-        if PeekMessageA(msg.as_mut_ptr(), window, 0, 0, PM_REMOVE).0 > 0 {
-            TranslateMessage(msg.as_ptr());
-            DispatchMessageA(msg.as_ptr());
-            msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
-        } else {
-            true
+        if PeekMessageA(msg.as_mut_ptr(), Some(window), 0, 0, PM_REMOVE).0 > 0 {
+            let msg = msg.assume_init();
+            let _ = TranslateMessage(&msg);
+            DispatchMessageA(&msg);
         }
     }
+
+    true
 }
 
-#[allow(unused)]
-pub unsafe extern "system" fn window_proc(
+unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
@@ -146,10 +148,8 @@ pub unsafe extern "system" fn window_proc(
     match msg {
         WM_DESTROY => {
             PostQuitMessage(0);
+            LRESULT(0)
         },
-        _ => {
-            return DefWindowProcA(hwnd, msg, wparam, lparam);
-        },
+        _ => DefWindowProcA(hwnd, msg, wparam, lparam),
     }
-    LRESULT(0)
 }

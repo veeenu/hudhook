@@ -18,8 +18,11 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-type Msg = (HWND, u32, WPARAM, LPARAM);
-static TX: OnceCell<Arc<Sender<Msg>>> = OnceCell::new();
+pub struct SendMsg(pub HWND, pub u32, pub WPARAM, pub LPARAM);
+unsafe impl Send for SendMsg {}
+unsafe impl Sync for SendMsg {}
+
+static TX: OnceCell<Arc<Sender<SendMsg>>> = OnceCell::new();
 
 pub struct Dx12Harness {
     child: Option<JoinHandle<()>>,
@@ -58,7 +61,7 @@ impl Drop for Dx12Harness {
 
 unsafe fn run_harness(
     done: Arc<AtomicBool>,
-    rx: Receiver<(HWND, u32, WPARAM, LPARAM)>,
+    rx: Receiver<SendMsg>,
 ) -> Result<()> {
     trace!("Creating window");
     let hinstance = GetModuleHandleA(PCSTR(null())).unwrap();
@@ -77,7 +80,7 @@ unsafe fn run_harness(
     RegisterClassW(&wnd_class);
 
     let mut rect = RECT { left: 0, top: 0, right: 800, bottom: 600 };
-    AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))?;
+    AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, false)?;
 
     trace!("a");
     let hwnd = CreateWindowExW(
@@ -89,11 +92,11 @@ unsafe fn run_harness(
         100,
         rect.right - rect.left,
         rect.bottom - rect.top,
-        HWND::default(),
-        HMENU::default(),
-        hinstance,
         None,
-    );
+        None,
+        Some(hinstance.into()),
+        None,
+    )?;
 
     trace!("Enabling debug");
     util::enable_debug_interface();
@@ -217,16 +220,16 @@ unsafe fn run_harness(
         rtv_barrier.into_iter().for_each(util::drop_barrier);
         present_barrier.into_iter().for_each(util::drop_barrier);
 
-        swap_chain.Present(0, 0).ok()?;
+        swap_chain.Present(0, DXGI_PRESENT(0)).ok()?;
 
         let mut msg = MSG::default();
-        if PeekMessageA(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
-            TranslateMessage(&msg);
+        if PeekMessageA(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
+            let _ = TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
 
         for msg in rx.try_iter() {
-            let (_hwnd, msg, _wparam, lparam) = msg;
+            let SendMsg(_hwnd, msg, _wparam, lparam) = msg;
 
             match msg {
                 WM_DESTROY => {
@@ -283,7 +286,7 @@ pub unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     if let Some(tx) = TX.get() {
-        tx.send((hwnd, msg, wparam, lparam)).ok();
+        tx.send(SendMsg(hwnd, msg, wparam, lparam)).ok();
     }
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }

@@ -412,7 +412,7 @@ mod tests {
 
         let region = unsafe { VirtualAlloc(None, 2 * PAGE_SIZE, MEM_COMMIT, PAGE_READWRITE) };
         if region.is_null() {
-            return Err(windows::core::Error::from_win32());
+            return Err(windows::core::Error::from_thread());
         }
 
         // Make the second page unreadable
