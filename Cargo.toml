@@ -108,5 +108,5 @@ overflow-checks = false
 lto = "thin"
 
 # TODO: remove this once the fix to imgui-rs/imgui-rs#775 gets released.
-[patch.'crates-io']
-imgui = { git = "https://github.com/imgui-rs/imgui-rs", rev = "cb8beeb" }
+# [patch.'crates-io']
+# imgui = { git = "https://github.com/imgui-rs/imgui-rs", rev = "cb8beeb" }
