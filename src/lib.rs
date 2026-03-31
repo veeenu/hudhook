@@ -117,9 +117,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
+pub use imgui;
 use imgui::{Context, Io, TextureId, Ui};
 use once_cell::sync::OnceCell;
+pub use tracing;
 use tracing::{error, trace, warn};
+pub use windows;
 use windows::core::Error;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::Console::{
@@ -127,7 +130,6 @@ use windows::Win32::System::Console::{
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
 };
 use windows::Win32::System::LibraryLoader::FreeLibraryAndExitThread;
-pub use {imgui, tracing, windows};
 
 use crate::mh::{MH_ApplyQueued, MH_Initialize, MH_Uninitialize, MhHook, MH_STATUS};
 use crate::util::HookEjectionBarrier;
@@ -165,6 +167,31 @@ pub trait RenderContext {
         width: u32,
         height: u32,
     ) -> Result<(), Error>;
+}
+
+/// Defines the `on_wnd_proc` state.
+#[derive(PartialEq, Eq)]
+pub enum OnWndProcState {
+    /// Pre - this was called **before** the internal `wnd_proc` logic has
+    /// been processed.
+    Pre,
+
+    /// Post - this was called **after** the internal `wnd_proc` has been
+    /// processed.
+    Post,
+}
+
+/// Defines what to do with the incoming `wnd_proc` call.
+#[derive(PartialEq, Eq)]
+pub enum OnWndProc {
+    /// Continue - the control-flow proceeds as usual.
+    Continue,
+
+    /// Break - the control-flow is aborted.
+    ///
+    /// **Note**: This only takes effect in case the `on_wnd_proc` call is
+    /// `pre`, not `post`.
+    Break,
 }
 
 /// Allocate a Windows console.
@@ -278,7 +305,16 @@ pub trait ImguiRenderLoop {
     fn render(&mut self, ui: &mut Ui);
 
     /// Called during the window procedure.
-    fn on_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
+    fn on_wnd_proc(
+        &self,
+        _hwnd: HWND,
+        _umsg: u32,
+        _wparam: WPARAM,
+        _lparam: LPARAM,
+        _state: OnWndProcState,
+    ) -> OnWndProc {
+        OnWndProc::Continue
+    }
 
     /// Returns the types of window message that
     /// you do not want to propagate to the main window
