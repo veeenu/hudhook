@@ -27,9 +27,9 @@ bitflags! {
         /// Blocks keyboard input event messages.
         const InputKeyboard = 1u32 << 0;
         /// Blocks mouse input event message.
-        const InputMouse = 1u32 << 1;
+        const InputMouse = 1u32 << 2;
         /// Blocks raw input event messages.
-        const InputRaw = 1u32 << 2;
+        const InputRaw = 1u32 << 3;
 
         /// Blocks window gain/lose focus event messages.
         const WindowFocus = 1u32 << 8;
