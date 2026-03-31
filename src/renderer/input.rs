@@ -14,6 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::keys::vk_to_imgui;
 use crate::renderer::{Pipeline, RenderEngine};
+use crate::{OnWndProc, OnWndProcState};
 
 pub type WndProcType =
     unsafe extern "system" fn(hwnd: HWND, umsg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -277,7 +278,25 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
     LPARAM(lparam): LPARAM,
     pipeline: &mut Pipeline<T>,
 ) {
+    let wnd_proc_decision = pipeline.render_loop().on_wnd_proc(
+        hwnd,
+        umsg,
+        WPARAM(wparam),
+        LPARAM(lparam),
+        OnWndProcState::Pre,
+    );
+
     let io = pipeline.context().io_mut();
+    if wnd_proc_decision == OnWndProc::Break {
+        pipeline.render_loop().on_wnd_proc(
+            hwnd,
+            umsg,
+            WPARAM(wparam),
+            LPARAM(lparam),
+            OnWndProcState::Post,
+        );
+        return;
+    }
 
     match umsg {
         WM_INPUT => handle_raw_input(io, WPARAM(wparam), LPARAM(lparam)),
@@ -342,5 +361,11 @@ pub fn imgui_wnd_proc_impl<T: RenderEngine>(
         _ => {},
     };
 
-    pipeline.render_loop().on_wnd_proc(hwnd, umsg, WPARAM(wparam), LPARAM(lparam));
+    pipeline.render_loop().on_wnd_proc(
+        hwnd,
+        umsg,
+        WPARAM(wparam),
+        LPARAM(lparam),
+        OnWndProcState::Post,
+    );
 }
