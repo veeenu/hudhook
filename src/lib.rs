@@ -174,7 +174,11 @@ pub trait RenderContext {
 /// See [`crate::ImguiRenderLoop::before_wnd_proc`].
 #[derive(PartialEq, Eq)]
 pub enum BeforeWndProc {
+    /// Execute the `wnd_proc` code, and then run
+    /// [`crate::ImguiRenderLoop::after_wnd_proc`].
     Continue,
+    /// Skip the `wnd_proc` code, run
+    /// [`crate::ImguiRenderLoop::after_wnd_proc`].
     Break,
 }
 
