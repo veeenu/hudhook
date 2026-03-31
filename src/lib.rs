@@ -506,7 +506,8 @@ macro_rules! hudhook {
                 ::hudhook::tracing::trace!("DllMain()");
                 let hmodule_raw = hmodule.0 as usize;
                 ::std::thread::spawn(move || {
-                    let hmodule = ::hudhook::windows::Win32::Foundation::HINSTANCE(hmodule_raw as _);
+                    let hmodule =
+                        ::hudhook::windows::Win32::Foundation::HINSTANCE(hmodule_raw as _);
                     if let Err(e) = ::hudhook::Hudhook::builder()
                         .with::<$t>({ $hooks })
                         .with_hmodule(hmodule)

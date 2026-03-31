@@ -59,10 +59,7 @@ impl Drop for Dx12Harness {
     }
 }
 
-unsafe fn run_harness(
-    done: Arc<AtomicBool>,
-    rx: Receiver<SendMsg>,
-) -> Result<()> {
+unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()> {
     trace!("Creating window");
     let hinstance = GetModuleHandleA(PCSTR(null())).unwrap();
     let wnd_class = WNDCLASSW {
