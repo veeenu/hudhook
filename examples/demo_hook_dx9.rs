@@ -8,7 +8,7 @@ mod support;
 ///
 /// haha
 #[no_mangle]
-pub unsafe extern "stdcall" fn DllMain(
+pub unsafe extern "system" fn DllMain(
     hmodule: ::hudhook::windows::Win32::Foundation::HINSTANCE,
     reason: u32,
     _: *mut ::std::ffi::c_void,
@@ -16,7 +16,9 @@ pub unsafe extern "stdcall" fn DllMain(
     if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
         support::setup_tracing();
         ::hudhook::tracing::trace!("DllMain()");
+        let hmodule_raw = hmodule.0 as usize;
         ::std::thread::spawn(move || {
+            let hmodule = ::hudhook::windows::Win32::Foundation::HINSTANCE(hmodule_raw as _);
             if let Err(e) = ::hudhook::Hudhook::builder()
                 .with::<hooks::dx9::ImguiDx9Hooks>(support::HookExample::new())
                 .with_hmodule(hmodule)

@@ -5,9 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use tracing::trace;
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{GetDC, HBRUSH};
 use windows::Win32::Graphics::OpenGL::{
     glClear, glClearColor, wglCreateContext, wglMakeCurrent, ChoosePixelFormat, SetPixelFormat,
@@ -18,8 +17,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WNDCLASSA,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    HCURSOR, HICON, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WNDCLASSA, WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 
 pub struct Opengl3Harness {
@@ -53,9 +52,8 @@ impl Opengl3Harness {
                 };
                 unsafe { RegisterClassA(&wnd_class) };
                 let mut rect = RECT { left: 0, top: 0, right: 800, bottom: 600 };
-                unsafe {
-                    AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))
-                };
+                unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, false) }
+                    .unwrap();
                 let hwnd = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE::default(),
@@ -67,12 +65,13 @@ impl Opengl3Harness {
                         100,
                         rect.right - rect.left,
                         rect.bottom - rect.top,
-                        HWND::default(),  // hWndParent
-                        HMENU::default(), // hMenu
-                        hinstance,        // hInstance
+                        None,                   // hWndParent
+                        None,                   // hMenu
+                        Some(hinstance.into()), // hInstance
                         None,
                     )
-                }; // lpParam
+                }
+                .unwrap(); // lpParam
 
                 let pfd = PIXELFORMATDESCRIPTOR {
                     nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
@@ -103,29 +102,27 @@ impl Opengl3Harness {
                     dwDamageMask: 0,
                 };
 
-                let window_handle = unsafe { GetDC(hwnd) };
-
+                let window_handle = unsafe { GetDC(Some(hwnd)) };
                 let pixel_format = unsafe { ChoosePixelFormat(window_handle, &pfd) };
-                unsafe { SetPixelFormat(window_handle, pixel_format, &pfd) };
+                unsafe { SetPixelFormat(window_handle, pixel_format, &pfd).unwrap() };
 
-                let con = unsafe { wglCreateContext(window_handle) }.unwrap();
-                unsafe { wglMakeCurrent(window_handle, con) };
+                let context = unsafe { wglCreateContext(window_handle).unwrap() };
+                unsafe { wglMakeCurrent(window_handle, context).unwrap() };
 
-                unsafe { SetTimer(hwnd, 0, 100, None) };
+                unsafe { SetTimer(Some(hwnd), 0, 100, None) };
 
                 loop {
-                    trace!("Debug");
-
-                    unsafe { glClearColor(0.0, 1.0, 1.0, 1.0) }
-                    unsafe { glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) };
-
-                    unsafe { SwapBuffers(window_handle) };
-
-                    if !handle_message(hwnd) {
-                        break;
+                    unsafe {
+                        glClearColor(0.2, 0.2, 0.2, 1.0);
+                        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                        SwapBuffers(window_handle);
                     }
 
                     if done.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    if !handle_message(hwnd) {
                         break;
                     }
                 }
@@ -143,34 +140,30 @@ impl Drop for Opengl3Harness {
     }
 }
 
-#[allow(unused)]
 fn handle_message(window: HWND) -> bool {
+    let mut msg = MaybeUninit::uninit();
     unsafe {
-        let mut msg = MaybeUninit::uninit();
-        if PeekMessageA(msg.as_mut_ptr(), window, 0, 0, PM_REMOVE).as_bool() {
-            TranslateMessage(msg.as_ptr());
-            DispatchMessageA(msg.as_ptr());
-            msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
-        } else {
-            true
+        if PeekMessageA(msg.as_mut_ptr(), Some(window), 0, 0, PM_REMOVE).as_bool() {
+            let msg = msg.assume_init();
+            let _ = TranslateMessage(&msg);
+            DispatchMessageA(&msg);
         }
     }
+
+    true
 }
 
-#[allow(unused)]
-pub unsafe extern "system" fn window_proc(
+unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
-    w_param: WPARAM,
-    l_param: LPARAM,
+    wparam: WPARAM,
+    lparam: LPARAM,
 ) -> LRESULT {
     match msg {
         WM_DESTROY => {
             PostQuitMessage(0);
+            LRESULT(0)
         },
-        _ => {
-            return DefWindowProcA(hwnd, msg, w_param, l_param);
-        },
+        _ => DefWindowProcA(hwnd, msg, wparam, lparam),
     }
-    LRESULT(0)
 }

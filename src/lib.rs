@@ -259,7 +259,7 @@ unsafe fn perform_eject() {
         HOOK_EJECTION_BARRIER.wait_for_all_guards();
 
         if let Some(module) = MODULE.take() {
-            FreeLibraryAndExitThread(module, 0);
+            FreeLibraryAndExitThread(module.into(), 0);
         }
         trace!("Finished ejecting!");
     });
@@ -495,7 +495,7 @@ macro_rules! hudhook {
     ($t:ty, $hooks:expr) => {
         /// Entry point created by the `hudhook` library.
         #[no_mangle]
-        pub unsafe extern "stdcall" fn DllMain(
+        pub unsafe extern "system" fn DllMain(
             hmodule: ::hudhook::windows::Win32::Foundation::HINSTANCE,
             reason: u32,
             _: *mut ::std::ffi::c_void,
@@ -504,7 +504,10 @@ macro_rules! hudhook {
 
             if reason == ::hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH {
                 ::hudhook::tracing::trace!("DllMain()");
+                let hmodule_raw = hmodule.0 as usize;
                 ::std::thread::spawn(move || {
+                    let hmodule =
+                        ::hudhook::windows::Win32::Foundation::HINSTANCE(hmodule_raw as _);
                     if let Err(e) = ::hudhook::Hudhook::builder()
                         .with::<$t>({ $hooks })
                         .with_hmodule(hmodule)

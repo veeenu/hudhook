@@ -2,17 +2,17 @@ use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 
 use hudhook::util;
 use windows::core::PCSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
-    D3D11_CREATE_DEVICE_FLAG, D3D11_SDK_VERSION,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, D3D11_CREATE_DEVICE_FLAG,
+    D3D11_SDK_VERSION,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
@@ -25,7 +25,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRect, CreateWindowExA, DefWindowProcA, DispatchMessageA, PeekMessageA,
     PostQuitMessage, RegisterClassA, SetTimer, TranslateMessage, CS_HREDRAW, CS_OWNDC, CS_VREDRAW,
-    HCURSOR, HICON, HMENU, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_QUIT, WM_SIZE, WNDCLASSA,
+    HCURSOR, HICON, PM_REMOVE, WINDOW_EX_STYLE, WM_DESTROY, WM_SIZE, WNDCLASSA,
     WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
@@ -55,16 +55,15 @@ impl Dx11Harness {
                     lpszClassName: PCSTR(c"MyClass".as_ptr().cast()),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
-                    hIcon: HICON(0),
-                    hCursor: HCURSOR(0),
-                    hbrBackground: HBRUSH(0),
+                    hIcon: HICON::default(),
+                    hCursor: HCURSOR::default(),
+                    hbrBackground: HBRUSH::default(),
                     lpszMenuName: PCSTR(null_mut()),
                 };
                 unsafe { RegisterClassA(&wnd_class) };
                 let mut rect = RECT { left: 0, top: 0, right: 800, bottom: 600 };
-                unsafe {
-                    AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, BOOL::from(false))
-                };
+                unsafe { AdjustWindowRect(&mut rect, WS_OVERLAPPEDWINDOW | WS_VISIBLE, false) }
+                    .unwrap();
                 let hwnd = unsafe {
                     CreateWindowExA(
                         WINDOW_EX_STYLE(0),
@@ -76,12 +75,13 @@ impl Dx11Harness {
                         100,
                         rect.right - rect.left,
                         rect.bottom - rect.top,
-                        HWND(0),
-                        HMENU(0),
-                        hinstance,
+                        None,
+                        None,
+                        Some(hinstance.into()),
                         None,
                     )
-                };
+                }
+                .unwrap();
 
                 unsafe { util::enable_debug_interface() };
 
@@ -92,7 +92,7 @@ impl Dx11Harness {
                     D3D11CreateDeviceAndSwapChain(
                         None,
                         D3D_DRIVER_TYPE_HARDWARE,
-                        None,
+                        HMODULE::default(),
                         D3D11_CREATE_DEVICE_FLAG(0),
                         Some(&[D3D_FEATURE_LEVEL_11_0]),
                         D3D11_SDK_VERSION,
@@ -104,12 +104,12 @@ impl Dx11Harness {
                                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                                 ..Default::default()
                             },
+                            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                             BufferCount: 1,
                             OutputWindow: hwnd,
-                            Windowed: BOOL::from(true),
+                            Windowed: true.into(),
                             SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-                            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                             ..Default::default()
                         }),
                         Some(&mut p_swap_chain),
@@ -117,44 +117,27 @@ impl Dx11Harness {
                         None,
                         Some(&mut p_context),
                     )
-                    .unwrap()
+                    .unwrap();
                 };
+
                 let swap_chain = p_swap_chain.unwrap();
-                let device = p_device.unwrap();
-                let context = p_context.unwrap();
 
-                let backbuf: ID3D11Resource = unsafe { swap_chain.GetBuffer(0).unwrap() };
-
-                let mut rtv = util::try_out_ptr(|v| unsafe {
-                    device.CreateRenderTargetView(&backbuf, None, Some(v))
-                })
-                .unwrap();
-
-                unsafe { SetTimer(hwnd, 0, 100, None) };
-
-                let (tx, rx) = mpsc::channel();
-
-                RESIZE.get_or_init(move || tx);
+                unsafe {
+                    SetTimer(Some(hwnd), 0, 100, None);
+                }
 
                 loop {
-                    unsafe { util::print_dxgi_debug_messages() };
-
-                    unsafe { context.ClearRenderTargetView(&rtv, &[0.2, 0.8, 0.2, 0.8]) };
-
-                    eprintln!("Present...");
-                    unsafe { swap_chain.Present(1, 0).unwrap() };
-
-                    eprintln!("Handle message");
-                    if !handle_message(hwnd) {
+                    if done.load(Ordering::SeqCst) {
                         break;
                     }
 
-                    if let Some((width, height)) = rx.try_iter().last() {
-                        let desc =
-                            util::try_out_param(|v| unsafe { swap_chain.GetDesc(v) }).unwrap();
+                    unsafe {
+                        swap_chain
+                            .Present(1, windows::Win32::Graphics::Dxgi::DXGI_PRESENT(0))
+                            .unwrap();
                     };
 
-                    if done.load(Ordering::SeqCst) {
+                    if !handle_message(hwnd) {
                         break;
                     }
                 }
@@ -172,40 +155,36 @@ impl Drop for Dx11Harness {
     }
 }
 
-#[allow(unused)]
 fn handle_message(window: HWND) -> bool {
+    let mut msg = MaybeUninit::uninit();
     unsafe {
-        let mut msg = MaybeUninit::uninit();
-        if PeekMessageA(msg.as_mut_ptr(), window, 0, 0, PM_REMOVE).0 > 0 {
-            TranslateMessage(msg.as_ptr());
-            DispatchMessageA(msg.as_ptr());
-            msg.as_ptr().as_ref().map(|m| m.message != WM_QUIT).unwrap_or(true)
-        } else {
-            true
+        if PeekMessageA(msg.as_mut_ptr(), Some(window), 0, 0, PM_REMOVE).0 > 0 {
+            let msg = msg.assume_init();
+            let _ = TranslateMessage(&msg);
+            DispatchMessageA(&msg);
         }
     }
+
+    true
 }
 
-#[allow(unused)]
-pub unsafe extern "system" fn window_proc(
+unsafe extern "system" fn window_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_SIZE => {
+            if let Some(tx) = RESIZE.get() {
+                tx.send(((lparam.0 & 0xFFFF) as u32, (lparam.0 >> 16) as u32)).unwrap();
+            }
+            LRESULT(0)
+        },
         WM_DESTROY => {
             PostQuitMessage(0);
+            LRESULT(0)
         },
-        WM_SIZE => {
-            let (width, height) = hudhook::util::win_size(hwnd);
-            if let Some(tx) = RESIZE.get() {
-                tx.send((width as _, height as _));
-            }
-        },
-        _ => {
-            return DefWindowProcA(hwnd, msg, wparam, lparam);
-        },
+        _ => DefWindowProcA(hwnd, msg, wparam, lparam),
     }
-    LRESULT(0)
 }

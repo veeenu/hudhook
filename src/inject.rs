@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use tracing::debug;
 use windows::core::{s, w, Error, Result, HRESULT, HSTRING, PCSTR, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, BOOL, HANDLE, MAX_PATH};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32First, Process32FirstW, Process32Next, Process32NextW,
@@ -121,31 +121,23 @@ fn get_process_by_title(title: &str) -> Result<HANDLE> {
 // 32-bit implementation. Uses [`std::ffi::CString`] and `FindWindowA`.
 unsafe fn get_process_by_title32(title: &str) -> Result<HANDLE> {
     let title = HSTRING::from(title).to_os_string();
-    let hwnd = FindWindowA(None, PCSTR(title.as_encoded_bytes().as_ptr()));
-
-    if hwnd.0 == 0 {
-        return Err(Error::from_win32());
-    }
+    let hwnd = FindWindowA(None, PCSTR(title.as_encoded_bytes().as_ptr()))?;
 
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
-    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+    OpenProcess(PROCESS_ALL_ACCESS, false, pid)
 }
 
 // 64-bit implementation. Uses [`widestring::U16CString`] and `FindWindowW`.
 unsafe fn get_process_by_title64(title: &str) -> Result<HANDLE> {
     let title = HSTRING::from(title);
-    let hwnd = FindWindowW(None, PCWSTR(title.as_ptr()));
-
-    if hwnd.0 == 0 {
-        return Err(Error::from_win32());
-    }
+    let hwnd = FindWindowW(None, PCWSTR(title.as_ptr()))?;
 
     let mut pid: u32 = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
-    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+    OpenProcess(PROCESS_ALL_ACCESS, false, pid)
 }
 
 // Find process given the process name.
@@ -168,9 +160,9 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
     let mut pe32 =
         PROCESSENTRY32 { dwSize: mem::size_of::<PROCESSENTRY32>() as u32, ..Default::default() };
 
-    if Process32First(snapshot, &mut pe32).is_err() {
-        CloseHandle(snapshot)?;
-        return Err(Error::from_win32());
+    if let Err(e) = Process32First(snapshot, &mut pe32) {
+        CloseHandle(snapshot).ok();
+        return Err(e);
     }
 
     let pid = loop {
@@ -182,14 +174,14 @@ unsafe fn get_process_by_name32(name_str: &str) -> Result<HANDLE> {
         }
 
         if Process32Next(snapshot, &mut pe32).is_err() {
-            CloseHandle(snapshot)?;
+            CloseHandle(snapshot).ok();
             break Err(Error::from_hresult(HRESULT(-1)));
         }
     }?;
 
     CloseHandle(snapshot)?;
 
-    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+    OpenProcess(PROCESS_ALL_ACCESS, false, pid)
 }
 
 // 64-bit implementation. Uses [`PROCESSENTRY32W`].
@@ -200,26 +192,26 @@ unsafe fn get_process_by_name64(name_str: &str) -> Result<HANDLE> {
     let mut pe32 =
         PROCESSENTRY32W { dwSize: mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
 
-    if Process32FirstW(snapshot, &mut pe32).is_err() {
-        CloseHandle(snapshot)?;
-        return Err(Error::from_win32());
+    if let Err(e) = Process32FirstW(snapshot, &mut pe32) {
+        CloseHandle(snapshot).ok();
+        return Err(e);
     }
 
     let pid = loop {
         let zero_idx = pe32.szExeFile.iter().position(|&x| x == 0).unwrap_or(pe32.szExeFile.len());
-        let proc_name = HSTRING::from_wide(&pe32.szExeFile[..zero_idx])?;
+        let proc_name = HSTRING::from_wide(&pe32.szExeFile[..zero_idx]);
 
         if name == proc_name {
             break Ok(pe32.th32ProcessID);
         }
 
         if Process32NextW(snapshot, &mut pe32).is_err() {
-            CloseHandle(snapshot)?;
+            CloseHandle(snapshot).ok();
             break Err(Error::from_hresult(HRESULT(-1)));
         }
     }?;
 
     CloseHandle(snapshot)?;
 
-    OpenProcess(PROCESS_ALL_ACCESS, BOOL(0), pid)
+    OpenProcess(PROCESS_ALL_ACCESS, false, pid)
 }

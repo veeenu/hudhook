@@ -21,12 +21,19 @@ use crate::{util, ImguiRenderLoop, MessageFilter};
 
 type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 
-static PIPELINE_STATES: Lazy<Mutex<HashMap<isize, Arc<PipelineSharedState>>>> =
+// Safety: HWND is an opaque integer handle, safe to send/share across threads.
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub(crate) struct SendableHwnd(HWND);
+unsafe impl Send for SendableHwnd {}
+unsafe impl Sync for SendableHwnd {}
+
+static PIPELINE_STATES: Lazy<Mutex<HashMap<usize, Arc<PipelineSharedState>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug)]
 pub(crate) struct PipelineMessage(
-    pub(crate) HWND,
+    pub(crate) SendableHwnd,
     pub(crate) u32,
     pub(crate) WPARAM,
     pub(crate) LPARAM,
@@ -86,7 +93,7 @@ impl<T: RenderEngine> Pipeline<T> {
             tx,
         });
 
-        PIPELINE_STATES.lock().insert(hwnd.0, Arc::clone(&shared_state));
+        PIPELINE_STATES.lock().insert(hwnd.0 as usize, Arc::clone(&shared_state));
 
         let queue_buffer = OnceCell::from(Vec::new());
 
@@ -106,9 +113,11 @@ impl<T: RenderEngine> Pipeline<T> {
         let mut queue_buffer = self.queue_buffer.take().unwrap();
         queue_buffer.clear();
         queue_buffer.extend(self.rx.try_iter());
-        queue_buffer.drain(..).for_each(|PipelineMessage(hwnd, umsg, wparam, lparam)| {
-            imgui_wnd_proc_impl(hwnd, umsg, wparam, lparam, self);
-        });
+        queue_buffer.drain(..).for_each(
+            |PipelineMessage(SendableHwnd(hwnd), umsg, wparam, lparam)| {
+                imgui_wnd_proc_impl(hwnd, umsg, wparam, lparam, self);
+            },
+        );
         self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
 
         let message_filter = self.render_loop.message_filter(self.ctx.io());
@@ -167,7 +176,7 @@ impl<T: RenderEngine> Pipeline<T> {
         unsafe {
             SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)
         };
-        PIPELINE_STATES.lock().remove(&self.hwnd.0);
+        PIPELINE_STATES.lock().remove(&(self.hwnd.0 as usize));
     }
 
     pub(crate) fn take(mut self) -> RenderLoop {
@@ -188,7 +197,7 @@ unsafe extern "system" fn pipeline_wnd_proc(
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         };
 
-        let Some(shared_state) = shared_state_guard.get(&hwnd.0) else {
+        let Some(shared_state) = shared_state_guard.get(&(hwnd.0 as usize)) else {
             error!("Could not get shared state for handle {hwnd:?}");
             return DefWindowProcW(hwnd, msg, wparam, lparam);
         };
@@ -196,7 +205,7 @@ unsafe extern "system" fn pipeline_wnd_proc(
         Arc::clone(shared_state)
     };
 
-    if let Err(e) = shared_state.tx.send(PipelineMessage(hwnd, msg, wparam, lparam)) {
+    if let Err(e) = shared_state.tx.send(PipelineMessage(SendableHwnd(hwnd), msg, wparam, lparam)) {
         error!("Could not send window message through pipeline: {e:?}");
     }
 

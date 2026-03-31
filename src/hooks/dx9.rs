@@ -9,8 +9,8 @@ use imgui::Context;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use tracing::{error, trace};
-use windows::core::{Error, Interface, Result, HRESULT};
-use windows::Win32::Foundation::{BOOL, HWND, RECT};
+use windows::core::{Error, Interface, Result, BOOL, HRESULT};
+use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D9::{
     Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
     D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
