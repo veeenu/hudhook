@@ -167,6 +167,7 @@ impl<T: RenderEngine> Pipeline<T> {
         unsafe {
             SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)
         };
+        PIPELINE_STATES.lock().remove(&self.hwnd.0);
     }
 
     pub(crate) fn take(mut self) -> RenderLoop {
