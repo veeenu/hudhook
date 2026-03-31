@@ -169,28 +169,12 @@ pub trait RenderContext {
     ) -> Result<(), Error>;
 }
 
-/// Defines the `on_wnd_proc` state.
+/// Represents a control flow decision before the `wnd_proc` is executed.
+///
+/// See [`crate::ImguiRenderLoop::before_wnd_proc`].
 #[derive(PartialEq, Eq)]
-pub enum OnWndProcState {
-    /// Pre - this was called **before** the internal `wnd_proc` logic has
-    /// been processed.
-    Pre,
-
-    /// Post - this was called **after** the internal `wnd_proc` has been
-    /// processed.
-    Post,
-}
-
-/// Defines what to do with the incoming `wnd_proc` call.
-#[derive(PartialEq, Eq)]
-pub enum OnWndProc {
-    /// Continue - the control-flow proceeds as usual.
+pub enum BeforeWndProc {
     Continue,
-
-    /// Break - the control-flow is aborted.
-    ///
-    /// **Note**: This only takes effect in case the `on_wnd_proc` call is
-    /// `pre`, not `post`.
     Break,
 }
 
@@ -304,17 +288,19 @@ pub trait ImguiRenderLoop {
     /// Called every frame. Use the provided `ui` object to build your UI.
     fn render(&mut self, ui: &mut Ui);
 
-    /// Called during the window procedure.
-    fn on_wnd_proc(
+    /// Called before the window procedure.
+    fn before_wnd_proc(
         &self,
         _hwnd: HWND,
         _umsg: u32,
         _wparam: WPARAM,
         _lparam: LPARAM,
-        _state: OnWndProcState,
-    ) -> OnWndProc {
-        OnWndProc::Continue
+    ) -> BeforeWndProc {
+        BeforeWndProc::Continue
     }
+
+    /// Called after the window procedure.
+    fn after_wnd_proc(&self, _hwnd: HWND, _umsg: u32, _wparam: WPARAM, _lparam: LPARAM) {}
 
     /// Returns the types of window message that
     /// you do not want to propagate to the main window
