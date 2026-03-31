@@ -1,7 +1,8 @@
 [package]
 name = "hudhook"
-version = "0.8.3"
+version = "0.9.0"
 edition = "2021"
+rust-version = "1.85"
 description = "A graphics API hook with dear imgui render loop. Supports DirectX 9, 11, 12, and OpenGL 3."
 homepage = "https://github.com/veeenu/hudhook"
 repository = "https://github.com/veeenu/hudhook"
