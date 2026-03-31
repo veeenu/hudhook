@@ -2,7 +2,7 @@
 
 use std::ffi::c_void;
 use std::mem;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use imgui::Context;
@@ -137,13 +137,43 @@ impl InitializationContext {
     }
 }
 
-static INITIALIZATION_CONTEXT: Mutex<InitializationContext> =
-    Mutex::new(InitializationContext::Empty);
+/// Wraps the initialization state machine with a Mutex and tracks completion
+/// via an internal AtomicBool so callers can skip the lock on the hot path.
+struct InitState {
+    inner: Mutex<InitializationContext>,
+    done: AtomicBool,
+}
+
+impl InitState {
+    const fn new() -> Self {
+        Self { inner: Mutex::new(InitializationContext::Empty), done: AtomicBool::new(false) }
+    }
+
+    fn is_done(&self) -> bool {
+        self.done.load(Ordering::Acquire)
+    }
+
+    fn lock(&self) -> parking_lot::MutexGuard<'_, InitializationContext> {
+        self.inner.lock()
+    }
+
+    fn mark_done(&self) {
+        self.inner.lock().done();
+        self.done.store(true, Ordering::Release);
+    }
+
+    fn reset(&self) {
+        *self.inner.lock() = InitializationContext::Empty;
+        self.done.store(false, Ordering::Release);
+    }
+}
+
+static INIT_STATE: InitState = InitState::new();
 static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D12RenderEngine>>> = OnceCell::new();
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 
 unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
-    let Some((swap_chain, command_queue)) = ({ INITIALIZATION_CONTEXT.lock().get() }) else {
+    let Some((swap_chain, command_queue)) = ({ INIT_STATE.lock().get() }) else {
         error!("Initialization context incomplete");
         return Err(Error::from_hresult(HRESULT(-1)));
     };
@@ -163,9 +193,7 @@ unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
         e
     })?;
 
-    {
-        INITIALIZATION_CONTEXT.lock().done();
-    }
+    INIT_STATE.mark_done();
 
     Ok(Mutex::new(pipeline))
 }
@@ -197,7 +225,7 @@ unsafe extern "system" fn dxgi_swap_chain_present_impl(
 ) -> HRESULT {
     let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
     {
-        INITIALIZATION_CONTEXT.lock().insert_swap_chain(&swap_chain);
+        INIT_STATE.lock().insert_swap_chain(&swap_chain);
     }
 
     let Trampolines { dxgi_swap_chain_present, .. } =
@@ -240,13 +268,16 @@ unsafe extern "system" fn d3d12_command_queue_execute_command_lists_impl(
     command_lists: *mut ID3D12CommandList,
 ) {
     let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
-    trace!(
-        "ID3D12CommandQueue::ExecuteCommandLists({command_queue:?}, {num_command_lists}, \
-         {command_lists:p}) invoked",
-    );
 
-    {
-        INITIALIZATION_CONTEXT.lock().insert_command_queue(&command_queue);
+    if !INIT_STATE.is_done() {
+        trace!(
+            "ID3D12CommandQueue::ExecuteCommandLists({command_queue:?}, {num_command_lists}, \
+             {command_lists:p}) invoked",
+        );
+
+        {
+            INIT_STATE.lock().insert_command_queue(&command_queue);
+        }
     }
 
     let Trampolines { d3d12_command_queue_execute_command_lists, .. } =
@@ -399,8 +430,8 @@ impl Hooks for ImguiDx12Hooks {
     unsafe fn unhook(&mut self) {
         TRAMPOLINES.take();
         PIPELINE.take().map(|p| p.into_inner().take());
-        RENDER_LOOP.take(); // should already be null
+        RENDER_LOOP.take();
 
-        *INITIALIZATION_CONTEXT.lock() = InitializationContext::Empty;
+        INIT_STATE.reset();
     }
 }

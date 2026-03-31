@@ -18,11 +18,37 @@ use crate::renderer::RenderEngine;
 use crate::util::{self, Fence};
 use crate::RenderContext;
 
+struct FrameContext {
+    command_allocator: ID3D12CommandAllocator,
+    fence_value: u64,
+    vertex_buffer: Buffer<DrawVert>,
+    index_buffer: Buffer<u16>,
+}
+
+const NUM_FRAMES: usize = 3;
+const COMMAND_ALLOCATOR_NAMES: [&str; NUM_FRAMES] =
+    ["hudhook Frame Allocator 0", "hudhook Frame Allocator 1", "hudhook Frame Allocator 2"];
+
+impl FrameContext {
+    fn new(device: &ID3D12Device, name: &str) -> Result<Self> {
+        let command_allocator: ID3D12CommandAllocator =
+            unsafe { device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT) }?;
+        unsafe {
+            command_allocator.SetName(&windows::core::HSTRING::from(name))?;
+        }
+        Ok(FrameContext {
+            command_allocator,
+            fence_value: 0,
+            vertex_buffer: Buffer::new(device, 5000)?,
+            index_buffer: Buffer::new(device, 10000)?,
+        })
+    }
+}
+
 pub struct D3D12RenderEngine {
     device: ID3D12Device,
 
     command_queue: ID3D12CommandQueue,
-    command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
 
     #[allow(unused)]
@@ -33,25 +59,40 @@ pub struct D3D12RenderEngine {
     root_signature: ID3D12RootSignature,
     pipeline_state: ID3D12PipelineState,
 
-    vertex_buffer: Buffer<DrawVert>,
-    index_buffer: Buffer<u16>,
     projection_buffer: [[f32; 4]; 4],
 
     fence: Fence,
+    frame_contexts: Vec<FrameContext>,
+    frame_index: usize,
 }
 
 impl D3D12RenderEngine {
     pub fn new(command_queue: &ID3D12CommandQueue, ctx: &mut Context) -> Result<Self> {
-        let (device, command_queue, command_allocator, command_list) =
-            unsafe { create_command_objects(command_queue) }?;
+        let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
+        let command_queue = command_queue.clone();
+
+        let mut frame_contexts = Vec::with_capacity(NUM_FRAMES);
+        for name in &COMMAND_ALLOCATOR_NAMES {
+            frame_contexts.push(FrameContext::new(&device, name)?);
+        }
+
+        let command_list: ID3D12GraphicsCommandList = unsafe {
+            device.CreateCommandList(
+                0,
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                &frame_contexts[0].command_allocator,
+                None,
+            )
+        }?;
+        unsafe {
+            command_list.Close()?;
+            command_list.SetName(w!("hudhook Render Engine Command List"))?;
+        }
 
         let (rtv_heap, texture_heap) = unsafe { create_heaps(&device) }?;
         let rtv_heap_start = unsafe { rtv_heap.GetCPUDescriptorHandleForHeapStart() };
 
         let (root_signature, pipeline_state) = unsafe { create_shader_program(&device) }?;
-
-        let vertex_buffer = Buffer::new(&device, 5000)?;
-        let index_buffer = Buffer::new(&device, 10000)?;
 
         let fence = Fence::new(&device)?;
 
@@ -62,17 +103,16 @@ impl D3D12RenderEngine {
         Ok(Self {
             device,
             command_queue,
-            command_allocator,
             command_list,
             rtv_heap,
             rtv_heap_start,
             texture_heap,
             root_signature,
             pipeline_state,
-            vertex_buffer,
-            index_buffer,
             projection_buffer: Default::default(),
             fence,
+            frame_contexts,
+            frame_index: 0,
         })
     }
 }
@@ -102,10 +142,16 @@ impl RenderEngine for D3D12RenderEngine {
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()> {
         unsafe {
-            self.device.CreateRenderTargetView(&render_target, None, self.rtv_heap_start);
+            let fc = &self.frame_contexts[self.frame_index];
 
-            self.command_allocator.Reset()?;
-            self.command_list.Reset(&self.command_allocator, None)?;
+            if fc.fence_value != 0 {
+                self.fence.wait_for_value(fc.fence_value)?;
+            }
+
+            fc.command_allocator.Reset()?;
+            self.command_list.Reset(&fc.command_allocator, None)?;
+
+            self.device.CreateRenderTargetView(&render_target, None, self.rtv_heap_start);
 
             let present_to_rtv_barriers = [util::create_barrier(
                 &render_target,
@@ -128,9 +174,12 @@ impl RenderEngine for D3D12RenderEngine {
             self.command_list.ResourceBarrier(&rtv_to_present_barriers);
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
-            self.command_queue.Signal(self.fence.fence(), self.fence.value())?;
-            self.fence.wait()?;
-            self.fence.incr();
+
+            let new_fence_value = self.fence.incr() + 1;
+            self.command_queue.Signal(self.fence.fence(), new_fence_value)?;
+            self.frame_contexts[self.frame_index].fence_value = new_fence_value;
+
+            self.frame_index = (self.frame_index + 1) % self.frame_contexts.len();
 
             present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
             rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
@@ -148,14 +197,26 @@ impl RenderEngine for D3D12RenderEngine {
     }
 }
 
+impl Drop for D3D12RenderEngine {
+    fn drop(&mut self) {
+        for fc in &self.frame_contexts {
+            if fc.fence_value != 0 {
+                let _ = self.fence.wait_for_value(fc.fence_value);
+            }
+        }
+    }
+}
+
 impl D3D12RenderEngine {
     unsafe fn render_draw_data(&mut self, draw_data: &DrawData) -> Result<()> {
         if draw_data.total_vtx_count == 0 {
             return Ok(());
         }
 
-        self.vertex_buffer.clear();
-        self.index_buffer.clear();
+        let fc = &mut self.frame_contexts[self.frame_index];
+
+        fc.vertex_buffer.clear();
+        fc.index_buffer.clear();
 
         draw_data
             .draw_lists()
@@ -163,12 +224,12 @@ impl D3D12RenderEngine {
                 (draw_list.vtx_buffer().iter().copied(), draw_list.idx_buffer().iter().copied())
             })
             .for_each(|(vertices, indices)| {
-                self.vertex_buffer.extend(vertices);
-                self.index_buffer.extend(indices);
+                fc.vertex_buffer.extend(vertices);
+                fc.index_buffer.extend(indices);
             });
 
-        self.vertex_buffer.upload(&self.device)?;
-        self.index_buffer.upload(&self.device)?;
+        fc.vertex_buffer.upload(&self.device)?;
+        fc.index_buffer.upload(&self.device)?;
 
         self.projection_buffer = {
             let [l, t, r, b] = [
@@ -235,6 +296,8 @@ impl D3D12RenderEngine {
     }
 
     unsafe fn setup_render_state(&self, draw_data: &DrawData) {
+        let fc = &self.frame_contexts[self.frame_index];
+
         self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
@@ -247,15 +310,15 @@ impl D3D12RenderEngine {
         self.command_list.IASetVertexBuffers(
             0,
             Some(&[D3D12_VERTEX_BUFFER_VIEW {
-                BufferLocation: self.vertex_buffer.resource.GetGPUVirtualAddress(),
-                SizeInBytes: (self.vertex_buffer.data.len() * mem::size_of::<DrawVert>()) as _,
+                BufferLocation: fc.vertex_buffer.resource.GetGPUVirtualAddress(),
+                SizeInBytes: (fc.vertex_buffer.data.len() * mem::size_of::<DrawVert>()) as _,
                 StrideInBytes: mem::size_of::<DrawVert>() as _,
             }]),
         );
 
         self.command_list.IASetIndexBuffer(Some(&D3D12_INDEX_BUFFER_VIEW {
-            BufferLocation: self.index_buffer.resource.GetGPUVirtualAddress(),
-            SizeInBytes: (self.index_buffer.data.len() * mem::size_of::<DrawIdx>()) as _,
+            BufferLocation: fc.index_buffer.resource.GetGPUVirtualAddress(),
+            SizeInBytes: (fc.index_buffer.data.len() * mem::size_of::<DrawIdx>()) as _,
             Format: if mem::size_of::<DrawIdx>() == 2 {
                 DXGI_FORMAT_R16_UINT
             } else {
@@ -273,25 +336,6 @@ impl D3D12RenderEngine {
         );
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
     }
-}
-
-unsafe fn create_command_objects(
-    command_queue: &ID3D12CommandQueue,
-) -> Result<(ID3D12Device, ID3D12CommandQueue, ID3D12CommandAllocator, ID3D12GraphicsCommandList)> {
-    let device: ID3D12Device = util::try_out_ptr(|v| unsafe { command_queue.GetDevice(v) })?;
-    let command_queue = command_queue.clone();
-
-    let command_allocator: ID3D12CommandAllocator =
-        device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)?;
-
-    let command_list: ID3D12GraphicsCommandList =
-        device.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)?;
-    command_list.Close()?;
-
-    command_allocator.SetName(w!("hudhook Render Engine Command Allocator"))?;
-    command_list.SetName(w!("hudhook Render Engine Command List"))?;
-
-    Ok((device, command_queue, command_allocator, command_list))
 }
 
 unsafe fn create_heaps(device: &ID3D12Device) -> Result<(ID3D12DescriptorHeap, TextureHeap)> {
