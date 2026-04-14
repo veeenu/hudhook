@@ -83,7 +83,17 @@ impl RenderEngine for D3D11RenderEngine {
             let state_backup = StateBackup::backup(&self.device_context);
 
             let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| {
-                self.device.CreateRenderTargetView(&render_target, None, Some(v))
+                self.device.CreateRenderTargetView(
+                    &render_target,
+                    Some(&D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
+                        },
+                    }),
+                    Some(v),
+                )
             })?;
 
             self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
@@ -406,7 +416,7 @@ impl ShaderProgram {
                             DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                             BlendOp: D3D11_BLEND_OP_ADD,
                             SrcBlendAlpha: D3D11_BLEND_ONE,
-                            DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                            DestBlendAlpha: D3D11_BLEND_ZERO,
                             BlendOpAlpha: D3D11_BLEND_OP_ADD,
                             RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
                         },

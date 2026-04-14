@@ -582,7 +582,7 @@ unsafe fn create_shader_program(
                     DestBlend: D3D12_BLEND_INV_SRC_ALPHA,
                     BlendOp: D3D12_BLEND_OP_ADD,
                     SrcBlendAlpha: D3D12_BLEND_ONE,
-                    DestBlendAlpha: D3D12_BLEND_INV_SRC_ALPHA,
+                    DestBlendAlpha: D3D12_BLEND_ZERO,
                     BlendOpAlpha: D3D12_BLEND_OP_ADD,
                     LogicOp: Default::default(),
                     RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as _,
