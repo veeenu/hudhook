@@ -82,18 +82,26 @@ impl RenderEngine for D3D11RenderEngine {
         unsafe {
             let state_backup = StateBackup::backup(&self.device_context);
 
+            let rtv_desc = {
+                let mut tex_desc = D3D11_TEXTURE2D_DESC::default();
+                render_target.GetDesc(&mut tex_desc);
+                let format = match tex_desc.Format {
+                    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => DXGI_FORMAT_R8G8B8A8_UNORM,
+                    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => DXGI_FORMAT_B8G8R8A8_UNORM,
+                    DXGI_FORMAT_B8G8R8X8_UNORM_SRGB => DXGI_FORMAT_B8G8R8X8_UNORM,
+                    other => other,
+                };
+                D3D11_RENDER_TARGET_VIEW_DESC {
+                    Format: format,
+                    ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                    Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                        Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
+                    },
+                }
+            };
+
             let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| {
-                self.device.CreateRenderTargetView(
-                    &render_target,
-                    Some(&D3D11_RENDER_TARGET_VIEW_DESC {
-                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
-                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
-                            Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
-                        },
-                    }),
-                    Some(v),
-                )
+                self.device.CreateRenderTargetView(&render_target, Some(&rtv_desc), Some(v))
             })?;
 
             self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
