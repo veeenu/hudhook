@@ -148,7 +148,10 @@ impl<T: RenderEngine> Pipeline<T> {
         let [fsw, fsh] = self.ctx.io().display_framebuffer_scale;
 
         if (w * fsw) <= 0.0 || (h * fsh) <= 0.0 {
-            warn!("Insufficient display size: {w}x{h}, framebuffer_scale: {fsw}x{fsh}; skipping frame");
+            warn!(
+                "Insufficient display size: {w}x{h}, framebuffer_scale: {fsw}x{fsh}; skipping \
+                 frame"
+            );
             return Ok(());
         }
 

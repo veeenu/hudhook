@@ -91,17 +91,44 @@ impl RenderEngine for D3D11RenderEngine {
                     DXGI_FORMAT_B8G8R8X8_UNORM_SRGB => DXGI_FORMAT_B8G8R8X8_UNORM,
                     other => other,
                 };
-                D3D11_RENDER_TARGET_VIEW_DESC {
-                    Format: format,
-                    ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
-                    Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
-                        Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
-                    },
+                if tex_desc.SampleDesc.Count > 1 {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2DMS: D3D11_TEX2DMS_RTV::default(),
+                        },
+                    }
+                } else if tex_desc.ArraySize > 1 {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2DARRAY,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2DArray: D3D11_TEX2D_ARRAY_RTV {
+                                MipSlice: 0,
+                                FirstArraySlice: 0,
+                                ArraySize: tex_desc.ArraySize,
+                            },
+                        },
+                    }
+                } else {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
+                        },
+                    }
                 }
             };
 
             let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| {
                 self.device.CreateRenderTargetView(&render_target, Some(&rtv_desc), Some(v))
+            })
+            .or_else(|_| {
+                util::try_out_ptr(|v| {
+                    self.device.CreateRenderTargetView(&render_target, None, Some(v))
+                })
             })?;
 
             self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
@@ -149,12 +176,12 @@ impl D3D11RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [
-                [2. / (r - l), 0., 0., 0.],
-                [0., 2. / (t - b), 0., 0.],
-                [0., 0., 0.5, 0.],
-                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
-            ]
+            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
+                (r + l) / (l - r),
+                (t + b) / (b - t),
+                0.5,
+                1.0,
+            ]]
         });
 
         self.vertex_buffer.upload(&self.device, &self.device_context)?;
