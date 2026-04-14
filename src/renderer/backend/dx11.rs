@@ -131,12 +131,12 @@ impl D3D11RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         });
 
         self.vertex_buffer.upload(&self.device, &self.device_context)?;
@@ -198,8 +198,8 @@ impl D3D11RenderEngine {
         self.device_context.RSSetViewports(Some(&[D3D11_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
-            Width: draw_data.display_size[0],
-            Height: draw_data.display_size[1],
+            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
+            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
             MinDepth: 0f32,
             MaxDepth: 1f32,
         }]));
@@ -405,8 +405,8 @@ impl ShaderProgram {
                             SrcBlend: D3D11_BLEND_SRC_ALPHA,
                             DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                             BlendOp: D3D11_BLEND_OP_ADD,
-                            SrcBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
-                            DestBlendAlpha: D3D11_BLEND_ZERO,
+                            SrcBlendAlpha: D3D11_BLEND_ONE,
+                            DestBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
                             BlendOpAlpha: D3D11_BLEND_OP_ADD,
                             RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
                         },

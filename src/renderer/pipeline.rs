@@ -8,9 +8,10 @@ use std::time::{Duration, Instant};
 use imgui::Context;
 use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
-use tracing::error;
-use windows::core::{Error, Result, HRESULT};
+use tracing::{error, warn};
+use windows::core::{Error, Result};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, DefWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC,
 };
@@ -147,8 +148,8 @@ impl<T: RenderEngine> Pipeline<T> {
         let [fsw, fsh] = self.ctx.io().display_framebuffer_scale;
 
         if (w * fsw) <= 0.0 || (h * fsh) <= 0.0 {
-            error!("Insufficient display size: {w}x{h}");
-            return Err(Error::from_hresult(HRESULT(-1)));
+            warn!("Insufficient display size: {w}x{h}, framebuffer_scale: {fsw}x{fsh}; skipping frame");
+            return Ok(());
         }
 
         let ui = self.ctx.frame();
@@ -169,7 +170,22 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
-        self.ctx.io_mut().display_size = [width as f32, height as f32];
+        if width > 0 && height > 0 {
+            self.ctx.io_mut().display_size = [width as f32, height as f32];
+        }
+    }
+
+    pub(crate) fn update_display_size_from_swap_chain(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            let io = self.ctx.io_mut();
+            io.display_size = [width as f32, height as f32];
+
+            let dpi = unsafe { GetDpiForWindow(self.hwnd) };
+            if dpi > 0 {
+                let scale = dpi as f32 / 96.0;
+                io.display_framebuffer_scale = [scale, scale];
+            }
+        }
     }
 
     pub(crate) fn cleanup(&mut self) {

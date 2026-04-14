@@ -239,12 +239,12 @@ impl D3D12RenderEngine {
                 draw_data.display_pos[1] + draw_data.display_size[1],
             ];
 
-            [[2. / (r - l), 0., 0., 0.], [0., 2. / (t - b), 0., 0.], [0., 0., 0.5, 0.], [
-                (r + l) / (l - r),
-                (t + b) / (b - t),
-                0.5,
-                1.0,
-            ]]
+            [
+                [2. / (r - l), 0., 0., 0.],
+                [0., 2. / (t - b), 0., 0.],
+                [0., 0., 0.5, 0.],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.5, 1.0],
+            ]
         };
 
         self.setup_render_state(draw_data);
@@ -301,8 +301,8 @@ impl D3D12RenderEngine {
         self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
-            Width: draw_data.display_size[0],
-            Height: draw_data.display_size[1],
+            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
+            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
             MinDepth: 0f32,
             MaxDepth: 1f32,
         }]);
