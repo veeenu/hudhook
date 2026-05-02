@@ -82,8 +82,53 @@ impl RenderEngine for D3D11RenderEngine {
         unsafe {
             let state_backup = StateBackup::backup(&self.device_context);
 
+            let rtv_desc = {
+                let mut tex_desc = D3D11_TEXTURE2D_DESC::default();
+                render_target.GetDesc(&mut tex_desc);
+                let format = match tex_desc.Format {
+                    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => DXGI_FORMAT_R8G8B8A8_UNORM,
+                    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => DXGI_FORMAT_B8G8R8A8_UNORM,
+                    DXGI_FORMAT_B8G8R8X8_UNORM_SRGB => DXGI_FORMAT_B8G8R8X8_UNORM,
+                    other => other,
+                };
+                if tex_desc.SampleDesc.Count > 1 {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2DMS: D3D11_TEX2DMS_RTV::default(),
+                        },
+                    }
+                } else if tex_desc.ArraySize > 1 {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2DARRAY,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2DArray: D3D11_TEX2D_ARRAY_RTV {
+                                MipSlice: 0,
+                                FirstArraySlice: 0,
+                                ArraySize: tex_desc.ArraySize,
+                            },
+                        },
+                    }
+                } else {
+                    D3D11_RENDER_TARGET_VIEW_DESC {
+                        Format: format,
+                        ViewDimension: D3D11_RTV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_RENDER_TARGET_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_RTV { MipSlice: 0 },
+                        },
+                    }
+                }
+            };
+
             let render_target: ID3D11RenderTargetView = util::try_out_ptr(|v| {
-                self.device.CreateRenderTargetView(&render_target, None, Some(v))
+                self.device.CreateRenderTargetView(&render_target, Some(&rtv_desc), Some(v))
+            })
+            .or_else(|_| {
+                util::try_out_ptr(|v| {
+                    self.device.CreateRenderTargetView(&render_target, None, Some(v))
+                })
             })?;
 
             self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
@@ -198,8 +243,8 @@ impl D3D11RenderEngine {
         self.device_context.RSSetViewports(Some(&[D3D11_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
-            Width: draw_data.display_size[0],
-            Height: draw_data.display_size[1],
+            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
+            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
             MinDepth: 0f32,
             MaxDepth: 1f32,
         }]));
@@ -405,7 +450,7 @@ impl ShaderProgram {
                             SrcBlend: D3D11_BLEND_SRC_ALPHA,
                             DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                             BlendOp: D3D11_BLEND_OP_ADD,
-                            SrcBlendAlpha: D3D11_BLEND_INV_SRC_ALPHA,
+                            SrcBlendAlpha: D3D11_BLEND_ONE,
                             DestBlendAlpha: D3D11_BLEND_ZERO,
                             BlendOpAlpha: D3D11_BLEND_OP_ADD,
                             RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as _,
