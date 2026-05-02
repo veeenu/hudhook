@@ -301,8 +301,8 @@ impl D3D12RenderEngine {
         self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
-            Width: draw_data.display_size[0],
-            Height: draw_data.display_size[1],
+            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
+            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
             MinDepth: 0f32,
             MaxDepth: 1f32,
         }]);
@@ -582,7 +582,7 @@ unsafe fn create_shader_program(
                     DestBlend: D3D12_BLEND_INV_SRC_ALPHA,
                     BlendOp: D3D12_BLEND_OP_ADD,
                     SrcBlendAlpha: D3D12_BLEND_ONE,
-                    DestBlendAlpha: D3D12_BLEND_INV_SRC_ALPHA,
+                    DestBlendAlpha: D3D12_BLEND_ZERO,
                     BlendOpAlpha: D3D12_BLEND_OP_ADD,
                     LogicOp: Default::default(),
                     RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as _,
