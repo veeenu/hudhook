@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.1] - 2026-05-21
+
+## What's Changed
+* fix: resolve DX11 fullscreen errors and washed-out colors by @dontucare in https://github.com/veeenu/hudhook/pull/252
+* Add `CHANGELOG.md` by @veeenu in https://github.com/veeenu/hudhook/pull/253
+
+## New Contributors
+* @dontucare made their first contribution in https://github.com/veeenu/hudhook/pull/252
+
+**Full Changelog**: https://github.com/veeenu/hudhook/compare/0.9.0...0.9.1
+
 ## [0.9.0] - 2026-03-31
 
 ### What's Changed
