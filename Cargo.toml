@@ -24,6 +24,11 @@ default = ["dx9", "dx11", "dx12", "opengl3", "inject"]
 dx9 = []
 dx11 = []
 dx12 = []
+# Allow the DirectX 12 hook to accept a command queue from the same D3D12
+# device when the private swap-chain memory scan cannot find the queue pointer.
+# This is useful for games/drivers whose DXGI swap-chain implementation does
+# not expose the command queue in a scan-friendly layout.
+dx12-fallback-device-check = ["dx12"]
 opengl3 = ["dep:gl_generator"]
 inject = []
 imgui-freetype = ["imgui/freetype"]

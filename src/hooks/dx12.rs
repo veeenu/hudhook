@@ -130,9 +130,59 @@ impl InitializationContext {
                      pointers were readable)",
                     readable_ptrs.len()
                 );
+                Self::fallback_check_command_queue(swap_chain, command_queue)
+            },
+        }
+    }
+
+    #[cfg(feature = "dx12-fallback-device-check")]
+    unsafe fn fallback_check_command_queue(
+        swap_chain: &IDXGISwapChain3,
+        command_queue: &ID3D12CommandQueue,
+    ) -> bool {
+        match Self::command_queue_matches_swap_chain_device(swap_chain, command_queue) {
+            Ok(true) => {
+                warn!(
+                    "Accepting command queue because it belongs to the same D3D12 device as the \
+                     swap chain"
+                );
+                true
+            },
+            Ok(false) => {
+                warn!(
+                    "Command queue pointer was not present in the swap chain struct and the \
+                     command queue belongs to a different D3D12 device"
+                );
+                false
+            },
+            Err(e) => {
+                warn!(
+                    "Command queue pointer was not present in the swap chain struct and fallback \
+                     D3D12 device check failed: {e:?}"
+                );
                 false
             },
         }
+    }
+
+    #[cfg(not(feature = "dx12-fallback-device-check"))]
+    unsafe fn fallback_check_command_queue(
+        _swap_chain: &IDXGISwapChain3,
+        _command_queue: &ID3D12CommandQueue,
+    ) -> bool {
+        false
+    }
+
+    #[cfg(feature = "dx12-fallback-device-check")]
+    unsafe fn command_queue_matches_swap_chain_device(
+        swap_chain: &IDXGISwapChain3,
+        command_queue: &ID3D12CommandQueue,
+    ) -> Result<bool> {
+        let swap_chain_device: ID3D12Device = swap_chain.GetDevice()?;
+        let command_queue_device: ID3D12Device =
+            util::try_out_ptr(|device| command_queue.GetDevice(device))?;
+
+        Ok(std::ptr::eq(swap_chain_device.as_raw(), command_queue_device.as_raw()))
     }
 }
 
