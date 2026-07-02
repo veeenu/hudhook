@@ -15,6 +15,10 @@ pub(crate) trait RenderEngine: RenderContext {
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;
     fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()>;
+
+    fn wait_idle(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 #[cfg(feature = "dx11")]
 pub(crate) use backend::dx11::D3D11RenderEngine;

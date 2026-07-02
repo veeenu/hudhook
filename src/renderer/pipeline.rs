@@ -191,6 +191,10 @@ impl<T: RenderEngine> Pipeline<T> {
         }
     }
 
+    pub(crate) fn wait_idle(&mut self) -> Result<()> {
+        self.engine.wait_idle()
+    }
+
     pub(crate) fn cleanup(&mut self) {
         unsafe {
             SetWindowLongPtrW(self.hwnd, GWLP_WNDPROC, self.shared_state.wnd_proc as usize as _)

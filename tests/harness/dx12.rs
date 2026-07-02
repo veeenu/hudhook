@@ -95,10 +95,7 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
         None,
     )?;
 
-    trace!("Enabling debug");
-    util::enable_debug_interface();
-
-    let factory: IDXGIFactory2 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG)?;
+    let factory: IDXGIFactory2 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
     let adapter = factory.EnumAdapters(0)?;
 
     let device: ID3D12Device =
@@ -124,6 +121,7 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
     command_allocator.SetName(w!("Harness Command Allocator"))?;
     command_list.SetName(w!("Harness Command List"))?;
 
+    let swap_chain_format = DXGI_FORMAT_B8G8R8A8_UNORM;
     let swap_chain: IDXGISwapChain3 = factory
         .CreateSwapChainForHwnd(
             &command_queue,
@@ -136,7 +134,7 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
                 Flags: 0,
                 Width: 800,
                 Height: 600,
-                Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                Format: swap_chain_format,
                 Stereo: false.into(),
                 Scaling: DXGI_SCALING_NONE,
                 AlphaMode: DXGI_ALPHA_MODE_IGNORE,
@@ -163,26 +161,18 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
             + device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) as usize,
     };
 
-    {
-        let buf: ID3D12Resource = swap_chain.GetBuffer(0).unwrap();
-        buf.SetName(w!("Harness back buffer 0"))?;
-        device.CreateRenderTargetView(&buf, None, rtv_desc0);
-        drop(buf);
-        let buf: ID3D12Resource = swap_chain.GetBuffer(1).unwrap();
-        buf.SetName(w!("Harness back buffer 1"))?;
-        device.CreateRenderTargetView(&buf, None, rtv_desc1);
-        drop(buf);
-    }
-
     let rtv = [rtv_desc0, rtv_desc1];
+    recreate_render_targets(&device, &swap_chain, &rtv)?;
 
     let fence: ID3D12Fence = device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
     let mut fence_val = 0u64;
     let fence_event = CreateEventExW(None, None, CREATE_EVENT(0), 0x1F0003)?;
+    let mut frame_count = 0u32;
+    let mut resized_once = false;
 
     loop {
         util::print_dxgi_debug_messages();
-        let rtv = rtv[swap_chain.GetCurrentBackBufferIndex() as usize];
+        let current_rtv = rtv[swap_chain.GetCurrentBackBufferIndex() as usize];
         let back_buffer = swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())?;
 
         let rtv_barrier = [util::create_barrier(
@@ -202,7 +192,7 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
         command_allocator.Reset()?;
         command_list.Reset(&command_allocator, None)?;
         command_list.ResourceBarrier(&rtv_barrier);
-        command_list.ClearRenderTargetView(rtv, &[0.3, 0.8, 0.3, 0.8], None);
+        command_list.ClearRenderTargetView(current_rtv, &[0.3, 0.8, 0.3, 0.8], None);
         command_list.ResourceBarrier(&present_barrier);
         command_list.Close()?;
         command_queue.ExecuteCommandLists(&[Some(command_list.cast()?)]);
@@ -218,6 +208,14 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
         present_barrier.into_iter().for_each(util::drop_barrier);
 
         swap_chain.Present(0, DXGI_PRESENT(0)).ok()?;
+
+        frame_count += 1;
+        if !resized_once && frame_count >= 60 {
+            trace!("Programmatic ResizeBuffers 1024x768");
+            swap_chain.ResizeBuffers(2, 1024, 768, swap_chain_format, DXGI_SWAP_CHAIN_FLAG(0))?;
+            recreate_render_targets(&device, &swap_chain, &rtv)?;
+            resized_once = true;
+        }
 
         let mut msg = MSG::default();
         if PeekMessageA(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
@@ -238,19 +236,17 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
                     let height = hiword(lparam.0 as u32) as u32;
                     trace!("Resizing {width}x{height}");
 
-                    // TODO look deeper into this crash.
-                    // swap_chain.ResizeBuffers(2, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, 0)?;
+                    if width > 0 && height > 0 {
+                        swap_chain.ResizeBuffers(
+                            2,
+                            width,
+                            height,
+                            swap_chain_format,
+                            DXGI_SWAP_CHAIN_FLAG(0),
+                        )?;
+                        recreate_render_targets(&device, &swap_chain, &rtv)?;
+                    }
                     trace!("Resized");
-
-                    let buf: ID3D12Resource = swap_chain.GetBuffer(0).unwrap();
-                    buf.SetName(w!("Harness back buffer 0"))?;
-                    device.CreateRenderTargetView(&buf, None, rtv_desc0);
-                    drop(buf);
-
-                    let buf: ID3D12Resource = swap_chain.GetBuffer(1).unwrap();
-                    buf.SetName(w!("Harness back buffer 1"))?;
-                    device.CreateRenderTargetView(&buf, None, rtv_desc1);
-                    drop(buf);
                 },
                 _ => {},
             }
@@ -259,6 +255,24 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
         if done.load(Ordering::SeqCst) {
             break;
         }
+    }
+
+    Ok(())
+}
+
+unsafe fn recreate_render_targets(
+    device: &ID3D12Device,
+    swap_chain: &IDXGISwapChain3,
+    rtv: &[D3D12_CPU_DESCRIPTOR_HANDLE; 2],
+) -> Result<()> {
+    for (idx, rtv) in rtv.iter().enumerate() {
+        let buf: ID3D12Resource = swap_chain.GetBuffer(idx as u32)?;
+        if idx == 0 {
+            buf.SetName(w!("Harness back buffer 0"))?;
+        } else {
+            buf.SetName(w!("Harness back buffer 1"))?;
+        }
+        device.CreateRenderTargetView(&buf, None, *rtv);
     }
 
     Ok(())
