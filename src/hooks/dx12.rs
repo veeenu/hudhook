@@ -1,6 +1,7 @@
 //! Hooks for DirectX 12.
 
 use std::ffi::c_void;
+use std::fmt::{self, Display};
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -244,8 +245,12 @@ struct ActiveDx12Context {
     hwnd: usize,
 }
 
-fn format_luid(luid: LUID) -> String {
-    format!("{:08x}:{:08x}", luid.HighPart, luid.LowPart)
+struct FmtLuid(LUID);
+
+impl Display for FmtLuid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{:08x}:{:08x}", self.0.HighPart, self.0.LowPart)
+    }
 }
 
 fn identity_ptr(identity: &IUnknown) -> usize {
@@ -436,8 +441,8 @@ fn validate_active_context(swap_chain: &IDXGISwapChain3) -> Result<bool> {
     if current_device_identity_ptr != active.device_identity {
         warn!(
             "DX12 swap-chain device changed; old adapter LUID {}, new adapter LUID {}",
-            format_luid(active.adapter_luid),
-            format_luid(unsafe { current_device.GetAdapterLuid() }),
+            FmtLuid(active.adapter_luid),
+            FmtLuid(unsafe { current_device.GetAdapterLuid() }),
         );
         unsafe { reset_pipeline("swap-chain device replacement") };
         return Ok(false);
@@ -462,7 +467,7 @@ fn validate_active_context(swap_chain: &IDXGISwapChain3) -> Result<bool> {
     {
         warn!(
             "DX12 command queue device no longer matches swap-chain device; adapter LUID {}",
-            format_luid(active.adapter_luid),
+            FmtLuid(active.adapter_luid),
         );
         unsafe { reset_pipeline("command queue device mismatch") };
         return Ok(false);
@@ -603,6 +608,30 @@ unsafe fn wait_for_pipeline_idle() -> Result<()> {
     Ok(())
 }
 
+unsafe fn wait_for_pipeline_idle_before(operation: &str) {
+    if let Err(error) = wait_for_pipeline_idle() {
+        util::print_dxgi_debug_messages();
+        error!("Could not wait for DX12 pipeline to become idle before {operation}: {error:?}");
+    }
+}
+
+unsafe fn update_display_size_after_swap_chain_change(
+    swap_chain: &IDXGISwapChain3,
+    operation: &str,
+) {
+    let Some(pipeline) = PIPELINE.get() else {
+        return;
+    };
+    let Some(mut pipeline) = pipeline.try_lock() else {
+        warn!("Could not lock DX12 pipeline to update display size after {operation}");
+        return;
+    };
+
+    if let Err(error) = update_pipeline_display_size_from_swap_chain(&mut pipeline, swap_chain) {
+        warn!("Could not update DX12 display size after {operation}: {error:?}");
+    }
+}
+
 fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
     unsafe {
         if !validate_pending_initialization_context(swap_chain)? {
@@ -732,30 +761,21 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
     let Trampolines { dxgi_swap_chain_resize_buffers, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    if let Err(e) = wait_for_pipeline_idle() {
-        util::print_dxgi_debug_messages();
-        error!("Could not wait for DX12 pipeline to become idle before ResizeBuffers: {e:?}");
-    }
+    wait_for_pipeline_idle_before("ResizeBuffers");
 
     let swap_chain3 = p_this.cast::<IDXGISwapChain3>().ok();
 
     trace!("Call IDXGISwapChain::ResizeBuffers trampoline");
     let result =
         dxgi_swap_chain_resize_buffers(p_this, buffer_count, width, height, new_format, flags);
-
-    if result.is_ok() {
-        if let (Some(swap_chain3), Some(pipeline)) = (swap_chain3.as_ref(), PIPELINE.get()) {
-            if let Some(mut pipeline) = pipeline.try_lock() {
-                if let Err(e) =
-                    update_pipeline_display_size_from_swap_chain(&mut pipeline, swap_chain3)
-                {
-                    warn!("Could not update DX12 display size after ResizeBuffers: {e:?}");
-                }
-            } else {
-                warn!("Could not lock DX12 pipeline to update display size after ResizeBuffers");
-            }
-        }
+    if result.is_err() {
+        return result;
     }
+
+    let Some(swap_chain3) = swap_chain3.as_ref() else {
+        return result;
+    };
+    update_display_size_after_swap_chain_change(swap_chain3, "ResizeBuffers");
 
     result
 }
@@ -769,31 +789,18 @@ unsafe extern "system" fn dxgi_swap_chain_set_source_size_impl(
     let Trampolines { dxgi_swap_chain_set_source_size, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    if let Err(e) = wait_for_pipeline_idle() {
-        util::print_dxgi_debug_messages();
-        error!("Could not wait for DX12 pipeline to become idle before SetSourceSize: {e:?}");
-    }
+    wait_for_pipeline_idle_before("SetSourceSize");
 
     trace!("Call IDXGISwapChain2::SetSourceSize trampoline");
     let result = dxgi_swap_chain_set_source_size(swap_chain.clone(), width, height);
-
-    if result.is_ok() {
-        if let Ok(swap_chain3) = swap_chain.cast::<IDXGISwapChain3>() {
-            if let Some(pipeline) = PIPELINE.get() {
-                if let Some(mut pipeline) = pipeline.try_lock() {
-                    if let Err(e) =
-                        update_pipeline_display_size_from_swap_chain(&mut pipeline, &swap_chain3)
-                    {
-                        warn!("Could not update DX12 display size after SetSourceSize: {e:?}");
-                    }
-                } else {
-                    warn!(
-                        "Could not lock DX12 pipeline to update display size after SetSourceSize"
-                    );
-                }
-            }
-        }
+    if result.is_err() {
+        return result;
     }
+
+    let Ok(swap_chain3) = swap_chain.cast::<IDXGISwapChain3>() else {
+        return result;
+    };
+    update_display_size_after_swap_chain_change(&swap_chain3, "SetSourceSize");
 
     result
 }
@@ -812,10 +819,7 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers1_impl(
     let Trampolines { dxgi_swap_chain_resize_buffers1, .. } =
         TRAMPOLINES.get().expect("DirectX 12 trampolines uninitialized");
 
-    if let Err(e) = wait_for_pipeline_idle() {
-        util::print_dxgi_debug_messages();
-        error!("Could not wait for DX12 pipeline to become idle before ResizeBuffers1: {e:?}");
-    }
+    wait_for_pipeline_idle_before("ResizeBuffers1");
 
     let swap_chain = p_this.clone();
     let present_queue_count = if present_queue.is_null() {
@@ -846,32 +850,21 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers1_impl(
         present_queue,
     );
 
-    if result.is_ok() {
-        match command_queue {
-            PresentQueueCapture::Valid(command_queue) => {
-                reset_pipeline("ResizeBuffers1 present queue update");
-                complete_initialization_from_queue(&swap_chain, &command_queue);
-            },
-            PresentQueueCapture::Invalid => {
-                reset_pipeline("ResizeBuffers1 unsupported present queue configuration");
-            },
-            PresentQueueCapture::Missing => {
-                if let Some(pipeline) = PIPELINE.get() {
-                    if let Some(mut pipeline) = pipeline.try_lock() {
-                        if let Err(e) =
-                            update_pipeline_display_size_from_swap_chain(&mut pipeline, &swap_chain)
-                        {
-                            warn!("Could not update DX12 display size after ResizeBuffers1: {e:?}");
-                        }
-                    } else {
-                        warn!(
-                            "Could not lock DX12 pipeline to update display size after \
-                             ResizeBuffers1"
-                        );
-                    }
-                }
-            },
-        }
+    if result.is_err() {
+        return result;
+    }
+
+    match command_queue {
+        PresentQueueCapture::Valid(command_queue) => {
+            reset_pipeline("ResizeBuffers1 present queue update");
+            complete_initialization_from_queue(&swap_chain, &command_queue);
+        },
+        PresentQueueCapture::Invalid => {
+            reset_pipeline("ResizeBuffers1 unsupported present queue configuration");
+        },
+        PresentQueueCapture::Missing => {
+            update_display_size_after_swap_chain_change(&swap_chain, "ResizeBuffers1");
+        },
     }
 
     result
