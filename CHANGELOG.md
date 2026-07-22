@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.2] - 2026-07-22
+
+## What's Changed
+* fix(dx12): stabilize swap-chain resize handling by @soarqin in https://github.com/veeenu/hudhook/pull/258
+
+**Full Changelog**: https://github.com/veeenu/hudhook/compare/0.9.1...0.9.2
+
 ## [0.9.1] - 2026-05-21
 
 ## What's Changed
@@ -280,6 +287,8 @@ Not everything planned made it in this release, but I think it would be a good i
 
 Initial tracked release.
 
+[0.9.2]: https://github.com/veeenu/hudhook/releases/tag/0.9.2
+[0.9.1]: https://github.com/veeenu/hudhook/releases/tag/0.9.1
 [0.9.0]: https://github.com/veeenu/hudhook/releases/tag/0.9.0
 [0.8.3]: https://github.com/veeenu/hudhook/releases/tag/0.8.3
 [0.8.2]: https://github.com/veeenu/hudhook/releases/tag/0.8.2
