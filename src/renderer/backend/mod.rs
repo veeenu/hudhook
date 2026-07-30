@@ -2,7 +2,7 @@
 pub mod dx11;
 #[cfg(feature = "dx12")]
 pub mod dx12;
-#[cfg(feature = "dx9")]
+#[cfg(any(feature = "dx9", feature = "dx9ex"))]
 pub mod dx9;
 #[cfg(feature = "opengl3")]
 pub mod opengl3;
