@@ -13,12 +13,24 @@ bitflags! {
     ///
     /// Example usage:
     /// ```no_run
-    /// // impl ImguiRenderLoop for ...
-    /// fn message_filter(&self, _io: &Io) -> MessageFilter {
-    ///     if self.visible {
-    ///         MessageFilter::InputAll | MessageFilter::WindowClose
-    ///     } else {
-    ///         MessageFilter::empty()
+    /// use hudhook::{ImguiRenderLoop, MessageFilter};
+    /// use imgui::{Io, Ui};
+    ///
+    /// pub struct MyRenderLoop {
+    ///     visible: bool,
+    /// }
+    ///
+    /// impl ImguiRenderLoop for MyRenderLoop {
+    ///     fn render(&mut self, _ui: &mut Ui) {
+    ///         // ...
+    ///     }
+    ///
+    ///     fn message_filter(&self, _io: &Io) -> MessageFilter {
+    ///         if self.visible {
+    ///             MessageFilter::InputAll | MessageFilter::WindowClose
+    ///         } else {
+    ///             MessageFilter::empty()
+    ///         }
     ///     }
     /// }
     /// ```

@@ -417,7 +417,8 @@ impl Hudhook {
 /// Example usage:
 /// ```no_run
 /// use hudhook::hooks::dx12::ImguiDx12Hooks;
-/// use hudhook::hooks::ImguiRenderLoop;
+/// use hudhook::windows::Win32::Foundation::HINSTANCE;
+/// use hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 /// use hudhook::*;
 ///
 /// pub struct MyRenderLoop;
@@ -429,15 +430,17 @@ impl Hudhook {
 /// }
 ///
 /// #[no_mangle]
-/// pub unsafe extern "stdcall" fn DllMain(
+/// pub unsafe extern "system" fn DllMain(
 ///     hmodule: HINSTANCE,
 ///     reason: u32,
 ///     _: *mut std::ffi::c_void,
 /// ) {
 ///     if reason == DLL_PROCESS_ATTACH {
+///         let hmodule_raw = hmodule.0 as usize;
 ///         std::thread::spawn(move || {
+///             let hmodule = HINSTANCE(hmodule_raw as _);
 ///             let hooks = Hudhook::builder()
-///                 .with::<ImguiDx12Hooks>(MyRenderLoop())
+///                 .with::<ImguiDx12Hooks>(MyRenderLoop)
 ///                 .with_hmodule(hmodule)
 ///                 .build();
 ///             hooks.apply();
@@ -477,7 +480,6 @@ impl HudhookBuilder {
 /// Example usage:
 /// ```no_run
 /// use hudhook::hooks::dx12::ImguiDx12Hooks;
-/// use hudhook::hooks::ImguiRenderLoop;
 /// use hudhook::*;
 ///
 /// pub struct MyRenderLoop;
@@ -488,7 +490,7 @@ impl HudhookBuilder {
 ///     }
 /// }
 ///
-/// hudhook::hudhook!(MyRenderLoop.into_hook::<ImguiDx12Hooks>());
+/// hudhook::hudhook!(ImguiDx12Hooks, MyRenderLoop);
 /// ```
 #[macro_export]
 macro_rules! hudhook {

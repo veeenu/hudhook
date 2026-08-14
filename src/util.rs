@@ -40,8 +40,15 @@ use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 ///
 /// # Example
 ///
-/// ```
-/// let swap_chain_desc = try_out_param(|sd| unsafe { self.swap_chain.GetDesc1(sd) })?;
+/// ```no_run
+/// use hudhook::util::try_out_param;
+/// use windows::Win32::Graphics::Direct3D11::{ID3D11ShaderReflection, D3D11_SHADER_DESC};
+///
+/// fn shader_desc(
+///     reflection: &ID3D11ShaderReflection,
+/// ) -> windows::core::Result<D3D11_SHADER_DESC> {
+///     try_out_param(|sd| unsafe { reflection.GetDesc(sd) })
+/// }
 /// ```
 pub fn try_out_param<T, F, E, O>(mut f: F) -> Result<T, E>
 where
@@ -60,7 +67,7 @@ where
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// let dev: ID3D12Device =
 ///     try_out_ptr(|v| unsafe { D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, v) })
 ///         .expect("D3D12CreateDevice failed");
@@ -81,7 +88,7 @@ where
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// let blob: ID3DBlob = util::try_out_err_blob(|v, err_blob| {
 ///     D3D12SerializeRootSignature(
 ///         &root_signature_desc,
@@ -108,7 +115,7 @@ where
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// let vertex_buffer = out_param(|x| unsafe { gl.GenBuffers(1, x) });
 /// ```
 pub fn out_param<T: Default, F>(f: F) -> T
