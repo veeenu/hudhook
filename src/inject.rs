@@ -10,10 +10,12 @@ use windows::core::PCSTR;
 use windows::core::{s, w, Error, Result, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
-#[cfg(target_arch = "x86")]
-use windows::Win32::System::Diagnostics::ToolHelp::{Process32First, Process32Next, PROCESSENTRY32};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
+#[cfg(target_arch = "x86")]
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    Process32First, Process32Next, PROCESSENTRY32,
 };
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Memory::{
