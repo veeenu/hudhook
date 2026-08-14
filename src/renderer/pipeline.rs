@@ -53,7 +53,7 @@ pub(crate) struct Pipeline<T: RenderEngine> {
     render_loop: RenderLoop,
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
-    queue_buffer: OnceCell<Vec<PipelineMessage>>,
+    queue_buffer: Vec<PipelineMessage>,
     start_of_first_frame: OnceCell<Instant>,
 }
 
@@ -96,8 +96,6 @@ impl<T: RenderEngine> Pipeline<T> {
 
         PIPELINE_STATES.lock().insert(hwnd.0 as usize, Arc::clone(&shared_state));
 
-        let queue_buffer = OnceCell::from(Vec::new());
-
         Ok(Self {
             hwnd,
             ctx,
@@ -105,21 +103,20 @@ impl<T: RenderEngine> Pipeline<T> {
             render_loop,
             rx,
             shared_state: Arc::clone(&shared_state),
-            queue_buffer,
+            queue_buffer: Vec::new(),
             start_of_first_frame: OnceCell::new(),
         })
     }
 
     pub(crate) fn prepare_render(&mut self) -> Result<()> {
-        let mut queue_buffer = self.queue_buffer.take().unwrap();
-        queue_buffer.clear();
+        let mut queue_buffer = mem::take(&mut self.queue_buffer);
         queue_buffer.extend(self.rx.try_iter());
         queue_buffer.drain(..).for_each(
             |PipelineMessage(SendableHwnd(hwnd), umsg, wparam, lparam)| {
                 imgui_wnd_proc_impl(hwnd, umsg, wparam, lparam, self);
             },
         );
-        self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
+        self.queue_buffer = queue_buffer;
 
         let message_filter = self.render_loop.message_filter(self.ctx.io());
 
