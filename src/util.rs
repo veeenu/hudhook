@@ -56,10 +56,7 @@ where
     F: FnMut(&mut T) -> Result<O, E>,
 {
     let mut t: T = Default::default();
-    match f(&mut t) {
-        Ok(_) => Ok(t),
-        Err(e) => Err(e),
-    }
+    f(&mut t).map(|_| t)
 }
 
 /// Helper for fallible [`windows`] APIs that have an optional pointer
@@ -77,10 +74,7 @@ where
     F: FnMut(&mut Option<T>) -> Result<O, E>,
 {
     let mut t: Option<T> = None;
-    match f(&mut t) {
-        Ok(_) => Ok(t.unwrap()),
-        Err(e) => Err(e),
-    }
+    f(&mut t).map(|_| t.unwrap())
 }
 
 /// Helper for fallible [`windows`] APIs that have an optional pointer
@@ -105,10 +99,7 @@ where
 {
     let mut t1: Option<T1> = None;
     let mut t2: Option<T2> = None;
-    match f(&mut t1, &mut t2) {
-        Ok(_) => Ok(t1.unwrap()),
-        Err(e) => Err((e, t2.unwrap())),
-    }
+    f(&mut t1, &mut t2).map(|_| t1.unwrap()).map_err(|e| (e, t2.unwrap()))
 }
 
 /// Helper for infallible APIs that have out-params, like OpenGL 3.

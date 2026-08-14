@@ -14,7 +14,14 @@ pub(crate) trait RenderEngine: RenderContext {
     type RenderTarget;
 
     fn render(&mut self, draw_data: &DrawData, render_target: Self::RenderTarget) -> Result<()>;
-    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()>;
+
+    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
+        let fonts = ctx.fonts();
+        let fonts_texture = fonts.build_rgba32_texture();
+        fonts.tex_id =
+            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
+        Ok(())
+    }
 
     fn wait_idle(&mut self) -> Result<()> {
         Ok(())

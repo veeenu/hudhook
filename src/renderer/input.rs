@@ -74,23 +74,16 @@ fn handle_raw_mouse_input(io: &mut Io, raw_mouse: &RAWMOUSE) {
     event(RI_MOUSE_BUTTON_5_DOWN, MouseButton::Extra2, true);
     event(RI_MOUSE_BUTTON_5_UP, MouseButton::Extra2, false);
 
-    // Apply vertical mouse scroll.
-    let wheel_delta_x = if button_flags & RI_MOUSE_WHEEL != 0 {
-        let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
-        wheel_delta as f32
-    } else {
-        0.0
+    let wheel_delta = |flag| {
+        if button_flags & flag != 0 {
+            (button_data.usButtonData as i16 / WHEEL_DELTA as i16) as f32
+        } else {
+            0.0
+        }
     };
 
-    // Apply horizontal mouse scroll.
-    let wheel_delta_y = if button_flags & RI_MOUSE_HWHEEL != 0 {
-        let wheel_delta = button_data.usButtonData as i16 / WHEEL_DELTA as i16;
-        wheel_delta as f32
-    } else {
-        0.0
-    };
-
-    io.add_mouse_wheel_event([wheel_delta_x, wheel_delta_y]);
+    // Apply vertical and horizontal mouse scroll.
+    io.add_mouse_wheel_event([wheel_delta(RI_MOUSE_WHEEL), wheel_delta(RI_MOUSE_HWHEEL)]);
 
     let mouse_flags = raw_mouse.usFlags;
     let (last_x, last_y) = (raw_mouse.lLastX as f32, raw_mouse.lLastY as f32);

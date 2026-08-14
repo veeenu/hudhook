@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use imgui::Context;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tracing::{error, warn};
 use windows::core::{Error, Result};
@@ -53,8 +53,8 @@ pub(crate) struct Pipeline<T: RenderEngine> {
     render_loop: RenderLoop,
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
-    queue_buffer: OnceCell<Vec<PipelineMessage>>,
-    start_of_first_frame: OnceCell<Instant>,
+    queue_buffer: Vec<PipelineMessage>,
+    last_frame: Option<Instant>,
 }
 
 impl<T: RenderEngine> Pipeline<T> {
@@ -96,8 +96,6 @@ impl<T: RenderEngine> Pipeline<T> {
 
         PIPELINE_STATES.lock().insert(hwnd.0 as usize, Arc::clone(&shared_state));
 
-        let queue_buffer = OnceCell::from(Vec::new());
-
         Ok(Self {
             hwnd,
             ctx,
@@ -105,21 +103,20 @@ impl<T: RenderEngine> Pipeline<T> {
             render_loop,
             rx,
             shared_state: Arc::clone(&shared_state),
-            queue_buffer,
-            start_of_first_frame: OnceCell::new(),
+            queue_buffer: Vec::new(),
+            last_frame: None,
         })
     }
 
     pub(crate) fn prepare_render(&mut self) -> Result<()> {
-        let mut queue_buffer = self.queue_buffer.take().unwrap();
-        queue_buffer.clear();
+        let mut queue_buffer = mem::take(&mut self.queue_buffer);
         queue_buffer.extend(self.rx.try_iter());
         queue_buffer.drain(..).for_each(
             |PipelineMessage(SendableHwnd(hwnd), umsg, wparam, lparam)| {
                 imgui_wnd_proc_impl(hwnd, umsg, wparam, lparam, self);
             },
         );
-        self.queue_buffer.set(queue_buffer).expect("OnceCell should be empty");
+        self.queue_buffer = queue_buffer;
 
         let message_filter = self.render_loop.message_filter(self.ctx.io());
 
@@ -136,11 +133,9 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
-        let delta_time = Instant::now()
-            .checked_duration_since(*self.start_of_first_frame.get_or_init(Instant::now))
-            .unwrap_or(Duration::ZERO)
-            .checked_sub(Duration::from_secs_f64(self.ctx.time()))
-            .unwrap_or(Duration::ZERO);
+        let now = Instant::now();
+        let delta_time = self.last_frame.map_or(Duration::ZERO, |last| now - last);
+        self.last_frame = Some(now);
 
         self.ctx.io_mut().update_delta_time(delta_time);
 
