@@ -128,14 +128,6 @@ impl RenderEngine for OpenGl3RenderEngine {
         }
         Ok(())
     }
-
-    fn setup_fonts(&mut self, ctx: &mut Context) -> Result<()> {
-        let fonts = ctx.fonts();
-        let fonts_texture = fonts.build_rgba32_texture();
-        fonts.tex_id =
-            self.load_texture(fonts_texture.data, fonts_texture.width, fonts_texture.height)?;
-        Ok(())
-    }
 }
 
 impl OpenGl3RenderEngine {
