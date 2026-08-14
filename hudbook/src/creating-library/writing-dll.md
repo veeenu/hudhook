@@ -27,7 +27,7 @@ The trait consists of only one method, `render`. `hudhook` will supply the `imgu
 need to use to render our UI, we are only tasked with actually implementing our rendering code.
 
 ```rust
-use hudhook::hooks::ImguiRenderLoop;
+use hudhook::ImguiRenderLoop;
 use imgui::*;
 
 

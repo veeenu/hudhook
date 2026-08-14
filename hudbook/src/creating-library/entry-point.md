@@ -13,7 +13,7 @@ Our `HelloHud` struct already implements `ImguiRenderLoop`, so we can
 instantiate it and use it as-is:
 
 ```rust
-use hudhook::hooks::dx12::ImguiDX12Hooks;
+use hudhook::hooks::dx12::ImguiDx12Hooks;
 
 hudhook::hudhook!(ImguiDx12Hooks, HelloHud::new());
 ```
@@ -34,18 +34,23 @@ generation macro, you can write your own `DllMain` function and use the `Hudhook
 builder object to build your hooks pipeline:
 
 ```rust
+use hudhook::hooks::dx12::ImguiDx12Hooks;
 use hudhook::tracing::*;
+use hudhook::windows::Win32::Foundation::HINSTANCE;
+use hudhook::windows::Win32::System::SystemServices::DLL_PROCESS_ATTACH;
 use hudhook::*;
 
 #[no_mangle]
-pub unsafe extern "stdcall" fn DllMain(
+pub unsafe extern "system" fn DllMain(
     hmodule: HINSTANCE,
     reason: u32,
     _: *mut std::ffi::c_void,
 ) {
     if reason == DLL_PROCESS_ATTACH {
         trace!("DllMain()");
+        let hmodule_raw = hmodule.0 as usize;
         std::thread::spawn(move || {
+            let hmodule = HINSTANCE(hmodule_raw as _);
             if let Err(e) = Hudhook::builder()
                 .with::<ImguiDx12Hooks>(HelloHud::new())
                 .with_hmodule(hmodule)
