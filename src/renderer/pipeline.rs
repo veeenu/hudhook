@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use imgui::Context;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use tracing::{error, warn};
 use windows::core::{Error, Result};
@@ -54,7 +54,7 @@ pub(crate) struct Pipeline<T: RenderEngine> {
     rx: Receiver<PipelineMessage>,
     shared_state: Arc<PipelineSharedState>,
     queue_buffer: Vec<PipelineMessage>,
-    start_of_first_frame: OnceCell<Instant>,
+    last_frame: Option<Instant>,
 }
 
 impl<T: RenderEngine> Pipeline<T> {
@@ -104,7 +104,7 @@ impl<T: RenderEngine> Pipeline<T> {
             rx,
             shared_state: Arc::clone(&shared_state),
             queue_buffer: Vec::new(),
-            start_of_first_frame: OnceCell::new(),
+            last_frame: None,
         })
     }
 
@@ -133,11 +133,9 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn render(&mut self, render_target: T::RenderTarget) -> Result<()> {
-        let delta_time = Instant::now()
-            .checked_duration_since(*self.start_of_first_frame.get_or_init(Instant::now))
-            .unwrap_or(Duration::ZERO)
-            .checked_sub(Duration::from_secs_f64(self.ctx.time()))
-            .unwrap_or(Duration::ZERO);
+        let now = Instant::now();
+        let delta_time = self.last_frame.map_or(Duration::ZERO, |last| now - last);
+        self.last_frame = Some(now);
 
         self.ctx.io_mut().update_delta_time(delta_time);
 
