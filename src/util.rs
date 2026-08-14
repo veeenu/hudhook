@@ -42,7 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
 ///
 /// ```no_run
 /// use hudhook::util::try_out_param;
-/// use windows::Win32::Graphics::Direct3D11::{D3D11_SHADER_DESC, ID3D11ShaderReflection};
+/// use windows::Win32::Graphics::Direct3D11::{ID3D11ShaderReflection, D3D11_SHADER_DESC};
 ///
 /// fn shader_desc(
 ///     reflection: &ID3D11ShaderReflection,
