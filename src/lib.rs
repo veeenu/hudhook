@@ -4,7 +4,8 @@
 //! render loop of applications and drawing things on screen via
 //! [`dear imgui`](https://docs.rs/imgui/0.11.0/imgui/).
 //!
-//! Currently, DirectX9, DirectX 11, DirectX 12 and OpenGL 3 are supported.
+//! Currently, DirectX9, DirectX9Ex, DirectX 11, DirectX 12 and OpenGL 3 are
+//! supported.
 //!
 //! For complete, fully fledged examples of usage, check out the following
 //! projects:
@@ -70,6 +71,12 @@
 //!     // Use this if hooking into a DirectX 9 application.
 //!     use hudhook::hooks::dx9::ImguiDx9Hooks;
 //!     hudhook!(ImguiDx9Hooks, MyRenderLoop);
+//! }
+//!
+//! {
+//!     // Use this if hooking into a DirectX 9Ex application.
+//!     use hudhook::hooks::dx9::ex::ImguiDx9ExHooks;
+//!     hudhook!(ImguiDx9ExHooks, MyRenderLoop);
 //! }
 //!
 //! {
@@ -321,6 +328,7 @@ pub trait ImguiRenderLoop {
 /// Check out first party implementations for guidance on how to implement the
 /// methods:
 /// - [`ImguiDx9Hooks`](crate::hooks::dx9::ImguiDx9Hooks)
+/// - [`ImguiDx9ExHooks`](crate::hooks::dx9::ex::ImguiDx9ExHooks)
 /// - [`ImguiDx11Hooks`](crate::hooks::dx11::ImguiDx11Hooks)
 /// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
 /// - [`ImguiOpenGl3Hooks`](crate::hooks::opengl3::ImguiOpenGl3Hooks)

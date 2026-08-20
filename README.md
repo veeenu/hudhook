@@ -11,7 +11,7 @@
 
 A Rust renderer hook library for building [Dear ImGui](https://github.com/ocornut/imgui) overlays.
 
-Currently supports DirectX 9, DirectX 11, DirectX 12 and OpenGL 3. Runs on Windows and Wine/Proton.
+Currently supports DirectX 9, DirectX 9Ex, DirectX 11, DirectX 12 and OpenGL 3. Runs on Windows and Wine/Proton.
 
 ![hello](tests/hello.jpg)
 
@@ -50,6 +50,12 @@ impl ImguiRenderLoop for MyRenderLoop {
     // Use this if hooking into a DirectX 9 application.
     use hudhook::hooks::dx9::ImguiDx9Hooks;
     hudhook!(ImguiDx9Hooks, MyRenderLoop);
+}
+
+{
+    // Use this if hooking into a DirectX 9Ex application.
+    use hudhook::hooks::dx9::ex::ImguiDx9ExHooks;
+    hudhook!(ImguiDx9ExHooks, MyRenderLoop);
 }
 
 {
