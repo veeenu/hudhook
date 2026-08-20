@@ -54,7 +54,7 @@ impl ImguiRenderLoop for MyRenderLoop {
 
 {
     // Use this if hooking into a DirectX 9Ex application.
-    use hudhook::hooks::dx9ex::ImguiDx9ExHooks;
+    use hudhook::hooks::dx9::ex::ImguiDx9ExHooks;
     hudhook!(ImguiDx9ExHooks, MyRenderLoop);
 }
 

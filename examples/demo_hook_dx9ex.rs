@@ -20,7 +20,7 @@ pub unsafe extern "system" fn DllMain(
         ::std::thread::spawn(move || {
             let hmodule = ::hudhook::windows::Win32::Foundation::HINSTANCE(hmodule_raw as _);
             if let Err(e) = ::hudhook::Hudhook::builder()
-                .with::<hooks::dx9ex::ImguiDx9ExHooks>(support::HookExample::new())
+                .with::<hooks::dx9::ex::ImguiDx9ExHooks>(support::HookExample::new())
                 .with_hmodule(hmodule)
                 .build()
                 .apply()

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use harness::dx9ex::Dx9ExHarness;
 use hook::HookExample;
-use hudhook::hooks::dx9ex::ImguiDx9ExHooks;
+use hudhook::hooks::dx9::ex::ImguiDx9ExHooks;
 use hudhook::*;
 
 #[test]

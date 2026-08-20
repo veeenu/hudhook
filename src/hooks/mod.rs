@@ -20,8 +20,6 @@ pub mod dx11;
 pub mod dx12;
 #[cfg(feature = "dx9")]
 pub mod dx9;
-#[cfg(feature = "dx9ex")]
-pub mod dx9ex;
 #[cfg(feature = "opengl3")]
 pub mod opengl3;
 

@@ -5,22 +5,19 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 use std::{mem, ptr};
 
-use imgui::Context;
-use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
 use tracing::{error, trace};
-use windows::core::{Error, Interface, Result, BOOL, HRESULT};
+use windows::core::{Interface, BOOL, HRESULT};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9Ex, IDirect3DDevice9Ex, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
-    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DDISPLAYMODEEX,
-    D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
+    Direct3DCreate9Ex, IDirect3DDevice9Ex, D3DADAPTER_DEFAULT, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
+    D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DDISPLAYMODEEX, D3DFORMAT, D3DPRESENT_PARAMETERS,
+    D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::RGNDATA;
 
-use super::DummyHwnd;
+use super::{render, reset_pipeline, PIPELINE, RENDER_LOOP};
+use crate::hooks::DummyHwnd;
 use crate::mh::MhHook;
-use crate::renderer::{D3D9RenderEngine, Pipeline};
 use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type Dx9ExPresentType = unsafe extern "system" fn(
@@ -57,60 +54,6 @@ struct Trampolines {
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
-static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D9RenderEngine>>> = OnceCell::new();
-static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
-
-unsafe fn init_pipeline(device: &IDirect3DDevice9Ex) -> Result<Mutex<Pipeline<D3D9RenderEngine>>> {
-    trace!("initializing pipeline");
-    let mut creation_parameters = Default::default();
-    device.GetCreationParameters(&mut creation_parameters)?;
-
-    let hwnd = creation_parameters.hFocusWindow;
-
-    let mut ctx = Context::create();
-    trace!("creating engine");
-    let engine = D3D9RenderEngine::new(device, &mut ctx)?;
-
-    let Some(render_loop) = RENDER_LOOP.take() else {
-        error!("Render loop not yet initialized");
-        return Err(Error::from_hresult(HRESULT(-1)));
-    };
-
-    trace!("creating pipeline");
-    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
-        RENDER_LOOP.get_or_init(move || render_loop);
-        e
-    })?;
-    Ok(Mutex::new(pipeline))
-}
-
-fn render(device: &IDirect3DDevice9Ex) -> Result<()> {
-    let pipeline = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
-
-    let Some(mut pipeline) = pipeline.try_lock() else {
-        error!("Could not lock pipeline");
-        return Err(Error::from_hresult(HRESULT(-1)));
-    };
-
-    pipeline.prepare_render()?;
-
-    let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO)? };
-
-    unsafe { device.BeginScene() }?;
-    let render_result = pipeline.render(surface);
-    unsafe { device.EndScene() }?;
-
-    render_result
-}
-
-unsafe fn reset_pipeline() {
-    trace!("Resetting pipeline");
-    if let Some(pipeline) = PIPELINE.take() {
-        let render_loop = pipeline.into_inner().take();
-
-        RENDER_LOOP.set(render_loop).map_err(|_| ()).expect("Render loop cell should be empty");
-    }
-}
 
 unsafe extern "system" fn dx9ex_present_impl(
     device: IDirect3DDevice9Ex,

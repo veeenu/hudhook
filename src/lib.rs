@@ -75,7 +75,7 @@
 //!
 //! {
 //!     // Use this if hooking into a DirectX 9Ex application.
-//!     use hudhook::hooks::dx9ex::ImguiDx9ExHooks;
+//!     use hudhook::hooks::dx9::ex::ImguiDx9ExHooks;
 //!     hudhook!(ImguiDx9ExHooks, MyRenderLoop);
 //! }
 //!
@@ -328,7 +328,7 @@ pub trait ImguiRenderLoop {
 /// Check out first party implementations for guidance on how to implement the
 /// methods:
 /// - [`ImguiDx9Hooks`](crate::hooks::dx9::ImguiDx9Hooks)
-/// - [`ImguiDx9ExHooks`](crate::hooks::dx9ex::ImguiDx9ExHooks)
+/// - [`ImguiDx9ExHooks`](crate::hooks::dx9::ex::ImguiDx9ExHooks)
 /// - [`ImguiDx11Hooks`](crate::hooks::dx11::ImguiDx11Hooks)
 /// - [`ImguiDx12Hooks`](crate::hooks::dx12::ImguiDx12Hooks)
 /// - [`ImguiOpenGl3Hooks`](crate::hooks::opengl3::ImguiOpenGl3Hooks)

@@ -1,5 +1,8 @@
 //! Hooks for DirectX 9.
 
+#[cfg(feature = "dx9ex")]
+pub mod ex;
+
 use std::ffi::c_void;
 use std::mem;
 use std::sync::atomic::Ordering;
@@ -67,6 +70,15 @@ unsafe fn init_pipeline(device: &IDirect3DDevice9) -> Result<Mutex<Pipeline<D3D9
     Ok(Mutex::new(pipeline))
 }
 
+unsafe fn reset_pipeline() {
+    trace!("Resetting pipeline");
+    if let Some(pipeline) = PIPELINE.take() {
+        let render_loop = pipeline.into_inner().take();
+
+        RENDER_LOOP.set(render_loop).map_err(|_| ()).expect("Render loop cell should be empty");
+    }
+}
+
 fn render(device: &IDirect3DDevice9) -> Result<()> {
     let pipeline = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
 
@@ -118,12 +130,7 @@ unsafe extern "system" fn dx9_reset_impl(
     let Trampolines { dx9_reset, .. } =
         TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 
-    trace!("Resetting pipeline");
-    if let Some(pipeline) = PIPELINE.take() {
-        let render_loop = pipeline.into_inner().take();
-
-        RENDER_LOOP.set(render_loop).map_err(|_| ()).expect("Render loop cell should be empty");
-    }
+    reset_pipeline();
 
     dx9_reset(this, present_params)
 }

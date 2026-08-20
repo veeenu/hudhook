@@ -24,7 +24,7 @@ pub(crate) trait RenderEngine: RenderContext {
 pub(crate) use backend::dx11::D3D11RenderEngine;
 #[cfg(feature = "dx12")]
 pub(crate) use backend::dx12::D3D12RenderEngine;
-#[cfg(any(feature = "dx9", feature = "dx9ex"))]
+#[cfg(feature = "dx9")]
 pub(crate) use backend::dx9::D3D9RenderEngine;
 #[cfg(feature = "opengl3")]
 pub(crate) use backend::opengl3::OpenGl3RenderEngine;
