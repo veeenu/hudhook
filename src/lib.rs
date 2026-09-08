@@ -202,8 +202,8 @@ pub fn enable_console_colors() {
             let mut current_console_mode = CONSOLE_MODE(0);
             GetConsoleMode(stdout_handle, &mut current_console_mode).unwrap();
 
-            // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING for ANSI
-            // escape sequences
+            // Set the new mode to include ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            // for ANSI escape sequences
             current_console_mode.0 |= ENABLE_VIRTUAL_TERMINAL_PROCESSING.0;
 
             // Call SetConsoleMode to set the new mode

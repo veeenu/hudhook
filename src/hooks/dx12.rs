@@ -111,7 +111,8 @@ enum InitializationContext {
 }
 
 impl InitializationContext {
-    // Transition to a state where the swap chain is set. Ignore other mutations.
+    // Transition to a state where the swap chain is set. Ignore other
+    // mutations.
     fn insert_swap_chain(&mut self, swap_chain: &IDXGISwapChain3) {
         *self = match mem::replace(self, InitializationContext::Empty) {
             InitializationContext::Empty => {
@@ -135,8 +136,8 @@ impl InitializationContext {
         *self = InitializationContext::Complete(swap_chain.clone(), command_queue.clone());
     }
 
-    // Transition to a complete state if the swap chain is set and the command queue
-    // is associated with it.
+    // Transition to a complete state if the swap chain is set and the command
+    // queue is associated with it.
     fn insert_command_queue(&mut self, command_queue: &ID3D12CommandQueue) {
         *self = match mem::replace(self, InitializationContext::Empty) {
             InitializationContext::WithSwapChain(swap_chain) => {

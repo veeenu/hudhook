@@ -306,7 +306,8 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
         ptr: *const c_void,
         memory_basic_info: &mut MEMORY_BASIC_INFORMATION,
     ) -> bool {
-        // If the page protection has any of these flags set, we can read from it
+        // If the page protection has any of these flags set, we can read from
+        // it
         const PAGE_READABLE: PAGE_PROTECTION_FLAGS = PAGE_PROTECTION_FLAGS(
             PAGE_READONLY.0 | PAGE_READWRITE.0 | PAGE_EXECUTE_READ.0 | PAGE_EXECUTE_READWRITE.0,
         );
@@ -325,8 +326,8 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     };
     let page_align_mask = page_size_bytes - 1;
 
-    // Calculate the starting address of the first and last pages that need to be
-    // readable in order to read `limit` elements of type `T` from `ptr`
+    // Calculate the starting address of the first and last pages that need to
+    // be readable in order to read `limit` elements of type `T` from `ptr`
     let first_page_addr = (ptr as usize) & !page_align_mask;
     let last_page_addr = (ptr as usize + (limit * size_of::<T>()) - 1) & !page_align_mask;
 
@@ -349,8 +350,8 @@ pub unsafe fn readable_region<T>(ptr: *const T, limit: usize) -> &'static [T] {
     }
 
     // SAFETY:
-    // - `ptr` is a valid pointer to `limit` elements of type `T` and is properly
-    //   aligned
+    // - `ptr` is a valid pointer to `limit` elements of type `T` and is
+    //   properly aligned
     std::slice::from_raw_parts(ptr, limit)
 }
 

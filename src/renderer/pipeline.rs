@@ -11,7 +11,6 @@ use parking_lot::Mutex;
 use tracing::{error, warn};
 use windows::core::{Error, Result};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, DefWindowProcW, SetWindowLongPtrW, GWLP_WNDPROC,
 };
@@ -174,16 +173,7 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn update_display_size_from_swap_chain(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            let io = self.ctx.io_mut();
-            io.display_size = [width as f32, height as f32];
-
-            let dpi = unsafe { GetDpiForWindow(self.hwnd) };
-            if dpi > 0 {
-                let scale = dpi as f32 / 96.0;
-                io.display_framebuffer_scale = [scale, scale];
-            }
-        }
+        self.resize(width, height);
     }
 
     pub(crate) fn wait_idle(&mut self) -> Result<()> {

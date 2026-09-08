@@ -353,8 +353,8 @@ impl D3D12RenderEngine {
         self.command_list.RSSetViewports(&[D3D12_VIEWPORT {
             TopLeftX: 0f32,
             TopLeftY: 0f32,
-            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
-            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
+            Width: draw_data.display_size[0],
+            Height: draw_data.display_size[1],
             MinDepth: 0f32,
             MaxDepth: 1f32,
         }]);
@@ -969,7 +969,8 @@ impl TextureHeap {
 
         let upload_row_size = width * 4;
         let align = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
-        let upload_pitch = upload_row_size.div_ceil(align) * align; // 256 bytes aligned
+        let upload_pitch = upload_row_size.div_ceil(align) * align; // 256 bytes
+                                                                    // aligned
         let upload_size = height * upload_pitch;
 
         let upload_buffer: ID3D12Resource = util::try_out_ptr(|v| unsafe {
