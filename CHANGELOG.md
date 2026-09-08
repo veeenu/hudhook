@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.3] - 2026-09-08
+
+## What's Changed
+* Revert `framebuffer_scale` setup by @veeenu in https://github.com/veeenu/hudhook/pull/265
+
+**Full Changelog**: https://github.com/veeenu/hudhook/compare/0.9.2...0.9.3
+
 ## [0.9.2] - 2026-07-22
 
 ## What's Changed
