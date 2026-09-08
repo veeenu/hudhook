@@ -1,6 +1,7 @@
 .env
 Cargo.lock
 /target
+/planning
 **/*.rs.bk
 
 .idea
