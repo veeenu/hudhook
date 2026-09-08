@@ -133,8 +133,8 @@ fn handle_raw_keyboard_input(io: &mut Io, raw_keyboard: &RAWKEYBOARD) {
         VIRTUAL_KEY(virtual_key) => virtual_key,
     } as usize;
 
-    // If the virtual key is in the allowed array range, set the appropriate status
-    // of key_down for that virtual key.
+    // If the virtual key is in the allowed array range, set the appropriate
+    // status of key_down for that virtual key.
     if virtual_key < 0xFF {
         if let Some(key) = vk_to_imgui(VIRTUAL_KEY(virtual_key as _)) {
             if is_key_down {
