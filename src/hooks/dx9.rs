@@ -1,9 +1,10 @@
 //! Hooks for DirectX 9.
 
+use std::cell::Cell;
 use std::ffi::c_void;
-use std::mem;
 use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
+use std::{mem, ptr};
 
 use imgui::Context;
 use once_cell::sync::OnceCell;
@@ -12,9 +13,10 @@ use tracing::{error, trace};
 use windows::core::{Error, Interface, Result, BOOL, HRESULT};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, IDirect3DDevice9, D3DADAPTER_DEFAULT, D3DBACKBUFFER_TYPE_MONO,
-    D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF, D3DDISPLAYMODE, D3DFORMAT,
-    D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
+    Direct3DCreate9Ex, IDirect3DDevice9, IDirect3DDevice9Ex, D3DADAPTER_DEFAULT,
+    D3DBACKBUFFER_TYPE_MONO, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_NULLREF,
+    D3DDISPLAYMODE, D3DDISPLAYMODEEX, D3DFORMAT, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD,
+    D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::RGNDATA;
 
@@ -31,12 +33,29 @@ type Dx9PresentType = unsafe extern "system" fn(
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT;
 
+type Dx9PresentExType = unsafe extern "system" fn(
+    this: IDirect3DDevice9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+    dwflags: u32,
+) -> HRESULT;
+
 type Dx9ResetType =
     unsafe extern "system" fn(this: IDirect3DDevice9, *const D3DPRESENT_PARAMETERS) -> HRESULT;
 
+type Dx9ResetExType = unsafe extern "system" fn(
+    this: IDirect3DDevice9,
+    *const D3DPRESENT_PARAMETERS,
+    *const D3DDISPLAYMODEEX,
+) -> HRESULT;
+
 struct Trampolines {
     dx9_present: Dx9PresentType,
+    dx9_present_ex: Dx9PresentExType,
     dx9_reset: Dx9ResetType,
+    dx9_reset_ex: Dx9ResetExType,
 }
 
 static mut TRAMPOLINES: OnceLock<Trampolines> = OnceLock::new();
@@ -67,6 +86,15 @@ unsafe fn init_pipeline(device: &IDirect3DDevice9) -> Result<Mutex<Pipeline<D3D9
     Ok(Mutex::new(pipeline))
 }
 
+unsafe fn reset_pipeline() {
+    trace!("Resetting pipeline");
+    if let Some(pipeline) = PIPELINE.take() {
+        let render_loop = pipeline.into_inner().take();
+
+        RENDER_LOOP.set(render_loop).map_err(|_| ()).expect("Render loop cell should be empty");
+    }
+}
+
 fn render(device: &IDirect3DDevice9) -> Result<()> {
     let pipeline = unsafe { PIPELINE.get_or_try_init(|| init_pipeline(device)) }?;
 
@@ -86,6 +114,33 @@ fn render(device: &IDirect3DDevice9) -> Result<()> {
     render_result
 }
 
+unsafe fn render_and_present(
+    device: IDirect3DDevice9,
+    present: impl FnOnce(IDirect3DDevice9) -> HRESULT,
+) -> HRESULT {
+    thread_local! {
+        static PRESENTING: Cell<bool> = const { Cell::new(false) };
+    }
+
+    if PRESENTING.replace(true) {
+        return present(device);
+    }
+
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
+    if let Err(e) = render(&device) {
+        error!("Render error: {e:?}");
+    }
+
+    trace!("Call present trampoline");
+    let result = present(device);
+    PRESENTING.set(false);
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
+        perform_eject();
+    }
+    result
+}
+
 unsafe extern "system" fn dx9_present_impl(
     device: IDirect3DDevice9,
     psourcerect: *const RECT,
@@ -93,22 +148,30 @@ unsafe extern "system" fn dx9_present_impl(
     hdestwindowoverride: HWND,
     pdirtyregion: *const RGNDATA,
 ) -> HRESULT {
-    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
-
     let Trampolines { dx9_present, .. } =
         TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 
-    if let Err(e) = render(&device) {
-        error!("Render error: {e:?}");
-    }
-
-    trace!("Call IDirect3DDevice9::Present trampoline");
-    let result = dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion);
-    if EJECT_REQUESTED.load(Ordering::SeqCst) {
-        perform_eject();
-    }
-    result
+    render_and_present(device, |device| {
+        dx9_present(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion)
+    })
 }
+
+unsafe extern "system" fn dx9_present_ex_impl(
+    device: IDirect3DDevice9,
+    psourcerect: *const RECT,
+    pdestrect: *const RECT,
+    hdestwindowoverride: HWND,
+    pdirtyregion: *const RGNDATA,
+    dwflags: u32,
+) -> HRESULT {
+    let Trampolines { dx9_present_ex, .. } =
+        TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
+
+    render_and_present(device, |device| {
+        dx9_present_ex(device, psourcerect, pdestrect, hdestwindowoverride, pdirtyregion, dwflags)
+    })
+}
+
 unsafe extern "system" fn dx9_reset_impl(
     this: IDirect3DDevice9,
     present_params: *const D3DPRESENT_PARAMETERS,
@@ -118,18 +181,29 @@ unsafe extern "system" fn dx9_reset_impl(
     let Trampolines { dx9_reset, .. } =
         TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
 
-    trace!("Resetting pipeline");
-    if let Some(pipeline) = PIPELINE.take() {
-        let render_loop = pipeline.into_inner().take();
-
-        RENDER_LOOP.set(render_loop).map_err(|_| ()).expect("Render loop cell should be empty");
-    }
+    reset_pipeline();
 
     dx9_reset(this, present_params)
 }
 
-fn get_target_addrs() -> (Dx9PresentType, Dx9ResetType) {
-    let d9 = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
+unsafe extern "system" fn dx9_reset_ex_impl(
+    this: IDirect3DDevice9,
+    present_params: *const D3DPRESENT_PARAMETERS,
+    fullscreen_display_mode: *const D3DDISPLAYMODEEX,
+) -> HRESULT {
+    let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
+
+    let Trampolines { dx9_reset_ex, .. } =
+        TRAMPOLINES.get().expect("DirectX 9 trampolines uninitialized");
+
+    reset_pipeline();
+
+    dx9_reset_ex(this, present_params, fullscreen_display_mode)
+}
+
+fn get_target_addrs() -> (Dx9PresentType, Dx9PresentExType, Dx9ResetType, Dx9ResetExType) {
+    // A 9Ex device exposes both the base and the `Ex` methods.
+    let d9 = unsafe { Direct3DCreate9Ex(D3D_SDK_VERSION).unwrap() };
 
     let mut d3d_display_mode =
         D3DDISPLAYMODE { Width: 0, Height: 0, RefreshRate: 0, Format: D3DFORMAT(0) };
@@ -143,22 +217,25 @@ fn get_target_addrs() -> (Dx9PresentType, Dx9ResetType) {
     };
 
     let dummy_hwnd = DummyHwnd::new();
-    let device: IDirect3DDevice9 = util::try_out_ptr(|v| {
+    let device: IDirect3DDevice9Ex = util::try_out_ptr(|v| {
         unsafe {
-            d9.CreateDevice(
+            d9.CreateDeviceEx(
                 D3DADAPTER_DEFAULT,
                 D3DDEVTYPE_NULLREF,
                 dummy_hwnd.hwnd(), // GetDesktopWindow(),
                 D3DCREATE_SOFTWARE_VERTEXPROCESSING as u32,
                 &mut present_params,
+                ptr::null_mut(),
                 v,
             )
         }
     })
-    .expect("IDirect3DDevice9::CreateDevice: failed to create device");
+    .expect("IDirect3D9Ex::CreateDeviceEx: failed to create device");
 
-    let present_ptr = device.vtable().Present;
-    let reset_ptr = device.vtable().Reset;
+    let present_ptr = device.vtable().base__.Present;
+    let present_ex_ptr = device.vtable().PresentEx;
+    let reset_ptr = device.vtable().base__.Reset;
+    let reset_ex_ptr = device.vtable().ResetEx;
 
     unsafe {
         (
@@ -173,15 +250,34 @@ fn get_target_addrs() -> (Dx9PresentType, Dx9ResetType) {
                 Dx9PresentType,
             >(present_ptr),
             mem::transmute::<
+                unsafe extern "system" fn(
+                    *mut c_void,
+                    *const RECT,
+                    *const RECT,
+                    HWND,
+                    *const RGNDATA,
+                    u32,
+                ) -> HRESULT,
+                Dx9PresentExType,
+            >(present_ex_ptr),
+            mem::transmute::<
                 unsafe extern "system" fn(*mut c_void, *mut D3DPRESENT_PARAMETERS) -> HRESULT,
                 Dx9ResetType,
             >(reset_ptr),
+            mem::transmute::<
+                unsafe extern "system" fn(
+                    *mut c_void,
+                    *mut D3DPRESENT_PARAMETERS,
+                    *mut D3DDISPLAYMODEEX,
+                ) -> HRESULT,
+                Dx9ResetExType,
+            >(reset_ex_ptr),
         )
     }
 }
 
 /// Hooks for DirectX 9.
-pub struct ImguiDx9Hooks([MhHook; 2]);
+pub struct ImguiDx9Hooks([MhHook; 4]);
 
 impl ImguiDx9Hooks {
     /// Construct a set of [`MhHook`]s that will render UI via the
@@ -189,6 +285,9 @@ impl ImguiDx9Hooks {
     ///
     /// The following functions are hooked:
     /// - `IDirect3DDevice9::Present`
+    /// - `IDirect3DDevice9::Reset`
+    /// - `IDirect3DDevice9Ex::PresentEx`
+    /// - `IDirect3DDevice9Ex::ResetEx`
     ///
     /// # Safety
     ///
@@ -197,22 +296,34 @@ impl ImguiDx9Hooks {
     where
         T: ImguiRenderLoop + Send + Sync + 'static,
     {
-        let (dx9_present_addr, dx9_reset_addr) = get_target_addrs();
+        let (dx9_present_addr, dx9_present_ex_addr, dx9_reset_addr, dx9_reset_ex_addr) =
+            get_target_addrs();
 
         trace!("IDirect3DDevice9::Present = {:p}", dx9_present_addr as *const c_void);
+        trace!("IDirect3DDevice9Ex::PresentEx = {:p}", dx9_present_ex_addr as *const c_void);
         let hook_present =
             MhHook::new(dx9_present_addr as *mut c_void, dx9_present_impl as *mut c_void)
                 .expect("couldn't create IDirect3DDevice9::Present hook");
+        let hook_present_ex =
+            MhHook::new(dx9_present_ex_addr as *mut c_void, dx9_present_ex_impl as *mut c_void)
+                .expect("couldn't create IDirect3DDevice9Ex::PresentEx hook");
         let hook_reset = MhHook::new(dx9_reset_addr as *mut c_void, dx9_reset_impl as *mut c_void)
             .expect("couldn't create IDirect3DDevice9::Reset hook");
+        let hook_reset_ex =
+            MhHook::new(dx9_reset_ex_addr as *mut c_void, dx9_reset_ex_impl as *mut c_void)
+                .expect("couldn't create IDirect3DDevice9Ex::ResetEx hook");
 
         RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
             dx9_present: mem::transmute::<*mut c_void, Dx9PresentType>(hook_present.trampoline()),
+            dx9_present_ex: mem::transmute::<*mut c_void, Dx9PresentExType>(
+                hook_present_ex.trampoline(),
+            ),
             dx9_reset: mem::transmute::<*mut c_void, Dx9ResetType>(hook_reset.trampoline()),
+            dx9_reset_ex: mem::transmute::<*mut c_void, Dx9ResetExType>(hook_reset_ex.trampoline()),
         });
 
-        Self([hook_present, hook_reset])
+        Self([hook_present, hook_present_ex, hook_reset, hook_reset_ex])
     }
 }
 

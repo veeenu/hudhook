@@ -8,8 +8,9 @@ use std::thread::{self, JoinHandle};
 use windows::core::PCSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Direct3D9::{
-    Direct3DCreate9, D3DADAPTER_DEFAULT, D3DCLEAR_TARGET, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
-    D3DDEVTYPE_HAL, D3DPRESENT_PARAMETERS, D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
+    Direct3DCreate9, Direct3DCreate9Ex, IDirect3DDevice9, IDirect3DDevice9Ex, D3DADAPTER_DEFAULT,
+    D3DCLEAR_TARGET, D3DCREATE_SOFTWARE_VERTEXPROCESSING, D3DDEVTYPE_HAL, D3DPRESENT_PARAMETERS,
+    D3DSWAPEFFECT_DISCARD, D3D_SDK_VERSION,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
@@ -27,8 +28,10 @@ pub struct Dx9Harness {
 }
 
 impl Dx9Harness {
+    /// With `ex`, a 9Ex device is created and frames alternate between
+    /// `Present` and `PresentEx`.
     #[allow(unused)]
-    pub fn new(caption: &str) -> Self {
+    pub fn new(caption: &str, ex: bool) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let caption = Arc::new(CString::new(caption).unwrap());
         let child = Some(thread::spawn({
@@ -72,36 +75,70 @@ impl Dx9Harness {
                 }
                 .unwrap();
 
-                let direct3d = unsafe { Direct3DCreate9(D3D_SDK_VERSION).unwrap() };
-                let mut device = None;
-                unsafe {
-                    direct3d.CreateDevice(
-                        D3DADAPTER_DEFAULT,
-                        D3DDEVTYPE_HAL,
-                        handle,
-                        D3DCREATE_SOFTWARE_VERTEXPROCESSING as _,
-                        &mut D3DPRESENT_PARAMETERS {
-                            Windowed: true.into(),
-                            SwapEffect: D3DSWAPEFFECT_DISCARD,
-                            ..Default::default()
-                        },
-                        &mut device,
-                    )
-                }
-                .unwrap();
-                let device = device.unwrap();
+                let mut present_params = D3DPRESENT_PARAMETERS {
+                    Windowed: true.into(),
+                    SwapEffect: D3DSWAPEFFECT_DISCARD,
+                    ..Default::default()
+                };
+                let flags = D3DCREATE_SOFTWARE_VERTEXPROCESSING as _;
+                let (device, device_ex): (IDirect3DDevice9, Option<IDirect3DDevice9Ex>) = unsafe {
+                    if ex {
+                        let direct3d = Direct3DCreate9Ex(D3D_SDK_VERSION).unwrap();
+                        let mut device = None;
+                        direct3d
+                            .CreateDeviceEx(
+                                D3DADAPTER_DEFAULT,
+                                D3DDEVTYPE_HAL,
+                                handle,
+                                flags,
+                                &mut present_params,
+                                null_mut(),
+                                &mut device,
+                            )
+                            .unwrap();
+                        let device = device.unwrap();
+                        (device.clone().into(), Some(device))
+                    } else {
+                        let direct3d = Direct3DCreate9(D3D_SDK_VERSION).unwrap();
+                        let mut device = None;
+                        direct3d
+                            .CreateDevice(
+                                D3DADAPTER_DEFAULT,
+                                D3DDEVTYPE_HAL,
+                                handle,
+                                flags,
+                                &mut present_params,
+                                &mut device,
+                            )
+                            .unwrap();
+                        (device.unwrap(), None)
+                    }
+                };
 
                 unsafe { SetTimer(Some(handle), 0, 100, None) };
 
-                loop {
+                for frame in 0u64.. {
                     eprintln!("Present...");
                     unsafe {
                         device
                             .Clear(0, std::ptr::null(), D3DCLEAR_TARGET as _, 0x0022cc22, 1.0, 0)
                             .unwrap();
-                        device
-                            .Present(std::ptr::null(), std::ptr::null(), handle, std::ptr::null())
-                            .unwrap();
+                        match &device_ex {
+                            Some(device_ex) if frame % 2 == 1 => device_ex.PresentEx(
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                handle,
+                                std::ptr::null(),
+                                0,
+                            ),
+                            _ => device.Present(
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                handle,
+                                std::ptr::null(),
+                            ),
+                        }
+                        .unwrap();
                     }
 
                     if done.load(Ordering::SeqCst) {

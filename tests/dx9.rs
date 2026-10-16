@@ -13,7 +13,7 @@ use hudhook::*;
 fn test_imgui_dx9() {
     hook::setup_tracing();
 
-    let dx9_harness = Dx9Harness::new("DX9 hook example");
+    let dx9_harness = Dx9Harness::new("DX9 hook example", false);
     thread::sleep(Duration::from_millis(500));
 
     if let Err(e) = Hudhook::builder().with::<ImguiDx9Hooks>(HookExample::new()).build().apply() {
