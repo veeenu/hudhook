@@ -29,7 +29,7 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 
-use super::DummyHwnd;
+use super::{dxgi, DummyHwnd};
 use crate::mh::MhHook;
 use crate::renderer::{D3D12RenderEngine, Pipeline};
 use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
@@ -572,6 +572,7 @@ unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
     let hwnd = swap_chain_desc.OutputWindow;
     let active_context =
         create_active_context(&swap_chain, &command_queue, &swap_chain_desc, rtv_format)?;
+    let display_size = dxgi::display_size(&swap_chain)?;
 
     let mut ctx = Context::create();
     let engine = D3D12RenderEngine::new(&command_queue, &mut ctx, rtv_format)?;
@@ -581,10 +582,12 @@ unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
-        RENDER_LOOP.get_or_init(move || render_loop);
-        e
-    })?;
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop, display_size).map_err(
+        |(e, render_loop)| {
+            RENDER_LOOP.get_or_init(move || render_loop);
+            e
+        },
+    )?;
 
     *ACTIVE_CONTEXT.lock() = Some(active_context);
     INIT_STATE.mark_done();
@@ -596,8 +599,8 @@ fn update_pipeline_display_size_from_swap_chain(
     pipeline: &mut Pipeline<D3D12RenderEngine>,
     swap_chain: &IDXGISwapChain3,
 ) -> Result<()> {
-    let desc = unsafe { swap_chain.GetDesc() }?;
-    pipeline.update_display_size_from_swap_chain(desc.BufferDesc.Width, desc.BufferDesc.Height);
+    let (width, height) = dxgi::display_size(swap_chain)?;
+    pipeline.update_display_size_from_swap_chain(width, height);
     Ok(())
 }
 
@@ -663,17 +666,7 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
             return Err(Error::from_hresult(HRESULT(-1)));
         };
 
-        if let Err(e) = update_pipeline_display_size_from_swap_chain(&mut pipeline, swap_chain) {
-            warn!("Could not update DX12 display size from swap chain: {e:?}");
-        }
-
-        pipeline.prepare_render()?;
-
-        if let Err(e) = update_pipeline_display_size_from_swap_chain(&mut pipeline, swap_chain) {
-            warn!(
-                "Could not update DX12 display size from swap chain after window messages: {e:?}"
-            );
-        }
+        pipeline.prepare_render(Some(dxgi::display_size(swap_chain)?))?;
 
         let target: ID3D12Resource =
             swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())?;

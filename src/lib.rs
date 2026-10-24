@@ -267,8 +267,8 @@ unsafe fn perform_eject() {
 
 /// Implement your `imgui` rendering logic via this trait.
 pub trait ImguiRenderLoop {
-    /// Called once at the first occurrence of the hook. Implement this to
-    /// initialize your data.
+    /// Called when the renderer is initialized, including after device
+    /// recreation. Initialize your resources and refresh cached texture IDs.
     /// `ctx` is the imgui context, and `render_context` is meant to access
     /// hudhook renderers' extensions such as texture management.
     fn initialize<'a>(
