@@ -582,11 +582,12 @@ unsafe fn init_pipeline() -> Result<Mutex<Pipeline<D3D12RenderEngine>>> {
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    let pipeline = Pipeline::new_with_display_size(hwnd, ctx, engine, render_loop, display_size)
-        .map_err(|(e, render_loop)| {
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop, display_size).map_err(
+        |(e, render_loop)| {
             RENDER_LOOP.get_or_init(move || render_loop);
             e
-        })?;
+        },
+    )?;
 
     *ACTIVE_CONTEXT.lock() = Some(active_context);
     INIT_STATE.mark_done();
@@ -665,13 +666,7 @@ fn render(swap_chain: &IDXGISwapChain3) -> Result<()> {
             return Err(Error::from_hresult(HRESULT(-1)));
         };
 
-        pipeline.prepare_render_with_display_size(|| dxgi::display_size(swap_chain).map(Some))?;
-
-        if let Err(e) = update_pipeline_display_size_from_swap_chain(&mut pipeline, swap_chain) {
-            warn!(
-                "Could not update DX12 display size from swap chain after window messages: {e:?}"
-            );
-        }
+        pipeline.prepare_render(Some(dxgi::display_size(swap_chain)?))?;
 
         let target: ID3D12Resource =
             swap_chain.GetBuffer(swap_chain.GetCurrentBackBufferIndex())?;

@@ -57,18 +57,7 @@ pub(crate) struct Pipeline<T: RenderEngine> {
 }
 
 impl<T: RenderEngine> Pipeline<T> {
-    #[cfg(any(feature = "dx9", feature = "opengl3"))]
     pub(crate) fn new(
-        hwnd: HWND,
-        ctx: Context,
-        engine: T,
-        render_loop: RenderLoop,
-    ) -> std::result::Result<Self, (Error, RenderLoop)> {
-        let (width, height) = crate::util::win_size(hwnd);
-        Self::new_with_display_size(hwnd, ctx, engine, render_loop, (width as u32, height as u32))
-    }
-
-    pub(crate) fn new_with_display_size(
         hwnd: HWND,
         mut ctx: Context,
         mut engine: T,
@@ -117,15 +106,7 @@ impl<T: RenderEngine> Pipeline<T> {
         })
     }
 
-    #[cfg(any(feature = "dx9", feature = "opengl3"))]
-    pub(crate) fn prepare_render(&mut self) -> Result<()> {
-        self.prepare_render_with_display_size(|| Ok(None))
-    }
-
-    pub(crate) fn prepare_render_with_display_size(
-        &mut self,
-        display_size: impl FnOnce() -> Result<Option<(u32, u32)>>,
-    ) -> Result<()> {
+    pub(crate) fn prepare_render(&mut self, display_size: Option<(u32, u32)>) -> Result<()> {
         let mut queue_buffer = mem::take(&mut self.queue_buffer);
         queue_buffer.extend(self.rx.try_iter());
         queue_buffer.drain(..).for_each(
@@ -135,7 +116,7 @@ impl<T: RenderEngine> Pipeline<T> {
         );
         self.queue_buffer = queue_buffer;
         // WM_SIZE describes the window, which need not match the back buffer.
-        if let Some((width, height)) = display_size()? {
+        if let Some((width, height)) = display_size {
             self.update_display_size_from_swap_chain(width, height);
         }
 
@@ -195,7 +176,7 @@ impl<T: RenderEngine> Pipeline<T> {
     }
 
     pub(crate) fn update_display_size_from_swap_chain(&mut self, width: u32, height: u32) {
-        self.ctx.io_mut().display_size = [width as f32, height as f32];
+        self.resize(width, height);
     }
 
     pub(crate) fn wait_idle(&mut self) -> Result<()> {

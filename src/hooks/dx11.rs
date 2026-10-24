@@ -1,5 +1,6 @@
 //! Hooks for DirectX 11.
 
+use std::cell::Cell;
 use std::ffi::c_void;
 use std::mem;
 use std::sync::atomic::Ordering;
@@ -54,7 +55,7 @@ type DXGISwapChainResizeBuffersType = unsafe extern "system" fn(
 
 struct Trampolines {
     dxgi_swap_chain_present: DXGISwapChainPresentType,
-    dxgi_swap_chain_present1: Option<DXGISwapChainPresent1Type>,
+    dxgi_swap_chain_present1: DXGISwapChainPresent1Type,
     dxgi_swap_chain_resize_buffers: DXGISwapChainResizeBuffersType,
 }
 
@@ -63,6 +64,24 @@ static mut PIPELINE: OnceCell<Mutex<Pipeline<D3D11RenderEngine>>> = OnceCell::ne
 static mut RENDER_LOOP: OnceCell<Box<dyn ImguiRenderLoop + Send + Sync>> = OnceCell::new();
 static PIPELINE_LOCK: ReentrantMutex<()> = ReentrantMutex::new(());
 static ACTIVE_CONTEXT: Mutex<Option<(usize, usize)>> = Mutex::new(None);
+
+thread_local! {
+    static IN_PRESENT: Cell<bool> = const { Cell::new(false) };
+}
+
+struct PresentGuard;
+
+impl PresentGuard {
+    fn enter() -> Option<Self> {
+        IN_PRESENT.with(|active| if active.replace(true) { None } else { Some(Self) })
+    }
+}
+
+impl Drop for PresentGuard {
+    fn drop(&mut self) {
+        IN_PRESENT.with(|active| active.set(false));
+    }
+}
 
 unsafe fn reset_pipeline() {
     if let Some(pipeline) = PIPELINE.take() {
@@ -86,11 +105,12 @@ unsafe fn init_pipeline(swap_chain: &IDXGISwapChain) -> Result<Mutex<Pipeline<D3
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    let pipeline = Pipeline::new_with_display_size(hwnd, ctx, engine, render_loop, display_size)
-        .map_err(|(e, render_loop)| {
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop, display_size).map_err(
+        |(e, render_loop)| {
             RENDER_LOOP.get_or_init(move || render_loop);
             e
-        })?;
+        },
+    )?;
     *ACTIVE_CONTEXT.lock() = Some((device_identity, hwnd.0 as usize));
 
     Ok(Mutex::new(pipeline))
@@ -114,9 +134,7 @@ fn render(swap_chain: &IDXGISwapChain) -> Result<()> {
             return Err(Error::from_hresult(HRESULT(-1)));
         };
 
-        pipeline.prepare_render_with_display_size(|| dxgi::display_size(swap_chain).map(Some))?;
-        let (width, height) = dxgi::display_size(swap_chain)?;
-        pipeline.update_display_size_from_swap_chain(width, height);
+        pipeline.prepare_render(Some(dxgi::display_size(swap_chain)?))?;
 
         let target: ID3D11Texture2D = swap_chain.GetBuffer(0)?;
 
@@ -130,8 +148,10 @@ unsafe fn present(
     flags: u32,
     trampoline: impl FnOnce() -> HRESULT,
 ) -> HRESULT {
-    let present_guard = dxgi::PresentGuard::enter();
-    if present_guard.is_some() && flags & DXGI_PRESENT_TEST.0 == 0 {
+    let Some(present_guard) = PresentGuard::enter() else {
+        return trampoline();
+    };
+    if flags & DXGI_PRESENT_TEST.0 == 0 {
         if let Some(_pipeline_guard) = PIPELINE_LOCK.try_lock() {
             if let Err(error) = render(swap_chain) {
                 if matches!(error.code(), DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET) {
@@ -143,13 +163,11 @@ unsafe fn present(
     }
     // DXGI may wait for the window thread, which can call ResizeBuffers.
     let result = trampoline();
-    if present_guard.is_some()
-        && matches!(result, DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET)
-    {
+    if matches!(result, DXGI_ERROR_DEVICE_REMOVED | DXGI_ERROR_DEVICE_RESET) {
         let _pipeline_guard = PIPELINE_LOCK.lock();
         reset_pipeline();
     }
-    if present_guard.is_some() && EJECT_REQUESTED.load(Ordering::SeqCst) {
+    if EJECT_REQUESTED.load(Ordering::SeqCst) {
         drop(present_guard);
         perform_eject();
     }
@@ -176,12 +194,11 @@ unsafe extern "system" fn dxgi_swap_chain_present1_impl(
     parameters: *const DXGI_PRESENT_PARAMETERS,
 ) -> HRESULT {
     let _hook_ejection_guard = HOOK_EJECTION_BARRIER.acquire_ejection_guard();
-    let trampoline = TRAMPOLINES
-        .get()
-        .expect("DirectX 11 trampolines uninitialized")
-        .dxgi_swap_chain_present1
-        .unwrap();
-    present(&swap_chain, flags, || trampoline(swap_chain.clone(), sync_interval, flags, parameters))
+    let Trampolines { dxgi_swap_chain_present1, .. } =
+        TRAMPOLINES.get().expect("DirectX 11 trampolines uninitialized");
+    present(&swap_chain, flags, || {
+        dxgi_swap_chain_present1(swap_chain.clone(), sync_interval, flags, parameters)
+    })
 }
 
 unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
@@ -203,7 +220,7 @@ unsafe extern "system" fn dxgi_swap_chain_resize_buffers_impl(
 }
 
 fn get_target_addrs(
-) -> (DXGISwapChainPresentType, Option<DXGISwapChainPresent1Type>, DXGISwapChainResizeBuffersType) {
+) -> (DXGISwapChainPresentType, DXGISwapChainPresent1Type, DXGISwapChainResizeBuffersType) {
     let mut p_device: Option<ID3D11Device> = None;
     let mut p_context: Option<ID3D11DeviceContext> = None;
     let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -255,16 +272,18 @@ fn get_target_addrs(
         )
     };
 
-    let present1_ptr = swap_chain.cast::<IDXGISwapChain1>().ok().map(|swap_chain| unsafe {
+    let swap_chain1: IDXGISwapChain1 = swap_chain.cast().unwrap();
+    let present1_ptr: DXGISwapChainPresent1Type = unsafe {
         mem::transmute::<*mut c_void, DXGISwapChainPresent1Type>(
-            swap_chain.vtable().Present1 as *mut c_void,
+            swap_chain1.vtable().Present1 as *mut c_void,
         )
-    });
+    };
+
     (present_ptr, present1_ptr, resize_buffers_ptr)
 }
 
 /// Hooks for DirectX 11.
-pub struct ImguiDx11Hooks(Vec<MhHook>);
+pub struct ImguiDx11Hooks([MhHook; 3]);
 
 impl ImguiDx11Hooks {
     /// Construct a set of [`MhHook`]s that will render UI via the
@@ -272,7 +291,7 @@ impl ImguiDx11Hooks {
     ///
     /// The following functions are hooked:
     /// - `IDXGISwapChain::Present`
-    /// - `IDXGISwapChain1::Present1` (when available)
+    /// - `IDXGISwapChain1::Present1`
     /// - `IDXGISwapChain::ResizeBuffers`
     ///
     /// # Safety
@@ -295,6 +314,13 @@ impl ImguiDx11Hooks {
         )
         .expect("couldn't create IDXGISwapChain::Present hook");
 
+        trace!("IDXGISwapChain1::Present1 = {:p}", dxgi_swap_chain_present1_addr as *const c_void);
+        let hook_present1 = MhHook::new(
+            dxgi_swap_chain_present1_addr as *mut _,
+            dxgi_swap_chain_present1_impl as *mut _,
+        )
+        .expect("couldn't create IDXGISwapChain1::Present1 hook");
+
         trace!(
             "IDXGISwapChain::ResizeBuffers = {:p}",
             dxgi_swap_chain_resize_buffers_addr as *const c_void
@@ -304,18 +330,14 @@ impl ImguiDx11Hooks {
             dxgi_swap_chain_resize_buffers_impl as *mut _,
         )
         .expect("couldn't create IDXGISwapChain::ResizeBuffers hook");
-        let hook_present1 = dxgi_swap_chain_present1_addr.map(|address| {
-            MhHook::new(address as *mut _, dxgi_swap_chain_present1_impl as *mut _)
-                .expect("couldn't create IDXGISwapChain1::Present1 hook")
-        });
 
         RENDER_LOOP.get_or_init(|| Box::new(t));
         TRAMPOLINES.get_or_init(|| Trampolines {
-            dxgi_swap_chain_present1: hook_present1.as_ref().map(|hook| {
-                mem::transmute::<*mut c_void, DXGISwapChainPresent1Type>(hook.trampoline())
-            }),
             dxgi_swap_chain_present: mem::transmute::<*mut c_void, DXGISwapChainPresentType>(
                 hook_present.trampoline(),
+            ),
+            dxgi_swap_chain_present1: mem::transmute::<*mut c_void, DXGISwapChainPresent1Type>(
+                hook_present1.trampoline(),
             ),
             dxgi_swap_chain_resize_buffers: mem::transmute::<
                 *mut c_void,
@@ -323,9 +345,7 @@ impl ImguiDx11Hooks {
             >(hook_resize_buffers.trampoline()),
         });
 
-        let mut hooks = vec![hook_present, hook_resize_buffers];
-        hooks.extend(hook_present1);
-        Self(hooks)
+        Self([hook_present, hook_present1, hook_resize_buffers])
     }
 }
 

@@ -15,7 +15,7 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
 
 use crate::mh::MhHook;
 use crate::renderer::{OpenGl3RenderEngine, Pipeline};
-use crate::{perform_eject, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
+use crate::{perform_eject, util, Hooks, ImguiRenderLoop, EJECT_REQUESTED, HOOK_EJECTION_BARRIER};
 
 type OpenGl32wglSwapBuffersType = unsafe extern "system" fn(HDC) -> ();
 
@@ -38,10 +38,12 @@ unsafe fn init_pipeline(dc: HDC) -> Result<Mutex<Pipeline<OpenGl3RenderEngine>>>
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
-        RENDER_LOOP.get_or_init(move || render_loop);
-        e
-    })?;
+    let (width, height) = util::win_size(hwnd);
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop, (width as u32, height as u32))
+        .map_err(|(e, render_loop)| {
+            RENDER_LOOP.get_or_init(move || render_loop);
+            e
+        })?;
 
     Ok(Mutex::new(pipeline))
 }
@@ -55,7 +57,7 @@ fn render(dc: HDC) -> Result<()> {
             return Err(Error::from_hresult(HRESULT(-1)));
         };
 
-        pipeline.prepare_render()?;
+        pipeline.prepare_render(None)?;
 
         pipeline.render(())?;
     }
