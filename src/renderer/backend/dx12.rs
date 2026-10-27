@@ -160,6 +160,10 @@ impl D3D12RenderEngine {
 
 impl RenderContext for D3D12RenderEngine {
     fn load_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        // Growing the descriptor heap releases the one frames in flight use.
+        if self.texture_heap.is_full() {
+            self.wait_idle()?;
+        }
         unsafe {
             let texture_id = self.texture_heap.create_texture(width, height)?;
             self.texture_heap.upload_texture(texture_id, data, width, height)?;
@@ -835,12 +839,16 @@ impl TextureHeap {
         })
     }
 
+    fn is_full(&self) -> bool {
+        unsafe { self.srv_heap.GetDesc() }.NumDescriptors as usize <= self.textures.len()
+    }
+
     unsafe fn resize_heap(&mut self) -> Result<()> {
         let mut desc = self.srv_heap.GetDesc();
         let mut desc_staging = self.srv_staging_heap.GetDesc();
         let old_num_descriptors = desc.NumDescriptors;
 
-        if old_num_descriptors <= self.textures.len() as _ {
+        if self.is_full() {
             desc.NumDescriptors *= 2;
             desc_staging.NumDescriptors = desc.NumDescriptors;
 
