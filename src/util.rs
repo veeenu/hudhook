@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use parking_lot::{RwLock, RwLockReadGuard};
 use tracing::{debug, error};
 use windows::core::s;
-use windows::Win32::Foundation::{HANDLE, HMODULE, HWND, MAX_PATH, RECT};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HMODULE, HWND, MAX_PATH, RECT};
 use windows::Win32::Graphics::Direct3D::ID3DBlob;
 use windows::Win32::Graphics::Direct3D12::{
     D3D12GetDebugInterface, ID3D12Debug, ID3D12Device, ID3D12Fence, ID3D12Resource,
@@ -287,6 +287,12 @@ impl Fence {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for Fence {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.event).ok() };
     }
 }
 

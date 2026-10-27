@@ -174,6 +174,9 @@ impl RenderContext for D3D12RenderEngine {
         width: u32,
         height: u32,
     ) -> Result<()> {
+        // Frames in flight may still sample this texture, and the copy runs on
+        // the texture heap's own queue.
+        self.wait_idle()?;
         unsafe { self.texture_heap.upload_texture(texture_id, data, width, height) }
     }
 }
@@ -202,25 +205,23 @@ impl RenderEngine for D3D12RenderEngine {
                 self.rtv_heap_start,
             );
 
-            let present_to_rtv_barriers = [util::create_barrier(
+            transition(
+                &self.command_list,
                 &render_target,
                 D3D12_RESOURCE_STATE_PRESENT,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
-            )];
-
-            let rtv_to_present_barriers = [util::create_barrier(
-                &render_target,
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_COMMON,
-            )];
-
-            self.command_list.ResourceBarrier(&present_to_rtv_barriers);
+            );
             self.command_list.OMSetRenderTargets(1, Some(&self.rtv_heap_start), false, None);
             self.command_list.SetDescriptorHeaps(&[Some(self.texture_heap.srv_heap.clone())]);
 
             self.render_draw_data(draw_data)?;
 
-            self.command_list.ResourceBarrier(&rtv_to_present_barriers);
+            transition(
+                &self.command_list,
+                &render_target,
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_COMMON,
+            );
             self.command_list.Close()?;
             self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
 
@@ -229,9 +230,6 @@ impl RenderEngine for D3D12RenderEngine {
             self.frame_contexts[self.frame_index].fence_value = new_fence_value;
 
             self.frame_index = (self.frame_index + 1) % self.frame_contexts.len();
-
-            present_to_rtv_barriers.into_iter().for_each(util::drop_barrier);
-            rtv_to_present_barriers.into_iter().for_each(util::drop_barrier);
         }
 
         Ok(())
@@ -388,6 +386,17 @@ impl D3D12RenderEngine {
         );
         self.command_list.OMSetBlendFactor(Some(&[0f32; 4]));
     }
+}
+
+unsafe fn transition(
+    command_list: &ID3D12GraphicsCommandList,
+    resource: &ID3D12Resource,
+    before: D3D12_RESOURCE_STATES,
+    after: D3D12_RESOURCE_STATES,
+) {
+    let barriers = [util::create_barrier(resource, before, after)];
+    command_list.ResourceBarrier(&barriers);
+    barriers.into_iter().for_each(util::drop_barrier);
 }
 
 unsafe fn create_heaps(
@@ -669,10 +678,10 @@ unsafe fn create_shader_program(
         ..Default::default()
     };
 
-    let pipeline_state = unsafe { device.CreateGraphicsPipelineState(&pso_desc)? };
+    let pipeline_state = unsafe { device.CreateGraphicsPipelineState(&pso_desc) };
     let _ = ManuallyDrop::into_inner(pso_desc.pRootSignature);
 
-    Ok((root_signature, pipeline_state))
+    Ok((root_signature, pipeline_state?))
 }
 
 struct Buffer<T: Sized> {
@@ -914,7 +923,8 @@ impl TextureHeap {
                     Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
                     Flags: D3D12_RESOURCE_FLAG_NONE,
                 },
-                D3D12_RESOURCE_STATE_COPY_DEST,
+                // Textures stay in this state between uploads.
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                 None,
                 v,
             )
@@ -1017,6 +1027,13 @@ impl TextureHeap {
         self.command_allocator.Reset()?;
         self.command_list.Reset(&self.command_allocator, None)?;
 
+        transition(
+            &self.command_list,
+            &texture.resource,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+        );
+
         let dst_location = D3D12_TEXTURE_COPY_LOCATION {
             pResource: ManuallyDrop::new(Some(texture.resource.clone())),
             Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
@@ -1041,27 +1058,22 @@ impl TextureHeap {
         };
 
         self.command_list.CopyTextureRegion(&dst_location, 0, 0, 0, &src_location, None);
-        let barriers = [util::create_barrier(
+        // The command list doesn't keep these references; `upload_buffer` stays
+        // alive until the fence wait below.
+        let _ = ManuallyDrop::into_inner(src_location.pResource);
+        let _ = ManuallyDrop::into_inner(dst_location.pResource);
+
+        transition(
+            &self.command_list,
             &texture.resource,
             D3D12_RESOURCE_STATE_COPY_DEST,
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        )];
-
-        self.command_list.ResourceBarrier(&barriers);
+        );
         self.command_list.Close()?;
         self.command_queue.ExecuteCommandLists(&[Some(self.command_list.cast()?)]);
         let fence_value = self.fence.incr() + 1;
         self.command_queue.Signal(self.fence.fence(), fence_value)?;
         self.fence.wait_for_value(fence_value)?;
-
-        barriers.into_iter().for_each(util::drop_barrier);
-
-        // Apparently, leaking the upload buffer into the location is necessary.
-        // Uncommenting the following line consistently leads to a crash, which
-        // points to a double-free, but I don't know why: upload_buffer should
-        // stay alive with a positive refcount until the end of this block.
-        // let _ = ManuallyDrop::into_inner(src_location.pResource);
-        let _ = ManuallyDrop::into_inner(dst_location.pResource);
 
         Ok(())
     }
