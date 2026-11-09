@@ -18,7 +18,8 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_MODE_DESC, DXGI_RATIONAL, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
+    IDXGISwapChain, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH,
+    DXGI_SWAP_EFFECT_DISCARD, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT,
 };
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
@@ -40,6 +41,14 @@ pub struct Dx11Harness {
 impl Dx11Harness {
     #[allow(unused)]
     pub fn new(caption: &str) -> Self {
+        Self::with_frame_callback(caption, false, |_, _| {})
+    }
+
+    pub fn with_frame_callback(
+        caption: &str,
+        flip_model: bool,
+        mut callback: impl FnMut(&IDXGISwapChain, &ID3D11DeviceContext) + Send + 'static,
+    ) -> Self {
         let done = Arc::new(AtomicBool::new(false));
         let caption = Arc::new(CString::new(caption).unwrap());
         let child = Some(thread::spawn({
@@ -83,7 +92,7 @@ impl Dx11Harness {
                 }
                 .unwrap();
 
-                unsafe { util::enable_debug_interface() };
+                util::enable_debug_interface();
 
                 let mut p_device: Option<ID3D11Device> = None;
                 let mut p_swap_chain: Option<IDXGISwapChain> = None;
@@ -106,11 +115,15 @@ impl Dx11Harness {
                             },
                             SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
                             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                            BufferCount: 1,
+                            BufferCount: if flip_model { 2 } else { 1 },
                             OutputWindow: hwnd,
                             Windowed: true.into(),
-                            SwapEffect: DXGI_SWAP_EFFECT_DISCARD,
-                            ..Default::default()
+                            SwapEffect: if flip_model {
+                                DXGI_SWAP_EFFECT_FLIP_DISCARD
+                            } else {
+                                DXGI_SWAP_EFFECT_DISCARD
+                            },
+                            Flags: DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH.0 as u32,
                         }),
                         Some(&mut p_swap_chain),
                         Some(&mut p_device),
@@ -130,6 +143,7 @@ impl Dx11Harness {
                     if done.load(Ordering::SeqCst) {
                         break;
                     }
+                    callback(&swap_chain, p_context.as_ref().unwrap());
 
                     unsafe {
                         swap_chain
@@ -151,7 +165,10 @@ impl Dx11Harness {
 impl Drop for Dx11Harness {
     fn drop(&mut self) {
         self.done.store(true, Ordering::SeqCst);
-        self.child.take().unwrap().join().unwrap();
+        let result = self.child.take().unwrap().join();
+        if !thread::panicking() {
+            result.unwrap();
+        }
     }
 }
 

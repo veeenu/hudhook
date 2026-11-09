@@ -196,13 +196,13 @@ unsafe fn run_harness(done: Arc<AtomicBool>, rx: Receiver<SendMsg>) -> Result<()
         command_list.ResourceBarrier(&present_barrier);
         command_list.Close()?;
         command_queue.ExecuteCommandLists(&[Some(command_list.cast()?)]);
+        fence_val += 1;
         command_queue.Signal(&fence, fence_val)?;
 
         if fence.GetCompletedValue() < fence_val {
             fence.SetEventOnCompletion(fence_val, fence_event)?;
             WaitForSingleObject(fence_event, INFINITE);
         }
-        fence_val += 1;
 
         rtv_barrier.into_iter().for_each(util::drop_barrier);
         present_barrier.into_iter().for_each(util::drop_barrier);

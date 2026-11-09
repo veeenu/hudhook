@@ -132,8 +132,9 @@ impl RenderEngine for D3D11RenderEngine {
             })?;
 
             self.device_context.OMSetRenderTargets(Some(&[Some(render_target)]), None);
-            self.render_draw_data(draw_data)?;
+            let result = self.render_draw_data(draw_data);
             state_backup.restore(&self.device_context);
+            result?;
         };
 
         Ok(())
@@ -704,6 +705,9 @@ impl TextureHeap {
 const BACKUP_OBJECT_COUNT: usize = 16;
 
 struct StateBackup {
+    render_targets:
+        [Option<ID3D11RenderTargetView>; D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT as usize],
+    depth_stencil_view: Option<ID3D11DepthStencilView>,
     scissor_count: u32,
     scissor_rects: [RECT; BACKUP_OBJECT_COUNT],
     viewport_count: u32,
@@ -743,6 +747,10 @@ struct StateBackup {
 
 impl StateBackup {
     unsafe fn backup(device_context: &ID3D11DeviceContext) -> StateBackup {
+        let mut render_targets: [Option<ID3D11RenderTargetView>;
+            D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT as usize] = Default::default();
+        let mut depth_stencil_view = None;
+        device_context.OMGetRenderTargets(Some(&mut render_targets), Some(&mut depth_stencil_view));
         let mut scissor_count = 0;
         let mut scissor_rects: [RECT; BACKUP_OBJECT_COUNT] = Default::default();
         device_context.RSGetScissorRects(&mut scissor_count, None);
@@ -813,6 +821,8 @@ impl StateBackup {
         let input_layout = device_context.IAGetInputLayout().ok();
 
         Self {
+            render_targets,
+            depth_stencil_view,
             scissor_count,
             scissor_rects,
             viewport_count,
@@ -844,6 +854,8 @@ impl StateBackup {
     }
 
     unsafe fn restore(self, device_context: &ID3D11DeviceContext) {
+        device_context
+            .OMSetRenderTargets(Some(&self.render_targets), self.depth_stencil_view.as_ref());
         device_context.RSSetScissorRects(Some(&self.scissor_rects[..self.scissor_count as usize]));
         device_context.RSSetViewports(Some(&self.viewports[..self.viewport_count as usize]));
 
