@@ -703,6 +703,7 @@ impl TextureHeap {
 }
 
 const BACKUP_OBJECT_COUNT: usize = 16;
+const BACKUP_CLASS_INSTANCE_COUNT: usize = 256;
 
 struct StateBackup {
     render_targets:
@@ -728,9 +729,9 @@ struct StateBackup {
     vertex_shader: Option<ID3D11VertexShader>,
     pixel_shader: Option<ID3D11PixelShader>,
 
-    vs_instances: *mut Option<ID3D11ClassInstance>,
+    vs_instances: [Option<ID3D11ClassInstance>; BACKUP_CLASS_INSTANCE_COUNT],
     vs_instances_count: u32,
-    ps_instances: *mut Option<ID3D11ClassInstance>,
+    ps_instances: [Option<ID3D11ClassInstance>; BACKUP_CLASS_INSTANCE_COUNT],
     ps_instances_count: u32,
 
     vertex_buffer: Option<ID3D11Buffer>,
@@ -739,7 +740,7 @@ struct StateBackup {
     index_buffer: Option<ID3D11Buffer>,
     index_buffer_offset: u32,
     index_buffer_format: DXGI_FORMAT,
-    constant_buffer: [Option<ID3D11Buffer>; BACKUP_OBJECT_COUNT],
+    constant_buffer: [Option<ID3D11Buffer>; 1],
 
     primitive_topology: D3D_PRIMITIVE_TOPOLOGY,
     input_layout: Option<ID3D11InputLayout>,
@@ -779,19 +780,19 @@ impl StateBackup {
         device_context.PSGetSamplers(0, Some(&mut sampler));
 
         let mut vertex_shader = Default::default();
-        let vs_instances: *mut Option<ID3D11ClassInstance> = ptr::null_mut();
-        let mut vs_instances_count = 256;
+        let mut vs_instances = [const { None }; BACKUP_CLASS_INSTANCE_COUNT];
+        let mut vs_instances_count = BACKUP_CLASS_INSTANCE_COUNT as u32;
         device_context.VSGetShader(
             &mut vertex_shader,
-            Some(vs_instances),
+            Some(vs_instances.as_mut_ptr()),
             Some(&mut vs_instances_count),
         );
         let mut pixel_shader = Default::default();
-        let ps_instances: *mut Option<ID3D11ClassInstance> = ptr::null_mut();
-        let mut ps_instances_count = 256;
+        let mut ps_instances = [const { None }; BACKUP_CLASS_INSTANCE_COUNT];
+        let mut ps_instances_count = BACKUP_CLASS_INSTANCE_COUNT as u32;
         device_context.PSGetShader(
             &mut pixel_shader,
-            Some(ps_instances),
+            Some(ps_instances.as_mut_ptr()),
             Some(&mut ps_instances_count),
         );
 
@@ -813,7 +814,7 @@ impl StateBackup {
             Some(&mut index_buffer_offset),
         );
 
-        let mut constant_buffer: [Option<ID3D11Buffer>; BACKUP_OBJECT_COUNT] = Default::default();
+        let mut constant_buffer: [Option<ID3D11Buffer>; 1] = Default::default();
         device_context.VSGetConstantBuffers(0, Some(&mut constant_buffer));
 
         let rasterizer_state = device_context.RSGetState().ok();
@@ -876,20 +877,12 @@ impl StateBackup {
 
         device_context.PSSetShader(
             self.pixel_shader.as_ref(),
-            if self.ps_instances_count > 0 {
-                Some(slice::from_raw_parts(self.ps_instances, self.ps_instances_count as usize))
-            } else {
-                None
-            },
+            Some(&self.ps_instances[..self.ps_instances_count as usize]),
         );
 
         device_context.VSSetShader(
             self.vertex_shader.as_ref(),
-            if self.vs_instances_count > 0 {
-                Some(slice::from_raw_parts(self.vs_instances, self.vs_instances_count as usize))
-            } else {
-                None
-            },
+            Some(&self.vs_instances[..self.vs_instances_count as usize]),
         );
 
         device_context.IASetVertexBuffers(
@@ -907,8 +900,7 @@ impl StateBackup {
         );
 
         if self.constant_buffer[0].is_some() {
-            let count = self.constant_buffer.iter().take_while(|x| x.is_some()).count();
-            device_context.VSSetConstantBuffers(0, Some(&self.constant_buffer[..count]));
+            device_context.VSSetConstantBuffers(0, Some(&self.constant_buffer));
         }
 
         device_context.RSSetState(self.rasterizer_state.as_ref());
