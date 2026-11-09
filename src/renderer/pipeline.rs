@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::renderer::input::{imgui_wnd_proc_impl, WndProcType};
 use crate::renderer::RenderEngine;
-use crate::{util, ImguiRenderLoop, MessageFilter};
+use crate::{ImguiRenderLoop, MessageFilter};
 
 type RenderLoop = Box<dyn ImguiRenderLoop + Send + Sync>;
 
@@ -62,9 +62,8 @@ impl<T: RenderEngine> Pipeline<T> {
         mut ctx: Context,
         mut engine: T,
         mut render_loop: RenderLoop,
+        (width, height): (u32, u32),
     ) -> std::result::Result<Self, (Error, RenderLoop)> {
-        let (width, height) = util::win_size(hwnd);
-
         ctx.io_mut().display_size = [width as f32, height as f32];
 
         render_loop.initialize(&mut ctx, &mut engine);
@@ -107,7 +106,7 @@ impl<T: RenderEngine> Pipeline<T> {
         })
     }
 
-    pub(crate) fn prepare_render(&mut self) -> Result<()> {
+    pub(crate) fn prepare_render(&mut self, display_size: Option<(u32, u32)>) -> Result<()> {
         let mut queue_buffer = mem::take(&mut self.queue_buffer);
         queue_buffer.extend(self.rx.try_iter());
         queue_buffer.drain(..).for_each(
@@ -116,6 +115,10 @@ impl<T: RenderEngine> Pipeline<T> {
             },
         );
         self.queue_buffer = queue_buffer;
+        // WM_SIZE describes the window, which need not match the back buffer.
+        if let Some((width, height)) = display_size {
+            self.update_display_size_from_swap_chain(width, height);
+        }
 
         let message_filter = self.render_loop.message_filter(self.ctx.io());
 

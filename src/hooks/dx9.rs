@@ -60,10 +60,12 @@ unsafe fn init_pipeline(device: &IDirect3DDevice9) -> Result<Mutex<Pipeline<D3D9
     };
 
     trace!("creating pipeline");
-    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop).map_err(|(e, render_loop)| {
-        RENDER_LOOP.get_or_init(move || render_loop);
-        e
-    })?;
+    let (width, height) = util::win_size(hwnd);
+    let pipeline = Pipeline::new(hwnd, ctx, engine, render_loop, (width as u32, height as u32))
+        .map_err(|(e, render_loop)| {
+            RENDER_LOOP.get_or_init(move || render_loop);
+            e
+        })?;
     Ok(Mutex::new(pipeline))
 }
 
@@ -75,7 +77,7 @@ fn render(device: &IDirect3DDevice9) -> Result<()> {
         return Err(Error::from_hresult(HRESULT(-1)));
     };
 
-    pipeline.prepare_render()?;
+    pipeline.prepare_render(None)?;
 
     let surface = unsafe { device.GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO)? };
 
