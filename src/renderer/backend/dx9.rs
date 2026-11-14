@@ -13,7 +13,7 @@ use windows_numerics::Matrix4x4;
 use crate::renderer::RenderEngine;
 use crate::{util, RenderContext};
 
-const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1;
+const D3DFVF_CUSTOMVERTEX: u32 = D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1;
 const MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
     M11: 1.0,
     M22: 1.0,
@@ -36,6 +36,7 @@ const MAT_IDENTITY: Matrix4x4 = Matrix4x4 {
 #[repr(C)]
 struct CustomVertex {
     pos: [f32; 3],
+    rhw: f32,
     col: [u8; 4],
     uv: [f32; 2],
 }
@@ -115,6 +116,12 @@ impl D3D9RenderEngine {
         self.vertex_buffer.clear();
         self.index_buffer.clear();
 
+        // Copy and pre-transform all vertices into a single contiguous buffer, converting
+        // colors to DX9 default format. `XYZRHW` bypasses vertex processing, avoiding
+        // repeated software transforms for each draw command. Apply DX9's half-pixel offset
+        // here.
+        let pos_offset = [draw_data.display_pos[0] + 0.5, draw_data.display_pos[1] + 0.5];
+
         draw_data
             .draw_lists()
             .map(|draw_list| {
@@ -123,7 +130,8 @@ impl D3D9RenderEngine {
             .for_each(|(vertices, indices)| {
                 // CPU swizzle FTW
                 self.vertex_buffer.extend(vertices.map(|draw_vert| CustomVertex {
-                    pos: [draw_vert.pos[0], draw_vert.pos[1], 0.0],
+                    pos: [draw_vert.pos[0] - pos_offset[0], draw_vert.pos[1] - pos_offset[1], 0.5],
+                    rhw: 1.0,
                     col: [draw_vert.col[2], draw_vert.col[1], draw_vert.col[0], draw_vert.col[3]],
                     uv: draw_vert.uv,
                 }));
